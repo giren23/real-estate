@@ -19,12 +19,17 @@ def records(df: pd.DataFrame) -> list[dict]:
 def build_public_data(root: Path) -> None:
     trades = load_parquets(root / "data/raw/trades")
     population = load_population_csv(root / "data/raw/population/population.csv")
+    complexes_path = root / "data/raw/complexes.csv"
+    complexes = pd.read_csv(complexes_path, dtype=str).fillna("") if complexes_path.exists() else pd.DataFrame()
     out_dir = root / "data/public"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    (out_dir / "complexes.json").write_text(json.dumps(records(complexes), ensure_ascii=False, indent=2), encoding="utf-8")
+
     if trades.empty:
+        (out_dir / "apartment_history.json").write_text("[]", encoding="utf-8")
         (out_dir / "meta.json").write_text(
-            json.dumps({"status": "empty", "message": "아직 실거래 데이터가 없습니다."}, ensure_ascii=False, indent=2),
+            json.dumps({"status": "empty", "message": "아직 실거래 데이터가 없습니다.", "apartment_count": int(len(complexes))}, ensure_ascii=False, indent=2),
             encoding="utf-8"
         )
         return
@@ -32,6 +37,14 @@ def build_public_data(root: Path) -> None:
     trades = trades.sort_values("trade_date")
     apartments = apartment_metrics(trades)
     monthly = monthly_metrics(trades)
+    trade_history = trades.assign(month=trades["trade_date"].str[:7]).groupby(
+        ["lawd_cd", "region_name", "dong", "apt_name", "area_m2", "month"],
+        as_index=False,
+    ).agg(
+        median_price_eok=("price_eok", "median"),
+        average_price_eok=("price_eok", "mean"),
+        trade_count=("price_eok", "size"),
+    ).sort_values(["lawd_cd", "apt_name", "area_m2", "month"])
 
     if not population.empty:
         pop = population.rename(columns={"region_code": "lawd_cd"})
@@ -42,12 +55,15 @@ def build_public_data(root: Path) -> None:
             "status": "ok",
             "trade_count": int(len(trades)),
             "region_count": int(trades["lawd_cd"].nunique()),
-            "apartment_count": int(trades[["lawd_cd", "dong", "apt_name"]].drop_duplicates().shape[0]),
+            "apartment_count": int(len(complexes)) if not complexes.empty else int(trades[["lawd_cd", "dong", "apt_name"]].drop_duplicates().shape[0]),
+            "trade_apartment_count": int(trades[["lawd_cd", "dong", "apt_name"]].drop_duplicates().shape[0]),
             "first_date": str(trades["trade_date"].min()),
             "latest_date": str(trades["trade_date"].max()),
         },
-        "latest_trades.json": records(trades.sort_values("trade_date", ascending=False).head(10000)),
+        "latest_trades.json": records(trades.sort_values("trade_date", ascending=False).head(50000)),
         "apartments.json": records(apartments.sort_values("latest_trade_date", ascending=False)),
+        "apartment_history.json": records(trade_history),
+        "complexes.json": records(complexes),
         "monthly.json": records(monthly),
         "regions.json": records(trades[["lawd_cd", "region_name"]].drop_duplicates().sort_values("region_name")),
     }
