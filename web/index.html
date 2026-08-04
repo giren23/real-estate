@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>전국 부동산 데이터 플랫폼</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<main>
+<header>
+  <h1>전국 부동산 데이터 플랫폼</h1>
+  <p>아파트 실거래 · 평단가 · 거래량 · 인구 및 세대 동향</p>
+</header>
+
+<section class="controls">
+  <label>지역<select id="region"></select></label>
+  <label>단지명<input id="apt" placeholder="예: 파크뷰"></label>
+  <label>최소 전용㎡<input id="areaMin" type="number" placeholder="전체"></label>
+  <label>최대 전용㎡<input id="areaMax" type="number" placeholder="전체"></label>
+  <button id="apply">조회</button>
+</section>
+
+<section class="metrics" id="metrics"></section>
+
+<section class="panel">
+  <h2>실거래가 추이</h2>
+  <canvas id="priceChart"></canvas>
+</section>
+
+<section class="panel">
+  <h2>평당가 추이</h2>
+  <canvas id="pyeongChart"></canvas>
+</section>
+
+<section class="panel">
+  <h2>거래 목록</h2>
+  <div class="table-wrap"><table id="trades"></table></div>
+</section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

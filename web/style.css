@@ -1,0 +1,13 @@
+:root{font-family:system-ui,-apple-system,sans-serif;color:#202124;background:#f6f7f9}
+body{margin:0}main{max-width:1100px;margin:auto;padding:18px}
+header h1{margin-bottom:4px}header p{color:#667085}
+.controls{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;background:white;padding:14px;border-radius:14px}
+label{font-size:13px;color:#667085}input,select,button{width:100%;box-sizing:border-box;margin-top:5px;padding:10px;border:1px solid #d0d5dd;border-radius:9px;font-size:15px}
+button{background:#175cd3;color:white;font-weight:700}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
+.metric,.panel{background:white;border-radius:14px;padding:14px;border:1px solid #eaecf0}
+.metric b{font-size:24px;display:block}.metric span{color:#667085;font-size:13px}
+.panel{margin-bottom:14px}.table-wrap{overflow:auto;max-height:520px}
+table{border-collapse:collapse;width:100%;min-width:900px}th,td{padding:9px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap;font-size:13px}
+th:nth-child(-n+3),td:nth-child(-n+3){text-align:left}
+@media(max-width:760px){.controls{grid-template-columns:1fr 1fr}.metrics{grid-template-columns:1fr 1fr}}

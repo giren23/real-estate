@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+config/settings.json
+data/raw/trades/*.parquet
+data/raw/population/*.csv
+!data/raw/trades/.gitkeep
+!data/raw/population/.gitkeep

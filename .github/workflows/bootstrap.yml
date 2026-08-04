@@ -1,0 +1,44 @@
+name: Bootstrap real-estate data
+
+on:
+  workflow_dispatch:
+    inputs:
+      history_months:
+        description: "초기 수집 개월 수"
+        required: true
+        default: "1"
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Collect
+        env:
+          MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
+          PYTHONPATH: src
+        run: python -m realestate.cli.main collect --months "${{ inputs.history_months }}"
+      - name: Publish
+        env:
+          PYTHONPATH: src
+        run: python -m realestate.cli.main publish
+      - name: Test
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+      - name: Commit generated data
+        run: |
+          git config user.name "real-estate-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/public data/raw/trades
+          git commit -m "Bootstrap real-estate data" || exit 0
+          git push

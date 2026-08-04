@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "korea-real-estate-platform"
+version = "1.0.0"
+description = "전국 아파트 실거래·평단가·인구동향 분석 플랫폼"
+requires-python = ">=3.11"
+dependencies = [
+  "requests>=2.32,<3",
+  "pandas>=2.2,<3",
+  "pyarrow>=17,<20",
+  "python-dateutil>=2.9,<3",
+  "tenacity>=9,<10"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+realestate = "realestate.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

@@ -1,0 +1,45 @@
+name: Daily real-estate update
+
+on:
+  schedule:
+    - cron: "10 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: real-estate-daily
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Collect current and previous month
+        env:
+          MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
+          PYTHONPATH: src
+        run: python -m realestate.cli.main collect --months 2
+      - name: Publish
+        env:
+          PYTHONPATH: src
+        run: python -m realestate.cli.main publish
+      - name: Test
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+      - name: Commit
+        run: |
+          git config user.name "real-estate-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/public data/raw/trades
+          git commit -m "Daily update" || exit 0
+          git push
