@@ -3,39 +3,72 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>전국 부동산 데이터 플랫폼</title>
+<meta name="description" content="아파트 단지를 검색하고 지도에서 확인하며 최대 10개 단지의 실거래가를 비교합니다.">
+<title>아파트 실거래가 지도 비교</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="naver-config.js"></script>
 </head>
 <body>
 <main>
-<header>
-  <h1>전국 부동산 데이터 플랫폼</h1>
-  <p>아파트 실거래 · 평단가 · 거래량 · 인구 및 세대 동향</p>
+<header class="hero">
+  <div>
+    <span class="eyebrow">아파트 실거래가 탐색기</span>
+    <h1>찾고, 고르고, 한눈에 비교하세요</h1>
+    <p>지역이나 아파트 단지를 검색하면 가까운 단지를 지도에서 찾고, 평형별 실거래가 추이를 최대 10개까지 비교합니다.</p>
+  </div>
+  <div class="data-badge"><b id="dataCount">—</b><span>수집된 실거래</span></div>
 </header>
 
-<section class="controls">
-  <label>지역<select id="region"></select></label>
-  <label>단지명<input id="apt" placeholder="예: 파크뷰"></label>
-  <label>최소 전용㎡<input id="areaMin" type="number" placeholder="전체"></label>
-  <label>최대 전용㎡<input id="areaMax" type="number" placeholder="전체"></label>
-  <button id="apply">조회</button>
+<section class="search-card">
+  <form id="searchForm" class="search-bar">
+    <label class="sr-only" for="searchInput">지역 또는 아파트 단지 검색</label>
+    <input id="searchInput" autocomplete="off" placeholder="예: 해운대, 우동, 반도보라빌" />
+    <button type="submit">검색</button>
+  </form>
+  <div class="quick-search" id="quickSearch"></div>
+  <p class="status" id="status" role="status">데이터를 불러오는 중입니다…</p>
 </section>
 
-<section class="metrics" id="metrics"></section>
+<section class="explore-grid">
+  <article class="panel map-panel">
+    <div class="panel-head">
+      <div><span class="step">1</span><h2>지도에서 단지 찾기</h2></div>
+      <span id="mapState" class="map-state">지도 준비 중</span>
+    </div>
+    <div id="map">
+      <div class="map-fallback">
+        <b>네이버 지도 연결 준비 완료</b>
+        <span>지도 인증키를 등록하면 검색 위치와 아파트 마커가 표시됩니다.</span>
+      </div>
+    </div>
+  </article>
 
-<section class="panel">
-  <h2>실거래가 추이</h2>
-  <canvas id="priceChart"></canvas>
+  <article class="panel results-panel">
+    <div class="panel-head">
+      <div><span class="step">2</span><h2>가까운 단지</h2></div>
+      <span id="resultCount">0개</span>
+    </div>
+    <div id="results" class="results">
+      <div class="empty">지역이나 단지명을 검색해 보세요.</div>
+    </div>
+  </article>
 </section>
 
-<section class="panel">
-  <h2>평당가 추이</h2>
-  <canvas id="pyeongChart"></canvas>
+<section class="panel compare-panel">
+  <div class="panel-head">
+    <div><span class="step">3</span><h2>선택한 단지 비교</h2></div>
+    <span id="selectionCount">0 / 10</span>
+  </div>
+  <div id="selections" class="selections">
+    <div class="empty">검색 결과에서 비교할 단지를 추가하세요.</div>
+  </div>
+  <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
 </section>
 
-<section class="panel">
-  <h2>거래 목록</h2>
+<section class="panel details-panel">
+  <div class="panel-head"><div><span class="step">4</span><h2>최근 실거래 상세</h2></div></div>
+  <div id="metrics" class="metrics"></div>
   <div class="table-wrap"><table id="trades"></table></div>
 </section>
 </main>
