@@ -1,0 +1,65 @@
+[
+  {
+    "lawd_cd": "26350",
+    "region_name": "부산광역시 해운대구",
+    "month": "2026-08",
+    "trade_count": 2,
+    "median_price_eok": 4.3,
+    "average_price_eok": 4.3,
+    "median_pyeong_price_manwon": 2072.89
+  },
+  {
+    "lawd_cd": "27140",
+    "region_name": "대구광역시 동구",
+    "month": "2026-08",
+    "trade_count": 3,
+    "median_price_eok": 3.0,
+    "average_price_eok": 2.9,
+    "median_pyeong_price_manwon": 1324.96
+  },
+  {
+    "lawd_cd": "28185",
+    "region_name": "인천광역시 연수구",
+    "month": "2026-08",
+    "trade_count": 6,
+    "median_price_eok": 6.37,
+    "average_price_eok": 7.113333333333333,
+    "median_pyeong_price_manwon": 2797.635
+  },
+  {
+    "lawd_cd": "30170",
+    "region_name": "대전광역시 서구",
+    "month": "2026-08",
+    "trade_count": 10,
+    "median_price_eok": 3.3899999999999997,
+    "average_price_eok": 3.127,
+    "median_pyeong_price_manwon": 1401.1100000000001
+  },
+  {
+    "lawd_cd": "36110",
+    "region_name": "세종특별자치시",
+    "month": "2026-08",
+    "trade_count": 9,
+    "median_price_eok": 5.65,
+    "average_price_eok": 5.626666666666667,
+    "median_pyeong_price_manwon": 2211.58
+  },
+  {
+    "lawd_cd": "41281",
+    "region_name": "경기도 고양시 덕양구",
+    "month": "2026-08",
+    "trade_count": 7,
+    "median_price_eok": 6.95,
+    "average_price_eok": 6.763571428571429,
+    "median_pyeong_price_manwon": 3737.77
+  },
+  {
+    "lawd_cd": "41465",
+    "region_name": "경기도 용인시 수지구",
+    "month": "2026-08",
+    "trade_count": 4,
+    "median_price_eok": 10.025,
+    "average_price_eok": 9.595,
+    "median_pyeong_price_manwon": 3031.925
+  }
+]
