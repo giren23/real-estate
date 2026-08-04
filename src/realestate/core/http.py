@@ -1,12 +1,21 @@
 from __future__ import annotations
+
 import requests
 from tenacity import retry, stop_after_attempt, wait_exponential
+
+DEFAULT_TIMEOUT = (10, 30)
+
 
 class ApiError(RuntimeError):
     pass
 
-@retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=1, max=8), reraise=True)
-def get_text(url: str, params: dict, timeout: int = 45) -> str:
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5), reraise=True)
+def get_text(
+    url: str,
+    params: dict,
+    timeout: tuple[float, float] = DEFAULT_TIMEOUT,
+) -> str:
     response = requests.get(url, params=params, timeout=timeout)
     response.raise_for_status()
     text = response.text
