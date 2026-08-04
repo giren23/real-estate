@@ -18,7 +18,7 @@ class Settings:
     request_delay_seconds: float
 
 def _key(name: str, fallback: str = "") -> str:
-    value = os.getenv(name, fallback).strip()
+    value = os.getenv(name, "").strip() or fallback.strip()
     return unquote(value) if "%" in value else value
 
 def load_settings() -> Settings:
