@@ -24,12 +24,12 @@ def build_public_data(root: Path) -> None:
     out_dir = root / "data/public"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    (out_dir / "complexes.json").write_text(json.dumps(records(complexes), ensure_ascii=False, indent=2), encoding="utf-8")
+    (out_dir / "complexes.json").write_text(json.dumps(records(complexes), ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
     if trades.empty:
         (out_dir / "apartment_history.json").write_text("[]", encoding="utf-8")
         (out_dir / "meta.json").write_text(
-            json.dumps({"status": "empty", "message": "아직 실거래 데이터가 없습니다.", "apartment_count": int(len(complexes))}, ensure_ascii=False, indent=2),
+            json.dumps({"status": "empty", "message": "아직 실거래 데이터가 없습니다.", "apartment_count": int(len(complexes))}, ensure_ascii=False, separators=(",", ":")),
             encoding="utf-8"
         )
         return
@@ -68,4 +68,4 @@ def build_public_data(root: Path) -> None:
         "regions.json": records(trades[["lawd_cd", "region_name"]].drop_duplicates().sort_values("region_name")),
     }
     for filename, payload in payloads.items():
-        (out_dir / filename).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        (out_dir / filename).write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
