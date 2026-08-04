@@ -1,4 +1,5 @@
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -91,32 +92,64 @@ def fetch_trade_month(settings: Settings, lawd_cd: str, region_name: str, deal_y
     })
     return parse_trade_xml(xml_text, lawd_cd, region_name, deal_ym)
 
+def _collect_one(
+    settings: Settings,
+    index: int,
+    total: int,
+    lawd_cd: str,
+    region_name: str,
+    ym: str,
+    output_dir: Path,
+) -> str | None:
+    target = output_dir / f"{lawd_cd}_{ym}.parquet"
+    label = f"{region_name} ({lawd_cd}) {ym}"
+    print(f"[START] [{index}/{total}] {label}", flush=True)
+    try:
+        df = fetch_trade_month(settings, lawd_cd, region_name, ym)
+        if not df.empty:
+            df = df[~df["cancelled"]].copy()
+        df.to_parquet(target, index=False)
+        print(f"[OK] [{index}/{total}] {label}: {len(df):,}건", flush=True)
+        return None
+    except Exception as exc:
+        error = f"{label}: {type(exc).__name__}: {exc}"
+        print(f"[ERROR] [{index}/{total}] {error}", flush=True)
+        return error
+    finally:
+        time.sleep(settings.request_delay_seconds)
+
+
 def collect_trades(settings: Settings, regions: pd.DataFrame, months: list[str], output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     total = len(regions) * len(months)
-    completed = 0
-    failures: list[str] = []
-
+    tasks: list[tuple[int, str, str, str]] = []
     for _, region in regions.iterrows():
         lawd_cd = str(region["lawd_cd"]).zfill(5)
         region_name = str(region["region_name"])
         for ym in months:
-            completed += 1
-            target = output_dir / f"{lawd_cd}_{ym}.parquet"
-            label = f"{region_name} ({lawd_cd}) {ym}"
-            print(f"[START] [{completed}/{total}] {label}", flush=True)
-            try:
-                df = fetch_trade_month(settings, lawd_cd, region_name, ym)
-                if not df.empty:
-                    df = df[~df["cancelled"]].copy()
-                df.to_parquet(target, index=False)
-                print(f"[OK] [{completed}/{total}] {label}: {len(df):,}건", flush=True)
-            except Exception as exc:
-                error = f"{label}: {type(exc).__name__}: {exc}"
+            tasks.append((len(tasks) + 1, lawd_cd, region_name, ym))
+
+    worker_count = min(6, total)
+    failures: list[str] = []
+    print(f"[COLLECT] 총 {total:,}개 요청, 동시 요청 {worker_count}개", flush=True)
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [
+            executor.submit(
+                _collect_one,
+                settings,
+                index,
+                total,
+                lawd_cd,
+                region_name,
+                ym,
+                output_dir,
+            )
+            for index, lawd_cd, region_name, ym in tasks
+        ]
+        for future in as_completed(futures):
+            error = future.result()
+            if error:
                 failures.append(error)
-                print(f"[ERROR] [{completed}/{total}] {error}", flush=True)
-            finally:
-                time.sleep(settings.request_delay_seconds)
 
     if failures:
         details = "\n".join(f"  - {failure}" for failure in failures)
