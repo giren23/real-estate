@@ -42,3 +42,6 @@ def main() -> None:
 
     build_public_data(ROOT)
     print("공개 JSON 생성 완료")
+
+if __name__ == "__main__":
+    main()
