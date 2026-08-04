@@ -6,8 +6,9 @@
 <meta name="description" content="아파트 단지를 검색하고 지도에서 확인하며 최대 10개 단지의 실거래가를 비교합니다.">
 <title>아파트 실거래가 지도 비교</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="naver-config.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
 <main>
@@ -34,12 +35,12 @@
   <article class="panel map-panel">
     <div class="panel-head">
       <div><span class="step">1</span><h2>지도에서 단지 찾기</h2></div>
-      <span id="mapState" class="map-state">지도 준비 중</span>
+      <span id="mapState" class="map-state">무료 지도 준비 중</span>
     </div>
     <div id="map">
       <div class="map-fallback">
-        <b>네이버 지도 연결 준비 완료</b>
-        <span>지도 인증키를 등록하면 검색 위치와 아파트 마커가 표시됩니다.</span>
+        <b>OpenStreetMap을 불러오는 중입니다</b>
+        <span>별도 가입이나 인증키 없이 무료로 이용할 수 있습니다.</span>
       </div>
     </div>
   </article>

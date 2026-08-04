@@ -1,5 +1,6 @@
 let allTrades = [], apartmentGroups = [], selected = [], priceChart, map, infoWindow;
 const markers = new Map();
+let lastGeocodeAt = 0;
 const geoCache = JSON.parse(localStorage.getItem("aptGeoCache") || "{}");
 const palette = ["#087a60","#175cd3","#b54708","#7f56d9","#c11574","#026aa2","#ca8504","#344054","#039855","#d92d20"];
 const byId = id => document.getElementById(id);
@@ -63,16 +64,16 @@ async function search(){
   setStatus("‘"+query+"’ 주변 단지를 찾는 중입니다…");
   let matches=apartmentGroups.map(g=>({group:g,score:score(g,query)})).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,30);
   let queryCoord=null;
-  if(window.naver?.maps?.Service){
+  if(window.L){
     queryCoord=await geocode(query);
     if(queryCoord){
-      const located=await Promise.all(matches.slice(0,15).map(async item=>{
+      const located=[];
+      for(const item of matches.slice(0,5)){
         const coord=await geocode(addressOf(item.group));
-        return {...item,coord,distance:coord?haversine(queryCoord,coord):Infinity};
-      }));
-      matches=located.sort((a,b)=>a.distance-b.distance||b.score-a.score).concat(matches.slice(15)).slice(0,12);
-      map.setCenter(new naver.maps.LatLng(queryCoord.lat,queryCoord.lng));
-      map.setZoom(14);
+        located.push({...item,coord,distance:coord?haversine(queryCoord,coord):Infinity});
+      }
+      matches=located.sort((a,b)=>a.distance-b.distance||b.score-a.score).concat(matches.slice(5)).slice(0,12);
+      map.setView([queryCoord.lat,queryCoord.lng],14);
     }else matches=matches.slice(0,12);
   }else matches=matches.slice(0,12);
   renderResults(matches,query);
@@ -145,28 +146,32 @@ function renderDetails(group,area){
 }
 
 function initMap(){
-  const clientId=String(window.NAVER_MAP_CLIENT_ID||"").trim();
-  if(!clientId){byId("mapState").textContent="인증키 필요";return;}
-  const script=document.createElement("script");
-  script.src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId="+encodeURIComponent(clientId)+"&submodules=geocoder";
-  script.onload=()=>{
-    map=new naver.maps.Map("map",{center:new naver.maps.LatLng(36.5,127.8),zoom:7,zoomControl:true,zoomControlOptions:{position:naver.maps.Position.TOP_RIGHT}});
-    infoWindow=new naver.maps.InfoWindow({borderWidth:0,backgroundColor:"transparent"});
-    byId("mapState").textContent="네이버 지도 연결됨";byId("mapState").classList.add("ready");
-  };
-  script.onerror=()=>{byId("mapState").textContent="지도 연결 실패";setStatus("네이버 지도 인증 설정을 확인해 주세요.",true);};
-  document.head.appendChild(script);
+  map=L.map("map",{zoomControl:true}).setView([36.5,127.8],7);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{
+    maxZoom:19,
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+  }).addTo(map);
+  byId("mapState").textContent="무료 지도 연결됨";
+  byId("mapState").classList.add("ready");
 }
 
-function geocode(query){
-  if(geoCache[query]) return Promise.resolve(geoCache[query]);
-  return new Promise(resolve=>{
-    naver.maps.Service.geocode({query},(status,response)=>{
-      if(status!==naver.maps.Service.Status.OK||!response.v2.addresses.length){resolve(null);return;}
-      const a=response.v2.addresses[0],coord={lat:Number(a.y),lng:Number(a.x)};
-      geoCache[query]=coord;localStorage.setItem("aptGeoCache",JSON.stringify(geoCache));resolve(coord);
-    });
-  });
+async function geocode(query){
+  if(geoCache[query]) return geoCache[query];
+  const elapsed=Date.now()-lastGeocodeAt;
+  if(elapsed<1100) await new Promise(resolve=>setTimeout(resolve,1100-elapsed));
+  lastGeocodeAt=Date.now();
+  try{
+    const url="https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=kr&accept-language=ko&q="+encodeURIComponent(query);
+    const rows=await fetch(url).then(r=>{if(!r.ok) throw new Error("주소 검색 실패");return r.json();});
+    if(!rows.length) return null;
+    const coord={lat:Number(rows[0].lat),lng:Number(rows[0].lon)};
+    geoCache[query]=coord;
+    localStorage.setItem("aptGeoCache",JSON.stringify(geoCache));
+    return coord;
+  }catch(error){
+    setStatus("지도 주소 검색이 잠시 원활하지 않습니다. 단지명 검색 결과는 계속 이용할 수 있습니다.",true);
+    return null;
+  }
 }
 
 async function focusGroup(group,knownCoord){
@@ -174,12 +179,15 @@ async function focusGroup(group,knownCoord){
   if(!map) return;
   const coord=knownCoord||await geocode(addressOf(group));
   if(!coord) return;
-  const pos=new naver.maps.LatLng(coord.lat,coord.lng);
   let marker=markers.get(group.key);
-  if(!marker){marker=new naver.maps.Marker({position:pos,map,title:group.apt_name});markers.set(group.key,marker);naver.maps.Event.addListener(marker,"click",()=>focusGroup(group,coord));}
-  map.panTo(pos);map.setZoom(16);
-  infoWindow.setContent('<div style="padding:12px 15px;border-radius:12px;background:white;box-shadow:0 5px 20px #0002"><b>'+esc(group.apt_name)+'</b><br><small>'+esc(addressOf(group))+'</small><br><strong style="color:#087a60">최근 '+fmt(group.latest.price_eok)+'억원</strong></div>');
-  infoWindow.open(map,marker);
+  if(!marker){
+    marker=L.marker([coord.lat,coord.lng]).addTo(map);
+    marker.bindPopup('<div class="map-popup"><b>'+esc(group.apt_name)+'</b><br><small>'+esc(addressOf(group))+'</small><br><strong>최근 '+fmt(group.latest.price_eok)+'억원</strong></div>');
+    marker.on("click",()=>renderDetails(group,selected.find(s=>s.key===group.key)?.area||group.areas[0]));
+    markers.set(group.key,marker);
+  }
+  map.setView([coord.lat,coord.lng],16);
+  marker.openPopup();
 }
 
 function haversine(a,b){
