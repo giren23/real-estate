@@ -45,6 +45,8 @@ def build_public_data(root: Path) -> None:
         average_price_eok=("price_eok", "mean"),
         trade_count=("price_eok", "size"),
     ).sort_values(["lawd_cd", "apt_name", "area_m2", "month"])
+    price_columns = ["median_price_eok", "average_price_eok"]
+    trade_history[price_columns] = trade_history[price_columns].round(4)
 
     if not population.empty:
         pop = population.rename(columns={"region_code": "lawd_cd"})
