@@ -29,7 +29,7 @@ main{max-width:1280px;margin:auto;padding:30px 22px 56px}.hero{display:flex;alig
 @media(max-width:720px){.economic-grid{grid-template-columns:1fr}.policy-list{grid-template-columns:1fr}.economic-chart{height:125px}}
 
 
-.graph-head-fields{display:grid!important;grid-template-columns:minmax(220px,1fr) 170px;gap:12px;align-items:end}
+.graph-head-fields{display:grid!important;grid-template-columns:minmax(180px,1fr) 160px 140px;gap:12px;align-items:end}
 .period-control label{display:block;font-size:11px;color:#667085;margin-bottom:4px}
 .period-control select{width:100%;border:1px solid #cfdcda;border-radius:10px;background:#fff;padding:9px 11px;font-weight:700;color:#344054}
 .stack-chart{border:1px solid #e5e7eb;border-radius:13px;background:#fff;padding:12px}

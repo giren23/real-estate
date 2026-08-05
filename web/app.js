@@ -214,7 +214,7 @@ function refreshResultButtons(){
 
 function addGraphBoard(){
   if(graphBoards.length>=10){setStatus("그래프는 최대 10개까지 만들 수 있습니다.",true);return;}
-  const board={id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),periodYears:20,series:[]};
+  const board={id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),periodYears:20,priceMode:"trade",series:[]};
   graphBoards.push(board);
   activeGraphId=board.id;
   renderGraphBoards();
@@ -260,6 +260,7 @@ function restoreGraphBoards(){
       id:String(board.id||makeId("graph")),
       name:String(board.name||"그래프 "+(index+1)).slice(0,30),
       periodYears:[1,3,5,10,20,0].includes(Number(board.periodYears))?Number(board.periodYears):20,
+      priceMode:board.priceMode==="pyeong"?"pyeong":"trade",
       series:Array.isArray(board.series)?board.series.slice(0,10).filter(series=>apartmentGroups.some(g=>g.key===series.key)).map(series=>({
         id:String(series.id||makeId("series")),
         key:String(series.key),
@@ -320,12 +321,17 @@ function renderGraphBoards(){
   if(![1,3,5,10,20,0].includes(Number(board.periodYears))) board.periodYears=20;
   const periodOptions=[[1,"최근 1년"],[3,"최근 3년"],[5,"최근 5년"],[10,"최근 10년"],[20,"최근 20년"],[0,"전체 기간"]]
     .map(([value,label])=>'<option value="'+value+'" '+(Number(board.periodYears)===value?"selected":"")+'>'+label+'</option>').join("");
+  const priceModeOptions=[["trade","실거래가"],["pyeong","평당가"]]
+    .map(([value,label])=>'<option value="'+value+'" '+(board.priceMode===value?"selected":"")+'>'+label+'</option>').join("");
+  const chartHeading=board.priceMode==="pyeong"?"아파트 평당가":"아파트 실거래가";
+  const chartSubtitle=board.priceMode==="pyeong"?"선택 평형의 월별 중앙값 · 만원/평":"선택 평형의 월별 중앙값 · 억원";
   byId("graphBoards").innerHTML='<article class="graph-board" data-board-id="'+esc(board.id)+'">'+
     '<div class="graph-board-head"><div class="graph-head-fields"><div><label for="graphName">그래프 이름</label><input id="graphName" class="graph-name" maxlength="30" value="'+esc(board.name)+'"></div>'+
-    '<div class="period-control"><label for="graphPeriod">그래프 표시 기간</label><select id="graphPeriod">'+periodOptions+'</select></div></div>'+
+    '<div class="period-control"><label for="graphPeriod">그래프 표시 기간</label><select id="graphPeriod">'+periodOptions+'</select></div>'+
+    '<div class="period-control"><label for="priceMode">그래프 기준</label><select id="priceMode">'+priceModeOptions+'</select></div></div>'+
     '<span>'+board.series.length+' / 10개 단지</span></div>'+
     '<div class="series-list">'+(board.series.length?board.series.map(series=>seriesControl(board,series)).join(""):'<div class="series-empty">검색한 단지의 ‘추가’ 버튼을 누르면 검은색 선으로 표시됩니다.</div>')+'</div>'+
-    '<section class="stack-chart price-section"><div class="economic-title"><b>아파트 실거래가</b><span>선택 평형의 월별 중앙값 · 억원</span></div><div class="chart-wrap graph-chart-wrap"><canvas class="price-chart" aria-label="'+esc(board.name)+' 실거래가 그래프"></canvas></div></section>'+
+    '<section class="stack-chart price-section"><div class="economic-title"><b>'+chartHeading+'</b><span>'+chartSubtitle+'</span></div><div class="chart-wrap graph-chart-wrap"><canvas class="price-chart" aria-label="'+esc(board.name)+' '+chartHeading+' 그래프"></canvas></div></section>'+
     '<p class="chart-help">작은 점을 누르거나 마우스를 올리면 해당 월의 중앙 실거래가와 거래 건수를 확인할 수 있습니다. 숫자 세로선은 아래 주요 정책 발표 시점입니다.</p>'+
     '<div class="economic-stack">'+
       '<section class="stack-chart"><div class="economic-title"><b>원·달러 환율</b><span>월평균 · 원/USD</span></div><div class="economic-chart"><canvas class="exchange-chart" aria-label="원달러 환율 그래프"></canvas></div></section>'+
@@ -347,6 +353,11 @@ function renderGraphBoards(){
     board.periodYears=Number(e.target.value);
     renderGraphBoards();
     markUnsaved("그래프 표시 기간을 변경했습니다.");
+  });
+  byId("priceMode").addEventListener("change",e=>{
+    board.priceMode=e.target.value==="pyeong"?"pyeong":"trade";
+    renderGraphBoards();
+    markUnsaved(board.priceMode==="pyeong"?"평당가 그래프로 전환했습니다.":"실거래가 그래프로 전환했습니다.");
   });
 
   byId("graphBoards").querySelectorAll(".series-item").forEach(card=>{
@@ -452,14 +463,16 @@ function renderBoardChart(board,container){
       group.trades.filter(r=>Number(r.area_m2)===series.area).forEach(r=>{const month=String(r.trade_date).slice(0,7);if(!monthly.has(month))monthly.set(month,[]);monthly.get(month).push(r.price_eok);});
       points=[...monthly].map(([month,values])=>({month,price:median(values),count:values.length}));
     }
+    points.forEach(point=>{point.pyeongPrice=Number(point.price)*10000/(Number(series.area)/3.3058);});
     return {series,group,points};
   }).filter(Boolean);
   const bounds=periodBounds(board,seriesRows);
   const labels=monthRange(bounds.start,bounds.end);
+  const isPyeong=board.priceMode==="pyeong";
   const datasets=seriesRows.map(item=>{
-    const prices=new Map(item.points.map(point=>[point.month,point.price]));
+    const values=new Map(item.points.map(point=>[point.month,isPyeong?point.pyeongPrice:point.price]));
     const counts=new Map(item.points.map(point=>[point.month,point.count]));
-    return {label:item.group.apt_name+" · "+(item.series.area?fmt(item.series.area)+"㎡":"평형 없음"),data:labels.map(month=>prices.has(month)?prices.get(month):null),tradeCounts:labels.map(month=>counts.get(month)||0),borderColor:item.series.color,backgroundColor:item.series.color,pointRadius:1.15,pointHoverRadius:4,borderWidth:1.15,tension:.16,spanGaps:true};
+    return {label:item.group.apt_name+" · "+(item.series.area?fmt(item.series.area)+"㎡":"평형 없음"),data:labels.map(month=>values.has(month)?values.get(month):null),tradeCounts:labels.map(month=>counts.get(month)||0),borderColor:item.series.color,backgroundColor:item.series.color,pointRadius:1.15,pointHoverRadius:4,borderWidth:1.15,tension:.16,spanGaps:true};
   });
   const policies=(economicContext.policies||[]).map(policyRecord).filter(item=>item.date&&item.date.slice(0,7)>=bounds.start&&item.date.slice(0,7)<=bounds.end);
   container.querySelector(".policy-list").innerHTML=policyHtml(policies);
@@ -469,7 +482,7 @@ function renderBoardChart(board,container){
   });
   if(policies.length) showPolicyDetail(container,policies[0]);
 
-  const priceChart=new Chart(container.querySelector(".price-chart"),{type:"line",data:{labels,datasets},plugins:[policyMarkerPlugin],options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"nearest",intersect:true},scales:{x:{title:{display:true,text:"거래월"},ticks:{autoSkip:true,maxTicksLimit:12}},y:{title:{display:true,text:"월 중앙 실거래가 (억원)"},beginAtZero:false}},plugins:{policyMarkers:{items:policies},legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:7}},tooltip:{displayColors:true,callbacks:{title:items=>items[0]?.label||"",label:c=>c.raw==null?c.dataset.label+": 거래 없음":c.dataset.label+": "+fmt(c.raw)+"억원",afterLabel:c=>c.raw==null?"":"해당 월 거래 "+fmt(c.dataset.tradeCounts[c.dataIndex])+"건의 중앙값"}}}}});
+  const priceChart=new Chart(container.querySelector(".price-chart"),{type:"line",data:{labels,datasets},plugins:[policyMarkerPlugin],options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"nearest",intersect:true},scales:{x:{title:{display:true,text:"거래월"},ticks:{autoSkip:true,maxTicksLimit:12}},y:{title:{display:true,text:isPyeong?"월 중앙 평당가 (만원/평)":"월 중앙 실거래가 (억원)"},beginAtZero:false}},plugins:{policyMarkers:{items:policies},legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:7}},tooltip:{displayColors:true,callbacks:{title:items=>items[0]?.label||"",label:c=>c.raw==null?c.dataset.label+": 거래 없음":c.dataset.label+": "+fmt(c.raw)+(isPyeong?"만원/평":"억원"),afterLabel:c=>c.raw==null?"":"해당 월 거래 "+fmt(c.dataset.tradeCounts[c.dataIndex])+"건의 중앙값"}}}}});
   const exchangeMap=valueMap(economicContext.exchange_rates,"krw_per_usd");
   const bondMap=valueMap(economicContext.bond_yields,"rate");
   const oilMap=valueMap(economicContext.oil_prices,"usd_per_barrel");
