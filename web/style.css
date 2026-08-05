@@ -15,3 +15,15 @@ main{max-width:1280px;margin:auto;padding:30px 22px 56px}.hero{display:flex;alig
 
 @media(max-width:900px){.explore-grid{grid-template-columns:1fr}.results{height:360px}.selections{grid-template-columns:1fr}.series-list{grid-template-columns:1fr}.series-item{grid-template-columns:12px minmax(100px,1fr) minmax(140px,.8fr) 80px auto}.hero{align-items:start}.data-badge{display:none}}
 @media(max-width:600px){main{padding:18px 12px 40px}.hero h1{font-size:31px}.search-bar button{padding:0 16px}.search-bar input{min-width:0}.panel,.search-card{padding:13px;border-radius:16px}#map{height:390px}.selection{grid-template-columns:minmax(0,1fr) 105px auto}.metrics{grid-template-columns:1fr 1fr}.chart-wrap{height:320px}.graph-chart-wrap{height:340px}.graph-toolbar{align-items:stretch}.save-state{width:100%;margin-left:0}.series-item{grid-template-columns:12px minmax(0,1fr) auto}.series-item .area-select{grid-column:2/4}.series-item .color-select{grid-column:2/3}.series-item .remove-btn{grid-column:3/4}.graph-board{padding:10px}.graph-boards,.graph-empty{min-height:380px}}
+.economic-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+.economic-grid section,.policy-panel{border:1px solid #e5e7eb;border-radius:12px;background:#fafafa;padding:12px}
+.economic-title{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px}
+.economic-title b{font-size:.92rem;color:#111827}.economic-title span{font-size:.75rem;color:#6b7280}
+.economic-chart{height:140px}.policy-panel{margin-top:12px}
+.policy-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 14px}
+.policy-list li{display:grid;grid-template-columns:22px 72px 1fr;align-items:start;gap:6px;font-size:.78rem;color:#4b5563}
+.policy-list li b{font-weight:600;color:#374151}.policy-list time{font-variant-numeric:tabular-nums}
+.policy-number{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:50%;background:#fef3c7;color:#92400e;font-weight:800}
+.policy-empty{grid-template-columns:1fr!important;color:#6b7280!important}
+.economic-sources{font-size:.72rem;color:#6b7280;margin:9px 2px 0}.economic-sources a{color:#0f766e}
+@media(max-width:720px){.economic-grid{grid-template-columns:1fr}.policy-list{grid-template-columns:1fr}.economic-chart{height:125px}}

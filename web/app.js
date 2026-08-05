@@ -1,4 +1,5 @@
 let allTrades = [], apartmentGroups = [], graphBoards = [], activeGraphId = null, map, infoWindow;
+let economicContext = {exchange_rates:[],base_rates:[],policies:[]};
 const markers = new Map(), charts = new Map();
 let lastGeocodeAt = 0;
 const geoCache = JSON.parse(localStorage.getItem("aptGeoCache") || "{}");
@@ -56,11 +57,13 @@ function median(values){
 
 async function load(){
   try{
-    const [rows,complexes,history]=await Promise.all([
+    const [rows,complexes,history,economic]=await Promise.all([
       fetchJson("data/latest_trades.json"),
       fetchJson("data/complexes.json"),
-      fetchJson("data/apartment_history.json")
+      fetchJson("data/apartment_history.json"),
+      fetchJson("data/economic_context.json")
     ]);
+    economicContext=economic&&Array.isArray(economic.exchange_rates)?economic:economicContext;
     allTrades=rows.filter(r=>!r.cancelled);
     const groups=new Map(), lookup=new Map(), localityLookup=new Map();
     complexes.forEach(c=>{
@@ -182,8 +185,8 @@ function renderResults(matches,query){
   byId("results").innerHTML=matches.map(item=>{
     const g=item.group,added=seriesAdded(g);
     const distance=Number.isFinite(item.distance)?fmt(item.distance)+"km":(g.trades.length||g.history.length?"거래자료 있음":"단지 기본정보");
-    const price=g.latest?fmt(g.latest.price_eok)+"억":"거래 없음";
-    const areas=g.areas.length?"전용 "+g.areas.map(fmt).join(", ")+"㎡":"평형 거래자료 없음";
+    const price=g.latest?fmt(g.latest.price_eok)+"억":"아직 실거래 수집 전";
+    const areas=g.areas.length?"전용 "+g.areas.map(fmt).join(", ")+"㎡":"수집 후 평형 선택 가능";
     const aliases=g.trade_names?.length?'<small class="trade-alias">실거래 등록명: '+g.trade_names.map(esc).join(", ")+'</small>':"";
     return '<div class="result" data-key="'+esc(g.key)+'"><div class="result-top"><div><h3>'+esc(g.apt_name)+'</h3><p>'+esc(addressOf(g))+'</p>'+aliases+'</div><span class="price">'+price+'</span></div><div class="result-actions"><span>'+distance+' · '+areas+'</span><button class="add-btn" type="button" '+(added?"disabled":"")+'>'+(added?"현재 그래프에 추가됨":"추가")+"</button></div></div>";
   }).join("");
@@ -313,8 +316,12 @@ function renderGraphBoards(){
     '<div class="graph-board-head"><div><label for="graphName">그래프 이름</label><input id="graphName" class="graph-name" maxlength="30" value="'+esc(board.name)+'"></div>'+
     '<span>'+board.series.length+' / 10개 단지</span></div>'+
     '<div class="series-list">'+(board.series.length?board.series.map(series=>seriesControl(board,series)).join(""):'<div class="series-empty">검색한 단지의 ‘추가’ 버튼을 누르면 검은색 선으로 표시됩니다.</div>')+'</div>'+
-    '<div class="chart-wrap graph-chart-wrap"><canvas aria-label="'+esc(board.name)+' 장기 실거래가 그래프"></canvas></div>'+
-    '<p class="chart-help">점을 누르거나 마우스를 올리면 해당 월의 중앙 실거래가와 거래 건수를 확인할 수 있습니다.</p></article>';
+    '<div class="chart-wrap graph-chart-wrap"><canvas class="price-chart" aria-label="'+esc(board.name)+' 장기 실거래가 그래프"></canvas></div>'+
+    '<p class="chart-help">점을 누르거나 마우스를 올리면 해당 월의 중앙 실거래가와 거래 건수를 확인할 수 있습니다. 숫자 세로선은 아래 주요 정책 발표 시점입니다.</p>'+
+    '<div class="economic-grid"><section><div class="economic-title"><b>원·달러 환율</b><span>월평균 · 원/USD</span></div><div class="economic-chart"><canvas class="exchange-chart" aria-label="원달러 환율 그래프"></canvas></div></section>'+
+    '<section><div class="economic-title"><b>한국은행 기준금리</b><span>월말 적용 · %</span></div><div class="economic-chart"><canvas class="rate-chart" aria-label="한국은행 기준금리 그래프"></canvas></div></section></div>'+
+    '<div class="policy-panel"><div class="economic-title"><b>주요 정부 부동산 정책</b><span>발표·고지일 기준</span></div><ol class="policy-list"></ol></div>'+
+    '<p class="economic-sources">출처: <a href="https://fred.stlouisfed.org/series/EXKOUS/" target="_blank" rel="noopener">FRED 원·달러 월평균</a> · <a href="https://www.bok.or.kr/portal/singl/baseRate/list.do?dataSeCd=01&menuNo=200643" target="_blank" rel="noopener">한국은행 기준금리</a> · 국토교통부·관계부처 발표자료</p></article>';
 
   const nameInput=byId("graphName");
   nameInput.addEventListener("input",e=>{
@@ -335,7 +342,7 @@ function renderGraphBoards(){
     });
     card.querySelector(".remove-btn").addEventListener("click",()=>removeSeries(board.id,series.id));
   });
-  renderBoardChart(board,byId("graphBoards").querySelector("canvas"));
+  renderBoardChart(board,byId("graphBoards").querySelector(".graph-board"));
   refreshResultButtons();
 }
 
@@ -351,37 +358,73 @@ function seriesControl(board,series){
     '<button class="remove-btn" type="button" aria-label="'+esc(group.apt_name)+' 그래프에서 삭제">삭제</button></div>';
 }
 
-function renderBoardChart(board,canvas){
+function monthRange(start,end){
+  if(!start||!end) return [];
+  const months=[],cursor=new Date(start+"-01T00:00:00Z"),last=new Date(end+"-01T00:00:00Z");
+  while(cursor<=last){months.push(cursor.toISOString().slice(0,7));cursor.setUTCMonth(cursor.getUTCMonth()+1);}
+  return months;
+}
+
+function rateAtMonth(month){
+  let value=null;
+  for(const item of economicContext.base_rates||[]){if(String(item.date).slice(0,7)<=month)value=Number(item.rate);else break;}
+  return value;
+}
+
+const policyMarkerPlugin={
+  id:"policyMarkers",
+  afterDatasetsDraw(chart,args,options){
+    const items=options.items||[];
+    if(!items.length||!chart.scales.x)return;
+    const ctx=chart.ctx,area=chart.chartArea;
+    ctx.save();
+    items.forEach((item,index)=>{
+      const labelIndex=chart.data.labels.indexOf(String(item.date).slice(0,7));
+      if(labelIndex<0)return;
+      const x=chart.scales.x.getPixelForValue(labelIndex);
+      ctx.strokeStyle="rgba(180,83,9,.55)";ctx.setLineDash([4,4]);ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(x,area.top);ctx.lineTo(x,area.bottom);ctx.stroke();
+      ctx.setLineDash([]);ctx.fillStyle="#92400e";ctx.font="bold 10px system-ui";
+      ctx.fillText(String(index+1),Math.min(x+3,area.right-12),area.top+12);
+    });
+    ctx.restore();
+  }
+};
+
+function policyHtml(items){
+  if(!items.length)return '<li class="policy-empty">선택한 거래 기간 안에 표시할 주요 정책이 없습니다.</li>';
+  return items.map((item,index)=>'<li><span class="policy-number">'+(index+1)+'</span><time>'+esc(item.date)+'</time><b>'+esc(item.title)+'</b></li>').join("");
+}
+
+function renderBoardChart(board,container){
   const seriesRows=board.series.map(series=>{
     const group=apartmentGroups.find(g=>g.key===series.key);
-    if(!group) return null;
+    if(!group)return null;
     let points=group.history.filter(r=>Number(r.area_m2)===series.area).map(r=>({month:r.month,price:Number(r.median_price_eok),count:Number(r.trade_count||0)}));
     if(!points.length){
-      const daily=new Map();
-      group.trades.filter(r=>Number(r.area_m2)===series.area).forEach(r=>{if(!daily.has(r.trade_date))daily.set(r.trade_date,[]);daily.get(r.trade_date).push(r.price_eok);});
-      points=[...daily].map(([month,values])=>({month,price:median(values),count:values.length}));
+      const monthly=new Map();
+      group.trades.filter(r=>Number(r.area_m2)===series.area).forEach(r=>{const month=String(r.trade_date).slice(0,7);if(!monthly.has(month))monthly.set(month,[]);monthly.get(month).push(r.price_eok);});
+      points=[...monthly].map(([month,values])=>({month,price:median(values),count:values.length}));
     }
     return {series,group,points};
   }).filter(Boolean);
-  const labels=[...new Set(seriesRows.flatMap(item=>item.points.map(point=>point.month)))].sort();
+  const pointMonths=[...new Set(seriesRows.flatMap(item=>item.points.map(point=>point.month)))].sort();
+  const labels=pointMonths.length?monthRange(pointMonths[0],pointMonths[pointMonths.length-1]):[];
   const datasets=seriesRows.map(item=>{
     const prices=new Map(item.points.map(point=>[point.month,point.price]));
     const counts=new Map(item.points.map(point=>[point.month,point.count]));
-    return {
-      label:item.group.apt_name+" · "+(item.series.area?fmt(item.series.area)+"㎡":"평형 없음"),
-      data:labels.map(month=>prices.has(month)?prices.get(month):null),
-      tradeCounts:labels.map(month=>counts.get(month)||0),
-      borderColor:item.series.color,
-      backgroundColor:item.series.color,
-      pointRadius:2.5,
-      pointHoverRadius:6,
-      borderWidth:2,
-      tension:.18,
-      spanGaps:true
-    };
+    return {label:item.group.apt_name+" · "+(item.series.area?fmt(item.series.area)+"㎡":"평형 없음"),data:labels.map(month=>prices.has(month)?prices.get(month):null),tradeCounts:labels.map(month=>counts.get(month)||0),borderColor:item.series.color,backgroundColor:item.series.color,pointRadius:2.5,pointHoverRadius:6,borderWidth:2,tension:.18,spanGaps:true};
   });
-  const chart=new Chart(canvas,{type:"line",data:{labels,datasets},options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"nearest",intersect:true},scales:{x:{title:{display:true,text:"거래월"},ticks:{autoSkip:true,maxTicksLimit:12}},y:{title:{display:true,text:"월 중앙 실거래가 (억원)"},beginAtZero:false}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{displayColors:true,callbacks:{title:items=>items[0]?.label||"",label:c=>c.dataset.label+": "+fmt(c.raw)+"억원",afterLabel:c=>"해당 월 거래 "+fmt(c.dataset.tradeCounts[c.dataIndex])+"건의 중앙값"}}}}});
-  charts.set(board.id,chart);
+  const policies=(economicContext.policies||[]).filter(item=>labels.includes(String(item.date).slice(0,7)));
+  container.querySelector(".policy-list").innerHTML=policyHtml(policies);
+  const priceChart=new Chart(container.querySelector(".price-chart"),{type:"line",data:{labels,datasets},plugins:[policyMarkerPlugin],options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"nearest",intersect:true},scales:{x:{title:{display:true,text:"거래월"},ticks:{autoSkip:true,maxTicksLimit:12}},y:{title:{display:true,text:"월 중앙 실거래가 (억원)"},beginAtZero:false}},plugins:{policyMarkers:{items:policies},legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{displayColors:true,callbacks:{title:items=>items[0]?.label||"",label:c=>c.dataset.label+": "+fmt(c.raw)+"억원",afterLabel:c=>"해당 월 거래 "+fmt(c.dataset.tradeCounts[c.dataIndex])+"건의 중앙값"}}}}});
+  const exchangeMap=new Map((economicContext.exchange_rates||[]).map(item=>[item.month,Number(item.krw_per_usd)]));
+  const commonOptions=(yTitle,callback)=>({maintainAspectRatio:false,responsive:true,interaction:{mode:"index",intersect:false},scales:{x:{ticks:{display:false},grid:{display:false}},y:{title:{display:true,text:yTitle},beginAtZero:false}},plugins:{legend:{display:false},tooltip:{callbacks:{label:callback}}}});
+  const exchangeChart=new Chart(container.querySelector(".exchange-chart"),{type:"line",data:{labels,datasets:[{label:"원·달러 환율",data:labels.map(month=>exchangeMap.get(month)??null),borderColor:"#0f766e",backgroundColor:"#0f766e",pointRadius:0,pointHoverRadius:4,borderWidth:1.8,tension:.2,spanGaps:true}]},options:commonOptions("원/USD",c=>fmt(c.raw)+"원/USD")});
+  const rateChart=new Chart(container.querySelector(".rate-chart"),{type:"line",data:{labels,datasets:[{label:"한국은행 기준금리",data:labels.map(rateAtMonth),borderColor:"#7c3aed",backgroundColor:"rgba(124,58,237,.1)",fill:true,stepped:true,pointRadius:0,pointHoverRadius:4,borderWidth:1.8}]},options:commonOptions("%",c=>fmt(c.raw)+"%")});
+  charts.set(board.id+"-price",priceChart);
+  charts.set(board.id+"-exchange",exchangeChart);
+  charts.set(board.id+"-rate",rateChart);
 }
 
 function renderDetails(group,area){
