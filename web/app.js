@@ -1,5 +1,5 @@
 let allTrades = [], apartmentGroups = [], graphBoards = [], activeGraphId = null, map, infoWindow;
-let economicContext = {exchange_rates:[],base_rates:[],policies:[]};
+let economicContext = {exchange_rates:[],base_rates:[],bond_yields:[],oil_prices:[],policies:[]};
 const markers = new Map(), charts = new Map();
 let lastGeocodeAt = 0;
 const geoCache = JSON.parse(localStorage.getItem("aptGeoCache") || "{}");
