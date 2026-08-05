@@ -125,14 +125,18 @@ function renderQuickSearch(){
 function score(group, query){
   const q=compactName(query);
   const names=[group.apt_name,...(group.trade_names||[])].map(compactName);
-  const place=compactName(group.region_name+group.dong+group.jibun);
+  const place=compactName(group.region_name+group.dong+group.jibun);  const tokens=query.toLowerCase().split(/\s+/).filter(Boolean);
+  const tokenScores=tokens.map(token=>{
+    const t=compactName(token);
+    return names.some(name=>name.includes(t))?120:(place.includes(t)?100:0);
+  });
+  if(tokens.length>1&&tokenScores.every(Boolean)) return 800+tokenScores.reduce((sum,value)=>sum+value,0);
   if(names.some(name=>name===q)) return 1000;
   if(names.some(name=>name.startsWith(q))) return 700;
   if(names.some(name=>name.includes(q)||q.includes(name))) return 500;
   if(place.includes(q)) return 350;
   if(q.length>=3&&names.some(name=>isSubsequence(q,name))) return 300;
-  const tokens=query.toLowerCase().split(/\s+/).filter(Boolean);
-  return tokens.reduce((sum,t)=>sum+(names.some(name=>name.includes(compactName(t)))?120:0)+(place.includes(compactName(t))?70:0),0);
+  return tokenScores.reduce((sum,value)=>sum+value,0);
 }
 
 async function search(){
