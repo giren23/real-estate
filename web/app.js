@@ -332,7 +332,7 @@ function renderGraphBoards(){
     '<span>'+board.series.length+' / 10개 단지</span></div>'+
     '<div class="series-list">'+(board.series.length?board.series.map(series=>seriesControl(board,series)).join(""):'<div class="series-empty">검색한 단지의 ‘추가’ 버튼을 누르면 검은색 선으로 표시됩니다.</div>')+'</div>'+
     '<section class="stack-chart price-section"><div class="economic-title"><b>'+chartHeading+'</b><span>'+chartSubtitle+'</span></div><div class="chart-wrap graph-chart-wrap"><canvas class="price-chart" aria-label="'+esc(board.name)+' '+chartHeading+' 그래프"></canvas></div></section>'+
-    '<p class="chart-help">작은 점을 누르거나 마우스를 올리면 해당 월의 중앙 실거래가와 거래 건수를 확인할 수 있습니다. 숫자 세로선은 아래 주요 정책 발표 시점입니다.</p>'+
+    '<p class="chart-help">작은 점을 누르거나 마우스를 올리면 해당 월의 중앙 '+(board.priceMode==="pyeong"?"평당가":"실거래가")+'와 거래 건수를 확인할 수 있습니다. 숫자 세로선은 아래 주요 정책 발표 시점입니다.</p>'+
     '<div class="economic-stack">'+
       '<section class="stack-chart"><div class="economic-title"><b>원·달러 환율</b><span>월평균 · 원/USD</span></div><div class="economic-chart"><canvas class="exchange-chart" aria-label="원달러 환율 그래프"></canvas></div></section>'+
       '<section class="stack-chart"><div class="economic-title"><b>한국은행 기준금리</b><span>월말 적용 · %</span></div><div class="economic-chart"><canvas class="rate-chart" aria-label="한국은행 기준금리 그래프"></canvas></div></section>'+
