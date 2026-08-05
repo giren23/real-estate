@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="아파트 단지를 검색하고 지도에서 확인하며 최대 10개 단지의 실거래가를 비교합니다.">
+<meta name="description" content="전국 아파트를 검색하고 최대 10개 그래프 작업공간에서 평형별 장기 실거래가를 비교하고 저장합니다.">
 <title>아파트 실거래가 지도 비교</title>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
@@ -16,7 +16,7 @@
   <div>
     <span class="eyebrow">아파트 실거래가 탐색기</span>
     <h1>찾고, 고르고, 한눈에 비교하세요</h1>
-    <p>지역이나 아파트 단지를 검색하면 가까운 단지를 지도에서 찾고, 평형별 실거래가 추이를 최대 10개까지 비교합니다.</p>
+    <p>지역이나 아파트 단지를 검색하고, 이름을 붙인 그래프에 원하는 평형을 담아 장기 실거래가를 비교하고 저장하세요.</p>
   </div>
   <div class="data-badge"><b id="dataCount">—</b><span>수집된 실거래</span></div>
 </header>
@@ -57,18 +57,24 @@
 </section>
 
 <section class="panel compare-panel">
-  <div class="panel-head">
-    <div><span class="step">3</span><h2>선택한 단지 비교</h2></div>
-    <span id="selectionCount">0 / 10</span>
+  <div class="panel-head graph-title-row">
+    <div><span class="step">3</span><h2>장기 실거래 그래프</h2></div>
+    <span id="graphCount">0 / 10</span>
   </div>
-  <div id="selections" class="selections">
-    <div class="empty">검색 결과에서 비교할 단지를 추가하세요.</div>
+  <div class="graph-toolbar" aria-label="그래프 관리">
+    <button id="addGraphBtn" class="primary-action" type="button">그래프 추가</button>
+    <button id="removeGraphBtn" class="danger-action" type="button" disabled>선택 그래프 제거</button>
+    <button id="saveGraphsBtn" class="save-action" type="button" disabled>저장</button>
+    <span id="saveState" class="save-state">저장된 그래프가 없습니다.</span>
   </div>
-  <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+  <div id="graphTabs" class="graph-tabs" role="tablist" aria-label="그래프 목록"></div>
+  <div id="graphBoards" class="graph-boards">
+    <div class="graph-empty"><b>아직 만든 그래프가 없습니다.</b><span>‘그래프 추가’를 눌러 첫 번째 그래프를 만들어 보세요.</span></div>
+  </div>
 </section>
 
 <section class="panel details-panel">
-  <div class="panel-head"><div><span class="step">4</span><h2>최근 실거래 상세</h2></div></div>
+  <div class="panel-head"><div><span class="step">4</span><h2>선택 단지 최근 실거래 상세</h2></div></div>
   <div id="metrics" class="metrics"></div>
   <div class="table-wrap"><table id="trades"></table></div>
 </section>
