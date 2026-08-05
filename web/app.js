@@ -247,7 +247,7 @@ function renderGraphBoards(){
   charts.clear();
   byId("graphCount").textContent=graphBoards.length+" / 10";
   byId("removeGraphBtn").disabled=!activeBoard();
-  byId("saveGraphsBtn").disabled=!graphBoards.length;
+  byId("saveGraphsBtn").disabled=false;
 
   if(!graphBoards.length){
     byId("graphTabs").innerHTML="";
