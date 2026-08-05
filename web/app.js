@@ -12,9 +12,40 @@ const fmt = n => Number(n || 0).toLocaleString("ko-KR", {maximumFractionDigits: 
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 function normalized(value){ return String(value||"").replace(/\s+/g,"").replace(/아파트$/,"").toLowerCase(); }
+function compactName(value){ return normalized(value).replace(/[()（）\[\]{}·.,\-_/]/g,""); }
 function identity(row){ return [normalized(row.region_name),normalized(row.dong),normalized(row.apt_name)].join("|"); }
-function groupKey(row){ return [row.lawd_cd,row.dong,row.apt_name].join("|"); }
+function groupKey(row){ return [String(row.lawd_cd||"").slice(0,5),row.dong,row.apt_name].join("|"); }
+function localityKey(row){ return [String(row.lawd_cd||row.bjd_code||"").slice(0,5),normalized(row.dong)].join("|"); }
 function addressOf(group){ return group.address||[group.region_name,group.dong,group.jibun].filter(Boolean).join(" "); }
+function apartmentNameScore(left,right){
+  const a=compactName(left),b=compactName(right);
+  if(!a||!b) return 0;
+  if(a===b) return 1000;
+  const shorter=a.length<=b.length?a:b,longer=a.length>b.length?a:b;
+  if(shorter.length>=4&&longer.includes(shorter)) return 850+Math.round(shorter.length/longer.length*100);
+  const aBase=a.replace(/\d+차$/,""),bBase=b.replace(/\d+차$/,"");
+  if(aBase===bBase) return 940;
+  const baseShort=aBase.length<=bBase.length?aBase:bBase,baseLong=aBase.length>bBase.length?aBase:bBase;
+  if(baseShort.length>=5&&baseLong.includes(baseShort)) return 800+Math.round(baseShort.length/baseLong.length*100);
+  return 0;
+}
+function findCompatibleGroup(row,localityLookup){
+  const candidates=(localityLookup.get(localityKey(row))||[]).filter(group=>group.fromDirectory);
+  const ranked=candidates.map(group=>({group,score:apartmentNameScore(group.apt_name,row.apt_name)})).filter(item=>item.score>=850).sort((a,b)=>b.score-a.score);
+  if(!ranked.length) return null;
+  if(ranked[1]&&ranked[0].score-ranked[1].score<25) return null;
+  return ranked[0].group;
+}
+function registerGroup(group,groups,lookup,localityLookup){
+  groups.set(group.key,group);
+  lookup.set(identity(group),group);
+  const localKey=localityKey(group);
+  if(!localityLookup.has(localKey)) localityLookup.set(localKey,[]);
+  localityLookup.get(localKey).push(group);
+}
+function createGroup(row,key,address="",fromDirectory=false){
+  return {key,lawd_cd:String(row.lawd_cd||row.bjd_code||"").slice(0,5),region_name:row.region_name,dong:row.dong,jibun:row.jibun||"",address,apt_name:row.apt_name,trades:[],history:[],tradeAliases:new Set(),fromDirectory};
+}
 function isSubsequence(needle,haystack){ let i=0; for(const char of haystack){if(char===needle[i]) i++;} return i===needle.length; }
 async function fetchJson(path){ try{const response=await fetch(path);return response.ok?response.json():[];}catch{return [];} }
 function median(values){
@@ -31,33 +62,43 @@ async function load(){
       fetchJson("data/apartment_history.json")
     ]);
     allTrades=rows.filter(r=>!r.cancelled);
-    const groups=new Map(), lookup=new Map();
+    const groups=new Map(), lookup=new Map(), localityLookup=new Map();
     complexes.forEach(c=>{
       const key="complex|"+(c.complex_code||identity(c));
-      const group={key,lawd_cd:String(c.bjd_code||"").slice(0,5),region_name:c.region_name,dong:c.dong,jibun:"",address:c.address,apt_name:c.apt_name,trades:[],history:[]};
-      groups.set(key,group);lookup.set(identity(group),group);
+      registerGroup(createGroup(c,key,c.address||"",true),groups,lookup,localityLookup);
     });
     allTrades.forEach(row=>{
-      let group=lookup.get(identity(row));
+      let group=lookup.get(identity(row))||findCompatibleGroup(row,localityLookup);
       if(!group){
         const key=groupKey(row);
-        if(!groups.has(key)) groups.set(key,{key,lawd_cd:row.lawd_cd,region_name:row.region_name,dong:row.dong,jibun:row.jibun,address:"",apt_name:row.apt_name,trades:[],history:[]});
-        group=groups.get(key);lookup.set(identity(group),group);
+        group=groups.get(key);
+        if(!group){
+          group=createGroup(row,key);
+          registerGroup(group,groups,lookup,localityLookup);
+        }
       }
+      lookup.set(identity(row),group);
+      if(normalized(group.apt_name)!==normalized(row.apt_name)) group.tradeAliases.add(row.apt_name);
       group.trades.push(row);
     });
     history.forEach(row=>{
-      let group=lookup.get(identity(row));
+      let group=lookup.get(identity(row))||findCompatibleGroup(row,localityLookup);
       if(!group){
         const key=groupKey(row);
-        if(!groups.has(key)) groups.set(key,{key,lawd_cd:row.lawd_cd,region_name:row.region_name,dong:row.dong,jibun:"",address:"",apt_name:row.apt_name,trades:[],history:[]});
-        group=groups.get(key);lookup.set(identity(group),group);
+        group=groups.get(key);
+        if(!group){
+          group=createGroup(row,key);
+          registerGroup(group,groups,lookup,localityLookup);
+        }
       }
+      lookup.set(identity(row),group);
+      if(normalized(group.apt_name)!==normalized(row.apt_name)) group.tradeAliases.add(row.apt_name);
       group.history.push(row);
     });
     apartmentGroups=[...groups.values()].map(g=>{
       g.trades.sort((a,b)=>a.trade_date.localeCompare(b.trade_date));
       g.history.sort((a,b)=>a.month.localeCompare(b.month));
+      g.trade_names=[...(g.tradeAliases||[])].sort();
       g.areas=[...new Set(g.trades.map(r=>Number(r.area_m2)).concat(g.history.map(r=>Number(r.area_m2))))].filter(Boolean).sort((a,b)=>a-b);
       const lastTrade=g.trades[g.trades.length-1],lastHistory=g.history[g.history.length-1];
       g.latest=lastTrade||(lastHistory?{trade_date:lastHistory.month,price_eok:lastHistory.median_price_eok}:null);
@@ -79,16 +120,16 @@ function renderQuickSearch(){
 }
 
 function score(group, query){
-  const q=query.replace(/\s+/g,"").toLowerCase();
-  const apt=group.apt_name.replace(/\s+/g,"").toLowerCase();
-  const place=(group.region_name+group.dong+group.jibun).replace(/\s+/g,"").toLowerCase();
-  if(apt===q) return 1000;
-  if(apt.startsWith(q)) return 700;
-  if(apt.includes(q)) return 500;
+  const q=compactName(query);
+  const names=[group.apt_name,...(group.trade_names||[])].map(compactName);
+  const place=compactName(group.region_name+group.dong+group.jibun);
+  if(names.some(name=>name===q)) return 1000;
+  if(names.some(name=>name.startsWith(q))) return 700;
+  if(names.some(name=>name.includes(q)||q.includes(name))) return 500;
   if(place.includes(q)) return 350;
-  if(q.length>=3&&isSubsequence(q,apt)) return 300;
+  if(q.length>=3&&names.some(name=>isSubsequence(q,name))) return 300;
   const tokens=query.toLowerCase().split(/\s+/).filter(Boolean);
-  return tokens.reduce((sum,t)=>sum+(apt.includes(t)?120:0)+(place.includes(t)?70:0),0);
+  return tokens.reduce((sum,t)=>sum+(names.some(name=>name.includes(compactName(t)))?120:0)+(place.includes(compactName(t))?70:0),0);
 }
 
 async function search(){
@@ -143,7 +184,8 @@ function renderResults(matches,query){
     const distance=Number.isFinite(item.distance)?fmt(item.distance)+"km":(g.trades.length||g.history.length?"거래자료 있음":"단지 기본정보");
     const price=g.latest?fmt(g.latest.price_eok)+"억":"거래 없음";
     const areas=g.areas.length?"전용 "+g.areas.map(fmt).join(", ")+"㎡":"평형 거래자료 없음";
-    return '<div class="result" data-key="'+esc(g.key)+'"><div class="result-top"><div><h3>'+esc(g.apt_name)+'</h3><p>'+esc(addressOf(g))+'</p></div><span class="price">'+price+'</span></div><div class="result-actions"><span>'+distance+' · '+areas+'</span><button class="add-btn" type="button" '+(added?"disabled":"")+'>'+(added?"현재 그래프에 추가됨":"추가")+"</button></div></div>";
+    const aliases=g.trade_names?.length?'<small class="trade-alias">실거래 등록명: '+g.trade_names.map(esc).join(", ")+'</small>':"";
+    return '<div class="result" data-key="'+esc(g.key)+'"><div class="result-top"><div><h3>'+esc(g.apt_name)+'</h3><p>'+esc(addressOf(g))+'</p>'+aliases+'</div><span class="price">'+price+'</span></div><div class="result-actions"><span>'+distance+' · '+areas+'</span><button class="add-btn" type="button" '+(added?"disabled":"")+'>'+(added?"현재 그래프에 추가됨":"추가")+"</button></div></div>";
   }).join("");
   byId("results").querySelectorAll(".result").forEach(card=>{
     const group=apartmentGroups.find(g=>g.key===card.dataset.key);
