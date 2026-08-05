@@ -321,7 +321,7 @@ function renderBoardChart(board,canvas){
     }
     return {label:group.apt_name+" · "+(series.area?fmt(series.area)+"㎡":"평형 없음"),data:points,borderColor:series.color,backgroundColor:series.color,pointRadius:2.5,pointHoverRadius:6,borderWidth:2,tension:.18,spanGaps:true};
   }).filter(Boolean);
-  const chart=new Chart(canvas,{type:"line",data:{datasets},options:{maintainAspectRatio:false,responsive:true,parsing:false,interaction:{mode:"nearest",intersect:true},scales:{x:{type:"category",title:{display:true,text:"거래월"}},y:{title:{display:true,text:"월 중앙 실거래가 (억원)"},beginAtZero:false}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{displayColors:true,callbacks:{title:items=>items[0]?.raw?.x||"",label:c=>c.dataset.label+": "+fmt(c.raw.y)+"억원",afterLabel:c=>"해당 월 거래 "+fmt(c.raw.count)+"건의 중앙값"}}}}});
+  const chart=new Chart(canvas,{type:"line",data:{datasets},options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"nearest",intersect:true},scales:{x:{type:"category",title:{display:true,text:"거래월"}},y:{title:{display:true,text:"월 중앙 실거래가 (억원)"},beginAtZero:false}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{displayColors:true,callbacks:{title:items=>items[0]?.raw?.x||"",label:c=>c.dataset.label+": "+fmt(c.raw.y)+"억원",afterLabel:c=>"해당 월 거래 "+fmt(c.raw.count)+"건의 중앙값"}}}}});
   charts.set(board.id,chart);
 }
 
