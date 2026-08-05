@@ -3,5 +3,5 @@
   "apartment_list_endpoint": "https://apis.data.go.kr/1613000/AptListService3/getTotalAptList3",
   "default_history_months": 240,
   "max_months_per_run": 300,
-  "request_delay_seconds": 0.15
+  "request_delay_seconds": 0.5
 }

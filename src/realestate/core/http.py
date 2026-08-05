@@ -10,7 +10,7 @@ class ApiError(RuntimeError):
     pass
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5), reraise=True)
+@retry(stop=stop_after_attempt(7), wait=wait_exponential(multiplier=2, min=2, max=60), reraise=True)
 def get_text(
     url: str,
     params: dict,

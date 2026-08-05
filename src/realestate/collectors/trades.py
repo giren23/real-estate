@@ -129,7 +129,7 @@ def collect_trades(settings: Settings, regions: pd.DataFrame, months: list[str],
         for ym in months:
             tasks.append((len(tasks) + 1, lawd_cd, region_name, ym))
 
-    worker_count = min(6, total)
+    worker_count = min(2, total)
     failures: list[str] = []
     print(f"[COLLECT] 총 {total:,}개 요청, 동시 요청 {worker_count}개", flush=True)
     with ThreadPoolExecutor(max_workers=worker_count) as executor:
