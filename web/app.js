@@ -214,7 +214,7 @@ function refreshResultButtons(){
 
 function addGraphBoard(){
   if(graphBoards.length>=10){setStatus("그래프는 최대 10개까지 만들 수 있습니다.",true);return;}
-  const board={id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),series:[]};
+  const board={id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),periodYears:20,series:[]};
   graphBoards.push(board);
   activeGraphId=board.id;
   renderGraphBoards();
@@ -259,6 +259,7 @@ function restoreGraphBoards(){
     graphBoards=saved.boards.slice(0,10).map((board,index)=>({
       id:String(board.id||makeId("graph")),
       name:String(board.name||"그래프 "+(index+1)).slice(0,30),
+      periodYears:[1,3,5,10,20,0].includes(Number(board.periodYears))?Number(board.periodYears):20,
       series:Array.isArray(board.series)?board.series.slice(0,10).filter(series=>apartmentGroups.some(g=>g.key===series.key)).map(series=>({
         id:String(series.id||makeId("series")),
         key:String(series.key),
@@ -316,16 +317,24 @@ function renderGraphBoards(){
 
   const board=activeBoard()||graphBoards[0];
   activeGraphId=board.id;
+  if(![1,3,5,10,20,0].includes(Number(board.periodYears))) board.periodYears=20;
+  const periodOptions=[[1,"최근 1년"],[3,"최근 3년"],[5,"최근 5년"],[10,"최근 10년"],[20,"최근 20년"],[0,"전체 기간"]]
+    .map(([value,label])=>'<option value="'+value+'" '+(Number(board.periodYears)===value?"selected":"")+'>'+label+'</option>').join("");
   byId("graphBoards").innerHTML='<article class="graph-board" data-board-id="'+esc(board.id)+'">'+
-    '<div class="graph-board-head"><div><label for="graphName">그래프 이름</label><input id="graphName" class="graph-name" maxlength="30" value="'+esc(board.name)+'"></div>'+
+    '<div class="graph-board-head"><div class="graph-head-fields"><div><label for="graphName">그래프 이름</label><input id="graphName" class="graph-name" maxlength="30" value="'+esc(board.name)+'"></div>'+
+    '<div class="period-control"><label for="graphPeriod">그래프 표시 기간</label><select id="graphPeriod">'+periodOptions+'</select></div></div>'+
     '<span>'+board.series.length+' / 10개 단지</span></div>'+
     '<div class="series-list">'+(board.series.length?board.series.map(series=>seriesControl(board,series)).join(""):'<div class="series-empty">검색한 단지의 ‘추가’ 버튼을 누르면 검은색 선으로 표시됩니다.</div>')+'</div>'+
-    '<div class="chart-wrap graph-chart-wrap"><canvas class="price-chart" aria-label="'+esc(board.name)+' 장기 실거래가 그래프"></canvas></div>'+
-    '<p class="chart-help">점을 누르거나 마우스를 올리면 해당 월의 중앙 실거래가와 거래 건수를 확인할 수 있습니다. 숫자 세로선은 아래 주요 정책 발표 시점입니다.</p>'+
-    '<div class="economic-grid"><section><div class="economic-title"><b>원·달러 환율</b><span>월평균 · 원/USD</span></div><div class="economic-chart"><canvas class="exchange-chart" aria-label="원달러 환율 그래프"></canvas></div></section>'+
-    '<section><div class="economic-title"><b>한국은행 기준금리</b><span>월말 적용 · %</span></div><div class="economic-chart"><canvas class="rate-chart" aria-label="한국은행 기준금리 그래프"></canvas></div></section></div>'+
-    '<div class="policy-panel"><div class="economic-title"><b>주요 정부 부동산 정책</b><span>발표·고지일 기준</span></div><ol class="policy-list"></ol></div>'+
-    '<p class="economic-sources">출처: <a href="https://fred.stlouisfed.org/series/EXKOUS/" target="_blank" rel="noopener">FRED 원·달러 월평균</a> · <a href="https://www.bok.or.kr/portal/singl/baseRate/list.do?dataSeCd=01&menuNo=200643" target="_blank" rel="noopener">한국은행 기준금리</a> · 국토교통부·관계부처 발표자료</p></article>';
+    '<section class="stack-chart price-section"><div class="economic-title"><b>아파트 실거래가</b><span>선택 평형의 월별 중앙값 · 억원</span></div><div class="chart-wrap graph-chart-wrap"><canvas class="price-chart" aria-label="'+esc(board.name)+' 실거래가 그래프"></canvas></div></section>'+
+    '<p class="chart-help">작은 점을 누르거나 마우스를 올리면 해당 월의 중앙 실거래가와 거래 건수를 확인할 수 있습니다. 숫자 세로선은 아래 주요 정책 발표 시점입니다.</p>'+
+    '<div class="economic-stack">'+
+      '<section class="stack-chart"><div class="economic-title"><b>원·달러 환율</b><span>월평균 · 원/USD</span></div><div class="economic-chart"><canvas class="exchange-chart" aria-label="원달러 환율 그래프"></canvas></div></section>'+
+      '<section class="stack-chart"><div class="economic-title"><b>한국은행 기준금리</b><span>월말 적용 · %</span></div><div class="economic-chart"><canvas class="rate-chart" aria-label="한국은행 기준금리 그래프"></canvas></div></section>'+
+      '<section class="stack-chart"><div class="economic-title"><b>10년 국고채 금리</b><span>월평균 · %</span></div><div class="economic-chart"><canvas class="bond-chart" aria-label="10년 국고채 금리 그래프"></canvas></div></section>'+
+      '<section class="stack-chart"><div class="economic-title"><b>브렌트 원유가격</b><span>월평균 · 미국달러/배럴</span></div><div class="economic-chart oil-chart-wrap"><canvas class="oil-chart" aria-label="브렌트 원유가격 그래프"></canvas></div></section>'+
+    '</div>'+
+    '<div class="policy-panel"><div class="economic-title"><b>주요 정부 부동산 정책</b><span>발표·고지일에 마우스를 올리거나 누르세요</span></div><ol class="policy-list"></ol><div class="policy-detail" aria-live="polite"><p>선택한 기간의 정책을 누르면 핵심 요약이 여기에 표시됩니다.</p></div></div>'+
+    '<p class="economic-sources">출처: <a href="https://fred.stlouisfed.org/series/EXKOUS/" target="_blank" rel="noopener">FRED 원·달러</a> · <a href="https://www.bok.or.kr/portal/singl/baseRate/list.do?menuNo=200656" target="_blank" rel="noopener">한국은행 기준금리</a> · <a href="https://fred.stlouisfed.org/series/IRLTLT01KRM156N" target="_blank" rel="noopener">OECD/FRED 한국 10년 국채</a> · <a href="https://fred.stlouisfed.org/series/MCOILBRENTEU" target="_blank" rel="noopener">EIA/FRED 브렌트유</a> · 국토교통부·관계부처 발표자료</p></article>';
 
   const nameInput=byId("graphName");
   nameInput.addEventListener("input",e=>{
@@ -333,6 +342,11 @@ function renderGraphBoards(){
     const activeTab=byId("graphTabs").querySelector('[data-board-id="'+CSS.escape(board.id)+'"]');
     if(activeTab) activeTab.textContent=(graphBoards.indexOf(board)+1)+". "+board.name;
     markUnsaved("그래프 이름을 변경했습니다.");
+  });
+  byId("graphPeriod").addEventListener("change",e=>{
+    board.periodYears=Number(e.target.value);
+    renderGraphBoards();
+    markUnsaved("그래프 표시 기간을 변경했습니다.");
   });
 
   byId("graphBoards").querySelectorAll(".series-item").forEach(card=>{
@@ -368,11 +382,33 @@ function monthRange(start,end){
   while(cursor<=last){months.push(cursor.toISOString().slice(0,7));cursor.setUTCMonth(cursor.getUTCMonth()+1);}
   return months;
 }
-
 function rateAtMonth(month){
   let value=null;
   for(const item of economicContext.base_rates||[]){if(String(item.date).slice(0,7)<=month)value=Number(item.rate);else break;}
   return value;
+}
+function valueMap(items,valueKey){
+  return new Map((items||[]).map(item=>[String(item.month||item.date||"").slice(0,7),Number(item[valueKey])]));
+}
+function policyRecord(item,index){
+  if(typeof item==="string") return {date:"",title:item,summary:item,url:"",sourceIndex:index};
+  return {date:String(item.date||""),title:String(item.title||"정책 발표"),summary:String(item.summary||"공식 발표자료의 상세 내용을 확인해 주세요."),url:String(item.url||""),sourceIndex:index};
+}
+function periodBounds(board,seriesRows){
+  const tradeMonths=seriesRows.flatMap(item=>item.points.map(point=>point.month));
+  const economicMonths=[
+    ...(economicContext.exchange_rates||[]).map(item=>String(item.month||"").slice(0,7)),
+    ...(economicContext.bond_yields||[]).map(item=>String(item.month||"").slice(0,7)),
+    ...(economicContext.oil_prices||[]).map(item=>String(item.month||"").slice(0,7)),
+    ...(economicContext.base_rates||[]).map(item=>String(item.date||"").slice(0,7))
+  ].filter(Boolean);
+  const allMonths=[...tradeMonths,...economicMonths].filter(Boolean).sort();
+  if(!allMonths.length) return {start:"",end:""};
+  const end=allMonths[allMonths.length-1];
+  if(!Number(board.periodYears)) return {start:allMonths[0],end};
+  const cursor=new Date(end+"-01T00:00:00Z");
+  cursor.setUTCMonth(cursor.getUTCMonth()-(Number(board.periodYears)*12)+1);
+  return {start:cursor.toISOString().slice(0,7),end};
 }
 
 const policyMarkerPlugin={
@@ -386,18 +422,24 @@ const policyMarkerPlugin={
       const labelIndex=chart.data.labels.indexOf(String(item.date).slice(0,7));
       if(labelIndex<0)return;
       const x=chart.scales.x.getPixelForValue(labelIndex);
-      ctx.strokeStyle="rgba(180,83,9,.55)";ctx.setLineDash([4,4]);ctx.lineWidth=1;
+      ctx.strokeStyle="rgba(180,83,9,.5)";ctx.setLineDash([3,4]);ctx.lineWidth=.8;
       ctx.beginPath();ctx.moveTo(x,area.top);ctx.lineTo(x,area.bottom);ctx.stroke();
-      ctx.setLineDash([]);ctx.fillStyle="#92400e";ctx.font="bold 10px system-ui";
-      ctx.fillText(String(index+1),Math.min(x+3,area.right-12),area.top+12);
+      ctx.setLineDash([]);ctx.fillStyle="#92400e";ctx.font="bold 9px system-ui";
+      ctx.fillText(String(index+1),Math.min(x+2,area.right-11),area.top+10);
     });
     ctx.restore();
   }
 };
 
 function policyHtml(items){
-  if(!items.length)return '<li class="policy-empty">선택한 거래 기간 안에 표시할 주요 정책이 없습니다.</li>';
-  return items.map((item,index)=>'<li><span class="policy-number">'+(index+1)+'</span><time>'+esc(item.date)+'</time><b>'+esc(item.title)+'</b></li>').join("");
+  if(!items.length)return '<li class="policy-empty">선택한 기간 안에 표시할 주요 정책이 없습니다.</li>';
+  return items.map((item,index)=>'<li><button type="button" class="policy-item" data-policy-index="'+index+'"><span class="policy-number">'+(index+1)+'</span><time>'+esc(item.date)+'</time><b>'+esc(item.title)+'</b></button></li>').join("");
+}
+function showPolicyDetail(container,item){
+  const detail=container.querySelector(".policy-detail");
+  if(!item){detail.innerHTML="<p>선택한 기간의 정책을 누르면 핵심 요약이 여기에 표시됩니다.</p>";return;}
+  detail.innerHTML="<time>"+esc(item.date)+"</time><b>"+esc(item.title)+"</b><p>"+esc(item.summary)+"</p>"+
+    (item.url?'<a href="'+esc(item.url)+'" target="_blank" rel="noopener">공식 발표자료 보기</a>':"");
 }
 
 function renderBoardChart(board,container){
@@ -412,23 +454,36 @@ function renderBoardChart(board,container){
     }
     return {series,group,points};
   }).filter(Boolean);
-  const pointMonths=[...new Set(seriesRows.flatMap(item=>item.points.map(point=>point.month)))].sort();
-  const labels=pointMonths.length?monthRange(pointMonths[0],pointMonths[pointMonths.length-1]):[];
+  const bounds=periodBounds(board,seriesRows);
+  const labels=monthRange(bounds.start,bounds.end);
   const datasets=seriesRows.map(item=>{
     const prices=new Map(item.points.map(point=>[point.month,point.price]));
     const counts=new Map(item.points.map(point=>[point.month,point.count]));
-    return {label:item.group.apt_name+" · "+(item.series.area?fmt(item.series.area)+"㎡":"평형 없음"),data:labels.map(month=>prices.has(month)?prices.get(month):null),tradeCounts:labels.map(month=>counts.get(month)||0),borderColor:item.series.color,backgroundColor:item.series.color,pointRadius:2.5,pointHoverRadius:6,borderWidth:2,tension:.18,spanGaps:true};
+    return {label:item.group.apt_name+" · "+(item.series.area?fmt(item.series.area)+"㎡":"평형 없음"),data:labels.map(month=>prices.has(month)?prices.get(month):null),tradeCounts:labels.map(month=>counts.get(month)||0),borderColor:item.series.color,backgroundColor:item.series.color,pointRadius:1.15,pointHoverRadius:4,borderWidth:1.15,tension:.16,spanGaps:true};
   });
-  const policies=(economicContext.policies||[]).filter(item=>labels.includes(String(item.date).slice(0,7)));
+  const policies=(economicContext.policies||[]).map(policyRecord).filter(item=>item.date&&item.date.slice(0,7)>=bounds.start&&item.date.slice(0,7)<=bounds.end);
   container.querySelector(".policy-list").innerHTML=policyHtml(policies);
-  const priceChart=new Chart(container.querySelector(".price-chart"),{type:"line",data:{labels,datasets},plugins:[policyMarkerPlugin],options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"nearest",intersect:true},scales:{x:{title:{display:true,text:"거래월"},ticks:{autoSkip:true,maxTicksLimit:12}},y:{title:{display:true,text:"월 중앙 실거래가 (억원)"},beginAtZero:false}},plugins:{policyMarkers:{items:policies},legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{displayColors:true,callbacks:{title:items=>items[0]?.label||"",label:c=>c.dataset.label+": "+fmt(c.raw)+"억원",afterLabel:c=>"해당 월 거래 "+fmt(c.dataset.tradeCounts[c.dataIndex])+"건의 중앙값"}}}}});
-  const exchangeMap=new Map((economicContext.exchange_rates||[]).map(item=>[item.month,Number(item.krw_per_usd)]));
-  const commonOptions=(yTitle,callback)=>({maintainAspectRatio:false,responsive:true,interaction:{mode:"index",intersect:false},scales:{x:{ticks:{display:false},grid:{display:false}},y:{title:{display:true,text:yTitle},beginAtZero:false}},plugins:{legend:{display:false},tooltip:{callbacks:{label:callback}}}});
-  const exchangeChart=new Chart(container.querySelector(".exchange-chart"),{type:"line",data:{labels,datasets:[{label:"원·달러 환율",data:labels.map(month=>exchangeMap.get(month)??null),borderColor:"#0f766e",backgroundColor:"#0f766e",pointRadius:0,pointHoverRadius:4,borderWidth:1.8,tension:.2,spanGaps:true}]},options:commonOptions("원/USD",c=>fmt(c.raw)+"원/USD")});
-  const rateChart=new Chart(container.querySelector(".rate-chart"),{type:"line",data:{labels,datasets:[{label:"한국은행 기준금리",data:labels.map(rateAtMonth),borderColor:"#7c3aed",backgroundColor:"rgba(124,58,237,.1)",fill:true,stepped:true,pointRadius:0,pointHoverRadius:4,borderWidth:1.8}]},options:commonOptions("%",c=>fmt(c.raw)+"%")});
+  container.querySelectorAll(".policy-item").forEach(button=>{
+    const item=policies[Number(button.dataset.policyIndex)];
+    ["mouseenter","focus","click"].forEach(eventName=>button.addEventListener(eventName,()=>showPolicyDetail(container,item)));
+  });
+  if(policies.length) showPolicyDetail(container,policies[0]);
+
+  const priceChart=new Chart(container.querySelector(".price-chart"),{type:"line",data:{labels,datasets},plugins:[policyMarkerPlugin],options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"nearest",intersect:true},scales:{x:{title:{display:true,text:"거래월"},ticks:{autoSkip:true,maxTicksLimit:12}},y:{title:{display:true,text:"월 중앙 실거래가 (억원)"},beginAtZero:false}},plugins:{policyMarkers:{items:policies},legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:7}},tooltip:{displayColors:true,callbacks:{title:items=>items[0]?.label||"",label:c=>c.raw==null?c.dataset.label+": 거래 없음":c.dataset.label+": "+fmt(c.raw)+"억원",afterLabel:c=>c.raw==null?"":"해당 월 거래 "+fmt(c.dataset.tradeCounts[c.dataIndex])+"건의 중앙값"}}}}});
+  const exchangeMap=valueMap(economicContext.exchange_rates,"krw_per_usd");
+  const bondMap=valueMap(economicContext.bond_yields,"rate");
+  const oilMap=valueMap(economicContext.oil_prices,"usd_per_barrel");
+  const commonOptions=(yTitle,callback,showX=false)=>({maintainAspectRatio:false,responsive:true,interaction:{mode:"index",intersect:false},scales:{x:{ticks:{display:showX,autoSkip:true,maxTicksLimit:12},grid:{display:false},title:{display:showX,text:"연월"}},y:{title:{display:true,text:yTitle},beginAtZero:false}},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw==null?"자료 없음":callback(c)}}}});
+  const lineDataset=(label,data,color,extra={})=>({label,data,borderColor:color,backgroundColor:color,pointRadius:0,pointHoverRadius:3,borderWidth:1.25,tension:.18,spanGaps:true,...extra});
+  const exchangeChart=new Chart(container.querySelector(".exchange-chart"),{type:"line",data:{labels,datasets:[lineDataset("원·달러 환율",labels.map(month=>exchangeMap.get(month)??null),"#0f766e")]},options:commonOptions("원/USD",c=>fmt(c.raw)+"원/USD")});
+  const rateChart=new Chart(container.querySelector(".rate-chart"),{type:"line",data:{labels,datasets:[lineDataset("한국은행 기준금리",labels.map(rateAtMonth),"#7c3aed",{backgroundColor:"rgba(124,58,237,.08)",fill:true,stepped:true,spanGaps:false})]},options:commonOptions("%",c=>fmt(c.raw)+"%")});
+  const bondChart=new Chart(container.querySelector(".bond-chart"),{type:"line",data:{labels,datasets:[lineDataset("10년 국고채 금리",labels.map(month=>bondMap.get(month)??null),"#2563eb")]},options:commonOptions("%",c=>fmt(c.raw)+"%")});
+  const oilChart=new Chart(container.querySelector(".oil-chart"),{type:"line",data:{labels,datasets:[lineDataset("브렌트 원유가격",labels.map(month=>oilMap.get(month)??null),"#b45309")]},options:commonOptions("USD/배럴",c=>fmt(c.raw)+" USD/배럴",true)});
   charts.set(board.id+"-price",priceChart);
   charts.set(board.id+"-exchange",exchangeChart);
   charts.set(board.id+"-rate",rateChart);
+  charts.set(board.id+"-bond",bondChart);
+  charts.set(board.id+"-oil",oilChart);
 }
 
 function renderDetails(group,area){
