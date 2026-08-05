@@ -310,18 +310,35 @@ function seriesControl(board,series){
 }
 
 function renderBoardChart(board,canvas){
-  const datasets=board.series.map(series=>{
+  const seriesRows=board.series.map(series=>{
     const group=apartmentGroups.find(g=>g.key===series.key);
     if(!group) return null;
-    let points=group.history.filter(r=>Number(r.area_m2)===series.area).map(r=>({x:r.month,y:Number(r.median_price_eok),count:Number(r.trade_count||0)}));
+    let points=group.history.filter(r=>Number(r.area_m2)===series.area).map(r=>({month:r.month,price:Number(r.median_price_eok),count:Number(r.trade_count||0)}));
     if(!points.length){
       const daily=new Map();
       group.trades.filter(r=>Number(r.area_m2)===series.area).forEach(r=>{if(!daily.has(r.trade_date))daily.set(r.trade_date,[]);daily.get(r.trade_date).push(r.price_eok);});
-      points=[...daily].map(([x,values])=>({x,y:median(values),count:values.length}));
+      points=[...daily].map(([month,values])=>({month,price:median(values),count:values.length}));
     }
-    return {label:group.apt_name+" · "+(series.area?fmt(series.area)+"㎡":"평형 없음"),data:points,borderColor:series.color,backgroundColor:series.color,pointRadius:2.5,pointHoverRadius:6,borderWidth:2,tension:.18,spanGaps:true};
+    return {series,group,points};
   }).filter(Boolean);
-  const chart=new Chart(canvas,{type:"line",data:{datasets},options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"nearest",intersect:true},scales:{x:{type:"category",title:{display:true,text:"거래월"}},y:{title:{display:true,text:"월 중앙 실거래가 (억원)"},beginAtZero:false}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{displayColors:true,callbacks:{title:items=>items[0]?.raw?.x||"",label:c=>c.dataset.label+": "+fmt(c.raw.y)+"억원",afterLabel:c=>"해당 월 거래 "+fmt(c.raw.count)+"건의 중앙값"}}}}});
+  const labels=[...new Set(seriesRows.flatMap(item=>item.points.map(point=>point.month)))].sort();
+  const datasets=seriesRows.map(item=>{
+    const prices=new Map(item.points.map(point=>[point.month,point.price]));
+    const counts=new Map(item.points.map(point=>[point.month,point.count]));
+    return {
+      label:item.group.apt_name+" · "+(item.series.area?fmt(item.series.area)+"㎡":"평형 없음"),
+      data:labels.map(month=>prices.has(month)?prices.get(month):null),
+      tradeCounts:labels.map(month=>counts.get(month)||0),
+      borderColor:item.series.color,
+      backgroundColor:item.series.color,
+      pointRadius:2.5,
+      pointHoverRadius:6,
+      borderWidth:2,
+      tension:.18,
+      spanGaps:true
+    };
+  });
+  const chart=new Chart(canvas,{type:"line",data:{labels,datasets},options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"nearest",intersect:true},scales:{x:{title:{display:true,text:"거래월"},ticks:{autoSkip:true,maxTicksLimit:12}},y:{title:{display:true,text:"월 중앙 실거래가 (억원)"},beginAtZero:false}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{displayColors:true,callbacks:{title:items=>items[0]?.label||"",label:c=>c.dataset.label+": "+fmt(c.raw)+"억원",afterLabel:c=>"해당 월 거래 "+fmt(c.dataset.tradeCounts[c.dataIndex])+"건의 중앙값"}}}}});
   charts.set(board.id,chart);
 }
 
