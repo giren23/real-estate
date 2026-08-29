@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Iterable
 
 
-TARGET_CODE_PREFIXES = ("11", "41", "26", "4311", "4812")
+# Every province represented by the national apartment directory is collectable.
+# The order is controlled in local_collect.region_priority, not by filtering here.
+TARGET_CODE_PREFIXES = ("11", "41", "43", "48", "26", "28", "44", "36", "51", "30", "52", "47", "27", "12", "31", "50")
 
 
 def is_target_lawd(value: str) -> bool:

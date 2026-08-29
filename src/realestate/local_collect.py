@@ -22,7 +22,26 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0 Safari/537.36"
 )
 PRIORITY_REGION_CODES = ("11200",)
-PRIORITY_CODE_PREFIXES = ("11", "41", "4311", "4812")
+# Finish the five user-selected provinces first. Afterwards continue through
+# every remaining province in approximate distance order from central Seoul.
+COLLECTION_PROVINCE_ORDER = (
+    "11",  # 서울
+    "41",  # 경기
+    "43",  # 충북
+    "48",  # 경남
+    "26",  # 부산
+    "28",  # 인천
+    "44",  # 충남
+    "36",  # 세종
+    "51",  # 강원
+    "30",  # 대전
+    "52",  # 전북
+    "47",  # 경북
+    "27",  # 대구
+    "12",  # 전남·광주 통합 행정코드
+    "31",  # 울산
+    "50",  # 제주
+)
 # The official history currently starts in 2006. Keep this wider than the full
 # history so one district can normally be filled with a single download.
 MAX_BULK_YEARS = 30
@@ -60,14 +79,14 @@ def target_regions(complex_csv: Path) -> list[Region]:
 
 
 def region_priority(region: Region) -> tuple[int, str]:
-    """Keep collection focused on Oksu-dong's district, then requested areas."""
+    """Finish requested provinces, then expand nationwide from Seoul outward."""
     code = region.lawd_cd
     if code in PRIORITY_REGION_CODES:
         return (0, code)
-    for order, prefix in enumerate(PRIORITY_CODE_PREFIXES, start=1):
+    for order, prefix in enumerate(COLLECTION_PROVINCE_ORDER, start=1):
         if code.startswith(prefix):
             return (order, code)
-    return (len(PRIORITY_CODE_PREFIXES) + 1, code)
+    return (len(COLLECTION_PROVINCE_ORDER) + 1, code)
 
 
 def _decode(content: bytes) -> str:

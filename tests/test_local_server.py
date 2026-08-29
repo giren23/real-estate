@@ -78,6 +78,8 @@ def test_directory_name_matches_official_name() -> None:
 
 def test_collection_priority_is_explicit() -> None:
     regions = [
+        Region("50110", "제주", "제주", "제주"),
+        Region("28110", "인천", "인천", "중구"),
         Region("26110", "부산", "부산", "중구"),
         Region("48120", "창원", "경남", "창원"),
         Region("43110", "청주", "충북", "청주"),
@@ -87,8 +89,16 @@ def test_collection_priority_is_explicit() -> None:
     ]
 
     assert [item.lawd_cd for item in sorted(regions, key=region_priority)] == [
-        "11200", "11110", "41135", "43110", "48120", "26110"
+        "11200", "11110", "41135", "43110", "48120", "26110", "28110", "50110"
     ]
+
+
+def test_nationwide_province_order_starts_with_requested_five() -> None:
+    from realestate.local_collect import COLLECTION_PROVINCE_ORDER
+    from realestate.local_store import TARGET_CODE_PREFIXES
+
+    assert COLLECTION_PROVINCE_ORDER[:5] == ("11", "41", "43", "48", "26")
+    assert set(COLLECTION_PROVINCE_ORDER) == set(TARGET_CODE_PREFIXES)
 
 
 def test_store_keeps_all_areas_and_dynamic_history(tmp_path: Path) -> None:

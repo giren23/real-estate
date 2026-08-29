@@ -80,12 +80,12 @@ def main() -> None:
         write_run_state(
             "running",
             "history",
-            f"미수집 과거 이력 최대 {HISTORY_JOB_COUNT}개 연도를 최우선 묶음 수집 중입니다.",
+            f"서울·경기·충북·경남·부산 완주 후 서울 인접 순으로 전국 미수집 이력 최대 {HISTORY_JOB_COUNT}개 연도를 묶음 수집 중입니다.",
             started_at=started_at,
             planned_history_jobs=HISTORY_JOB_COUNT,
         )
         print(
-            f"[미수집 이력 최우선] 최대 {HISTORY_JOB_COUNT}개 연도를 전체 범위부터 시작해 실패 시 자동 분할",
+            f"[전국 미수집 이력 최우선] 서울·경기·충북·경남·부산 후 서울 인접 순, 최대 {HISTORY_JOB_COUNT}개 연도를 전체 범위부터 시작해 실패 시 자동 분할",
             flush=True,
         )
         history = collect(ROOT, max_jobs=HISTORY_JOB_COUNT)
