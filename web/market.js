@@ -29,7 +29,7 @@ function section(category){
     </tbody></table></div><p class="market-insight">💡 ${category.insight}</p></details></article>`;
 }
 function trend(item,index){
-  return `<figure class="trend-card"><figcaption><div><b>${item.label}</b><small>최근 13개월 · 월말 종가</small></div><strong>${current(item)}</strong></figcaption><div class="trend-canvas"><canvas id="trend-${index}"></canvas></div><p>${item.date} 최근 종가 기준 · ${signed(item.changes.month,item.change_unit)} (1개월)</p></figure>`;
+  return `<figure class="trend-card"><figcaption><div><b>${item.label}</b><small>최근 13개월 · 월말 종가</small></div><strong aria-label="최신값 ${item.date}"><em>최신</em>${current(item)}</strong></figcaption><div class="trend-canvas"><canvas id="trend-${index}"></canvas></div><p><b>${item.date} 최신값</b> · ${signed(item.changes.month,item.change_unit)} (1개월)</p></figure>`;
 }
 function drawTrend(item,index){
   const ctx=document.querySelector(`#trend-${index}`);
