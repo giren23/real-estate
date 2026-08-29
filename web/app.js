@@ -23,6 +23,7 @@ let buildingRequestId = 0, buildingAbortController = null;
 let catalogRefreshChecking = false, lastCatalogRefreshCheck = 0;
 const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const GRAPH_STORAGE_KEY = "realEstateGraphWorkspacesV1";
+const TAX_BASE_YEAR = 2026;
 const graphColors = [
   {name:"검은색",value:"#111827"},{name:"빨강",value:"#ef4444"},{name:"주황",value:"#f97316"},{name:"노랑",value:"#eab308"},
   {name:"초록",value:"#22c55e"},{name:"파랑",value:"#3b82f6"},{name:"남색",value:"#4f46e5"},{name:"보라",value:"#8b5cf6"},
@@ -1287,6 +1288,22 @@ function renderGraphBoards(){
       '<section class="stack-chart economic-indicator"><div class="economic-title"><b>시장 심리</b><span>VIX·공포탐욕지수(0~100)</span></div><div class="economic-chart"><canvas class="sentiment-chart" aria-label="VIX 공포탐욕지수 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> VIX는 미국 주식시장의 예상 변동성, 공포탐욕지수는 7개 심리지표를 0(극단적 공포)~100(극단적 탐욕)으로 합산한 값입니다.</p><p><b>해석</b> VIX 급등과 공포탐욕 하락이 겹치면 위험회피가 강해진 상태입니다. 극단값은 반전 가능성도 있지만 단독 매매 신호로 사용하면 안 됩니다.</p></div></section>'+
     '</div>'+
     '<div class="policy-panel"><div class="economic-title"><b>주요 정부 부동산 정책</b><span>번호를 누르면 아래에 상세 내용이 표시됩니다</span></div><ol class="policy-list"></ol><div class="policy-detail" aria-live="polite"><p>선택한 기간의 정책을 누르면 핵심 요약이 여기에 표시됩니다.</p></div></div>'+
+    '<section class="tax-estimator" aria-labelledby="taxEstimatorTitle">'+
+      '<div class="tax-estimator-head"><div><b id="taxEstimatorTitle">주택 세금 예상 계산</b><span>2023~2027년 · 현행 세율 기준 단순 추정</span></div><strong class="tax-current-total">—</strong></div>'+
+      '<div class="tax-form">'+
+        '<label>주택 취득가액<small>취득세 계산 기준</small><span><input class="tax-purchase-price" type="number" min="0" max="10000" step="0.1" value="10"><em>억원</em></span></label>'+
+        '<label>2026년 전체 공시가격<small>보유주택 합계</small><span><input class="tax-official-price" type="number" min="0" max="10000" step="0.1" value="8"><em>억원</em></span></label>'+
+        '<label>취득 후 주택 수<small>세대 기준</small><select class="tax-home-count"><option value="1">1주택</option><option value="2">2주택</option><option value="3">3주택</option><option value="4">4주택 이상</option></select></label>'+
+        '<label>취득연도<small>취득세는 선택 연도만</small><select class="tax-acquisition-year"><option value="2022">2022년 이전</option><option value="2023">2023년</option><option value="2024">2024년</option><option value="2025">2025년</option><option value="2026">2026년</option><option value="2027">2027년</option></select></label>'+
+        '<label class="tax-check"><input class="tax-adjusted-area" type="checkbox"><span><b>조정대상지역 취득</b><small>다주택 취득세 중과 판단</small></span></label>'+
+        '<label class="tax-check"><input class="tax-urban-area" type="checkbox" checked><span><b>도시지역</b><small>도시지역분 재산세 포함</small></span></label>'+
+      '</div>'+
+      '<div class="tax-growth-control"><div><label for="taxGrowthRange">공시가격 연 증감률</label><button class="tax-growth-help" type="button" title="2026년 공시가격을 기준으로 이전 연도는 역산하고 2027년은 같은 비율로 예측합니다." aria-label="공시가격 증감률 계산 설명">?</button></div><div><input id="taxGrowthRange" class="tax-growth-range" type="range" min="-30" max="50" step="1" value="20"><input class="tax-growth-number" type="number" min="-30" max="50" step="1" value="20" aria-label="공시가격 연 증감률 숫자 입력"><output class="tax-growth-value">20%</output></div></div>'+
+      '<div class="tax-summary" aria-live="polite"></div>'+
+      '<div class="tax-table-wrap"><table class="tax-table"><thead><tr><th>연도</th><th>예상 공시가격</th><th>재산세 등</th><th>종부세 등</th><th>보유세 합계</th><th>취득세</th></tr></thead><tbody></tbody></table></div>'+
+      '<div class="tax-chart-wrap"><canvas class="tax-chart" aria-label="연도별 예상 보유세 그래프"></canvas></div>'+
+      '<details class="tax-method"><summary>계산 기준과 꼭 확인할 점</summary><ul><li>2023~2027년 공시가격은 입력한 2026년 값을 같은 증감률로 역산·예측합니다. 과거 실제 공시가격을 입력하는 방식이 아니므로 비교용입니다.</li><li>재산세 등은 재산세 본세, 지방교육세(본세의 20%), 선택 시 도시지역분을 합산합니다. 여러 주택의 합계 공시가격을 하나의 주택처럼 계산하므로 실제 고지액과 차이가 날 수 있습니다.</li><li>종부세 등은 1주택 12억원·일반 9억원 기본공제와 공정시장가액비율 60%를 적용한 공제 전 추정치에 농어촌특별세를 더합니다. 재산세 중복분, 고령자·장기보유 세액공제, 공동명의·법인·특례는 반영하지 않습니다.</li><li>취득세는 본세만 표시하며 지방교육세·농어촌특별세, 생애최초·일시적 2주택·저가주택 등 감면과 예외를 반영하지 않습니다.</li></ul><p>이 결과는 세무 신고용이 아닌 모의 계산입니다. 실제 계약·신고 전에는 관할 지방자치단체나 세무 전문가에게 확인하세요.</p></details>'+
+    '</section>'+
     '<p class="economic-sources">출처: <a href="https://fred.stlouisfed.org/" target="_blank" rel="noopener">FRED</a> · <a href="https://ecos.bok.or.kr/" target="_blank" rel="noopener">한국은행 ECOS</a> · <a href="https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/" target="_blank" rel="noopener">일본 재무성</a> · <a href="https://finance.yahoo.com/markets/" target="_blank" rel="noopener">Yahoo Finance</a> · <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener">CNN Fear &amp; Greed</a> · 국토교통부·관계부처 발표자료. 월이 끝나지 않은 값은 잠정치이며, 대용 지표는 그래프 설명에 표시합니다.</p></article>';
 
   const nameInput=byId("graphName");
@@ -1641,6 +1658,94 @@ function bindEconomicChartAlignment(container,timelineCharts){
   });
 }
 
+function taxMarginalAmount(base,segments){
+  let remaining=Math.max(0,base),previous=0,total=0;
+  for(const [limit,rate] of segments){
+    const ceiling=Number.isFinite(limit)?limit:Infinity;
+    const taxable=Math.max(0,Math.min(remaining,ceiling-previous));
+    total+=taxable*rate;remaining-=taxable;previous=ceiling;
+    if(remaining<=0)break;
+  }
+  return Math.max(0,total);
+}
+
+function estimatedPropertyTax(officialPrice,homeCount,isUrban){
+  const oneHome=homeCount===1;
+  const ratio=oneHome?(officialPrice<=300000000?.43:officialPrice<=600000000?.44:.45):.60;
+  const base=officialPrice*ratio;
+  const general=[[60000000,.001],[150000000,.0015],[300000000,.0025],[Infinity,.004]];
+  const special=[[60000000,.0005],[150000000,.001],[300000000,.002],[Infinity,.0035]];
+  const main=taxMarginalAmount(base,oneHome&&officialPrice<=900000000?special:general);
+  const localEducation=main*.20;
+  const urban=isUrban?base*.0014:0;
+  return {main,localEducation,urban,total:main+localEducation+urban,ratio};
+}
+
+function estimatedComprehensiveTax(officialPrice,homeCount){
+  const deduction=(homeCount===1?12:9)*100000000;
+  const base=Math.max(0,officialPrice-deduction)*.60;
+  const normal=[[300000000,.005],[600000000,.007],[1200000000,.01],[2500000000,.013],[5000000000,.015],[9400000000,.02],[Infinity,.027]];
+  const multi=[[300000000,.005],[600000000,.007],[1200000000,.01],[2500000000,.02],[5000000000,.03],[9400000000,.04],[Infinity,.05]];
+  const main=taxMarginalAmount(base,homeCount>=3?multi:normal);
+  const rural=main*.20;
+  return {main,rural,total:main+rural,base,deduction};
+}
+
+function estimatedAcquisitionTax(price,homeCount,isAdjusted){
+  const eok=price/100000000;
+  let rate;
+  if((isAdjusted&&homeCount===2)||(!isAdjusted&&homeCount===3))rate=.08;
+  else if((isAdjusted&&homeCount>=3)||(!isAdjusted&&homeCount>=4))rate=.12;
+  else if(eok<=6)rate=.01;
+  else if(eok<=9)rate=(eok*2/3-3)/100;
+  else rate=.03;
+  return {rate,total:Math.max(0,price*rate)};
+}
+
+function taxWon(value){
+  if(!Number.isFinite(value)||value<=0)return "없음";
+  const man=Math.round(value/10000);
+  return man>=10000?fmt(man/10000)+"억원":fmt(man)+"만원";
+}
+
+function bindTaxEstimator(board,container){
+  const estimator=container.querySelector(".tax-estimator");
+  if(!estimator)return;
+  const purchase=estimator.querySelector(".tax-purchase-price"),official=estimator.querySelector(".tax-official-price");
+  const homeCount=estimator.querySelector(".tax-home-count"),acquisitionYear=estimator.querySelector(".tax-acquisition-year");
+  const adjusted=estimator.querySelector(".tax-adjusted-area"),urban=estimator.querySelector(".tax-urban-area");
+  const growthRange=estimator.querySelector(".tax-growth-range"),growthNumber=estimator.querySelector(".tax-growth-number"),growthValue=estimator.querySelector(".tax-growth-value");
+  const clampGrowth=value=>Math.min(50,Math.max(-30,Number(value)||0));
+  const render=()=>{
+    const growth=clampGrowth(growthNumber.value)/100;
+    const price=Math.max(0,Number(purchase.value)||0)*100000000;
+    const currentOfficial=Math.max(0,Number(official.value)||0)*100000000;
+    const homes=Math.max(1,Number(homeCount.value)||1),bought=Number(acquisitionYear.value)||2022;
+    const acquisition=estimatedAcquisitionTax(price,homes,adjusted.checked);
+    const rows=[2023,2024,2025,2026,2027].map(year=>{
+      const projected=currentOfficial*Math.pow(1+growth,year-TAX_BASE_YEAR);
+      const held=bought<=year;
+      const property=held?estimatedPropertyTax(projected,homes,urban.checked):{total:0};
+      const comprehensive=held?estimatedComprehensiveTax(projected,homes):{total:0};
+      const holding=property.total+comprehensive.total;
+      return {year,projected,property:property.total,comprehensive:comprehensive.total,holding,acquisition:year===bought?acquisition.total:0};
+    });
+    const current=rows.find(row=>row.year===TAX_BASE_YEAR),previous=rows.find(row=>row.year===TAX_BASE_YEAR-1);
+    const difference=current.holding-previous.holding;
+    estimator.querySelector(".tax-current-total").textContent="2026년 예상 보유세 "+taxWon(current.holding);
+    const differenceLabel=difference===0?"전년 대비 변동 없음":"전년 대비 "+(difference>0?"+":"")+taxWon(Math.abs(difference))+(difference<0?" 감소":" 증가");
+    estimator.querySelector(".tax-summary").innerHTML='<b>'+taxWon(current.holding)+'</b><span>2026년 재산세·종부세 등 합계</span><em class="'+(difference>0?"up":difference<0?"down":"")+'">'+differenceLabel+'</em><small>취득세율 '+fmt(acquisition.rate*100)+'% · 취득세 본세 '+taxWon(acquisition.total)+'</small>';
+    estimator.querySelector("tbody").innerHTML=rows.map(row=>'<tr class="'+(row.year===TAX_BASE_YEAR?"current":"")+'"><th>'+row.year+(row.year===2027?'<small>예측</small>':"")+'</th><td>'+fmt(row.projected/100000000)+'억원</td><td>'+taxWon(row.property)+'</td><td>'+taxWon(row.comprehensive)+'</td><td><b>'+taxWon(row.holding)+'</b></td><td>'+taxWon(row.acquisition)+'</td></tr>').join("");
+    const key=board.id+"-tax";charts.get(key)?.destroy();
+    const chart=new Chart(estimator.querySelector(".tax-chart"),{data:{labels:rows.map(row=>row.year+"년"),datasets:[{type:"bar",label:"재산세 등",data:rows.map(row=>Math.round(row.property/10000)),backgroundColor:"#f97316",borderRadius:4,stack:"holding"},{type:"bar",label:"종부세 등",data:rows.map(row=>Math.round(row.comprehensive/10000)),backgroundColor:"#5b4bdb",borderRadius:4,stack:"holding"},{type:"line",label:"보유세 합계",data:rows.map(row=>Math.round(row.holding/10000)),borderColor:"#dc2626",backgroundColor:"#dc2626",borderWidth:2,pointRadius:3,tension:.2,stack:"total"}]},options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"index",intersect:false},scales:{x:{stacked:true},y:{beginAtZero:true,title:{display:true,text:"만원"},ticks:{callback:value=>fmt(value)+"만원"}}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:7}},tooltip:{callbacks:{label:item=>item.dataset.label+": "+fmt(item.raw)+"만원"}}}}});
+    charts.set(key,chart);
+  };
+  growthRange.addEventListener("input",()=>{growthNumber.value=growthRange.value;growthValue.value=growthRange.value+"%";render();});
+  growthNumber.addEventListener("input",()=>{const value=clampGrowth(growthNumber.value);growthRange.value=value;growthValue.value=value+"%";render();});
+  [purchase,official,homeCount,acquisitionYear,adjusted,urban].forEach(input=>input.addEventListener("input",render));
+  render();
+}
+
 function renderBoardChart(board,container){
   const seriesRows=board.series.map(series=>{
     const group=apartmentGroups.find(g=>g.key===series.key);
@@ -1756,6 +1861,7 @@ function renderBoardChart(board,container){
   charts.set(board.id+"-market",marketChart);
   charts.set(board.id+"-bitcoin",bitcoinChart);
   charts.set(board.id+"-sentiment",sentimentChart);
+  bindTaxEstimator(board,container);
 }
 
 async function renderDetails(group,area){
