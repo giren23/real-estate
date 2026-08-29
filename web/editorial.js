@@ -28,7 +28,7 @@
   function cardHtml(item) {
     const tags = (item.tags || []).slice(0, 3).map(tag => `<span>${escapeHtml(tag)}</span>`).join("");
     return `<button type="button" class="editorial-card" data-editorial-id="${escapeHtml(item.id)}">
-      <span class="editorial-date"><b>${escapeHtml(String(item.date || "").slice(8, 10))}</b><small>${escapeHtml(String(item.date || "").slice(5, 7))}월</small></span>
+      <time class="editorial-date" datetime="${escapeHtml(item.date)}">${escapeHtml(String(item.date || "").slice(5).replace("-", "."))}</time>
       <span class="editorial-card-body">
         <span class="editorial-card-meta">${escapeHtml(item.eyebrow)} · 약 ${escapeHtml(item.read_minutes)}분</span>
         <strong>${escapeHtml(item.title)}</strong>

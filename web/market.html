@@ -5,10 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="글로벌 증시·환율·원자재·금리와 주식 아침 브리핑을 한 페이지에서 확인합니다.">
 <title>주식 시장 한 컷 브리핑 | Korean real estate prices</title>
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=27">
 <link rel="stylesheet" href="market.css?v=4">
 <link rel="stylesheet" href="market-unified.css?v=1">
 <link rel="stylesheet" href="market-brief.css?v=1">
+<link rel="stylesheet" href="paper.css?v=1">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -25,14 +26,22 @@
     <header><div><span>13-MONTH TREND</span><h2>📈 핵심 지표 추세 차트</h2></div><p>각 월의 마지막 거래일 종가입니다. 점을 누르면 정확한 값을 확인할 수 있습니다.</p></header>
     <div id="trendCharts" class="trend-grid"></div>
   </section>
+  <section id="paperTrading" class="paper-trading" aria-labelledby="paperTradingTitle">
+    <header class="paper-head"><div><span>LOCAL PAPER PORTFOLIO</span><h2 id="paperTradingTitle">모의 투자</h2><p>실제 계좌·증권사 API와 연결되지 않는 브라우저 전용 가상계좌입니다.</p></div><strong>🔒 직접 확인 후에만 가상 체결</strong></header>
+    <div class="paper-capital"><label>초기 가상자금 <span><input id="paperInitialCash" type="number" min="100000" step="100000" value="100000000"><em>원</em></span></label><button id="paperApplyCapital" type="button">초기자금 적용</button><small>거래가 없을 때만 변경됩니다.</small></div>
+    <div id="paperMetrics" class="paper-metrics"></div>
+    <form id="paperOrderForm" class="paper-order-form"><div class="paper-order-title"><b>가상 주문 입력</b><span>가격과 수량을 직접 확인하세요.</span></div><label>종목코드<input id="paperSymbol" maxlength="16" placeholder="예: 005930" required></label><label>종목명<input id="paperName" maxlength="30" placeholder="예: 삼성전자" required></label><label>주문구분<select id="paperSide"><option value="BUY">매수</option><option value="SELL">매도</option></select></label><label>주문가격<input id="paperPrice" type="number" min="0.01" step="0.01" placeholder="현재가" required></label><label>수량<input id="paperQuantity" type="number" min="1" step="1" value="1" required></label><label>수수료율<input id="paperFeeRate" type="number" min="0" max="10" step="0.001" value="0"><span class="paper-unit">%</span></label><label>매도 제비용률<input id="paperSellTaxRate" type="number" min="0" max="10" step="0.001" value="0"><span class="paper-unit">%</span></label><div id="paperOrderPreview" class="paper-order-preview">종목·가격·수량을 입력하면 예상 금액이 표시됩니다.</div><label class="paper-confirm"><input id="paperConfirm" type="checkbox"><span>위 가상 주문 내용을 직접 확인했습니다.</span></label><button id="paperSubmit" class="paper-submit" type="submit" disabled>가상 주문 체결</button></form>
+    <div class="paper-ledger-head"><div><h3>보유 종목</h3><p>현재가를 직접 수정하면 평가손익이 즉시 갱신됩니다.</p></div><span><button id="paperExport" type="button">JSON 백업</button><button id="paperReset" type="button" class="danger">가상계좌 초기화</button></span></div>
+    <div class="paper-table-scroll"><table class="paper-table"><thead><tr><th>종목</th><th>수량</th><th>평균단가</th><th>현재가</th><th>평가금액</th><th>평가손익</th></tr></thead><tbody id="paperPositions"></tbody></table></div>
+    <details class="paper-history"><summary>가상 거래내역 <b id="paperOrderCount">0건</b></summary><div class="paper-table-scroll"><table class="paper-table"><thead><tr><th>시각</th><th>구분</th><th>종목</th><th>가격</th><th>수량</th><th>비용</th><th>현금잔액</th></tr></thead><tbody id="paperOrders"></tbody></table></div></details><p id="paperMessage" class="paper-message" aria-live="polite">실제 주문은 발생하지 않습니다. 입력값은 이 브라우저에만 저장됩니다.</p>
+  </section>
   <section id="domesticNotice" class="domestic-notice"></section>
   <section class="legacy-briefing" aria-labelledby="morningBriefTitle">
     <header class="legacy-briefing-head"><span>MORNING CHECKLIST</span><h2 id="morningBriefTitle">주식 아침 브리핑 · 기존 항목 보존</h2><p>시장 요약·주요 경제 이슈·로컬 전용 관심종목 기능을 카테고리별로 이어서 확인합니다.</p><time><b id="briefingDate">—</b><span id="briefingUpdatedAt">업데이트 확인 중</span></time></header>
     <section id="connection" class="connection-card"></section>
     <section class="stock-section"><header><span>01</span><div><h2>시장·환율·원자재 핵심 요약</h2><p>위 상세표와 별도로 기존 아침 시장판을 빠른 확인용으로 유지했습니다.</p></div></header><div id="marketGrid" class="market-grid"></div></section>
     <section class="stock-section"><header><span>02</span><div><h2>관심종목 현황</h2><p>계좌·주문 기능이 없는 공개 페이지이며, 관심종목 기능은 PC 로컬판에만 보존됩니다.</p></div></header><div id="watchlist" class="watchlist"><p class="empty">관심종목과 모의투자 설정은 공개 저장소와 분리된 PC 로컬 전용 기능입니다.</p></div></section>
-    <section class="stock-section"><header><span>03</span><div><h2>주요 경제·시장 이슈</h2><p>주식·금리·환율·원자재 관련 최신 뉴스를 묶었습니다.</p></div></header><div id="newsList" class="news-list"></div></section>
-    <section class="stock-section"><header><span>04</span><div><h2>공개 페이지 보안 상태</h2><p>공개 저장소에는 계좌 연결·주문 실행·전략 코드가 포함되지 않습니다.</p></div></header><ul id="safetyList" class="safety-list"></ul></section>
+    <section class="stock-section"><header><span>03</span><div><h2>공개 페이지 보안 상태</h2><p>공개 저장소에는 계좌 연결·주문 실행·전략 코드가 포함되지 않습니다.</p></div></header><ul id="safetyList" class="safety-list"></ul></section>
     <p id="disclaimer" class="briefing-disclaimer">시장 정보 확인용이며 투자 권유 자료가 아닙니다.</p>
   </section>
   <section id="editorialHub" class="editorial-hub" aria-labelledby="editorialTitle">
@@ -44,6 +53,7 @@
       </div>
       <span id="editorialUpdated" class="editorial-updated">콘텐츠 불러오는 중</span>
     </div>
+    <section class="editorial-issues-section" aria-labelledby="marketIssuesTitle"><header><div><span>MARKET ISSUES</span><h3 id="marketIssuesTitle">주요 경제·시장 이슈</h3></div><p>경제 통합 뉴스와 분리한 주식·금리·환율·원자재 핵심 이슈입니다.</p></header><div id="newsList" class="news-list"></div></section>
     <div id="editorialSections" class="editorial-sections" aria-live="polite">
       <p class="editorial-loading">경제 브리핑을 불러오는 중입니다…</p>
     </div>
@@ -59,8 +69,9 @@
   <article id="editorialArticle" class="editorial-article"></article>
 </dialog>
 <script src="market.js?v=4"></script>
+<script src="paper.js?v=1"></script>
 <script src="market-brief.js?v=1"></script>
 <script src="report.js?v=2"></script>
-<script src="editorial.js?v=4"></script>
+<script src="editorial.js?v=5"></script>
 </body>
 </html>

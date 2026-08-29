@@ -1285,7 +1285,7 @@ function renderGraphBoards(){
       '<section class="stack-chart economic-indicator"><div class="economic-title"><b>일본 채권금리</b><span>1년·10년·30년 · 월평균 %</span></div><div class="economic-chart"><canvas class="jp-bond-chart" aria-label="일본 채권금리 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> 일본은행 정책 정상화와 엔화 자금조달 비용의 변화를 보여주는 일본 재무성 공식 만기별 수익률입니다.</p><p><b>해석</b> 상승하면 엔 캐리 자금 회수와 엔화 강세 압력이 커질 수 있습니다. 1·10·30년의 기울기로 단기 정책과 장기 물가 기대를 구분해 봅니다.</p></div></section>'+
       '<section class="stack-chart economic-indicator"><div class="economic-title"><b>주요 주식시장 비교</b><span>기간 시작값=100 · KOSPI·KOSDAQ·미국지수·반도체</span></div><div class="economic-chart market-chart-wrap"><canvas class="market-chart" aria-label="주요 주식시장 비교 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> 단위가 다른 주가지수를 선택 기간 첫 값 100으로 환산해 상승률을 비교합니다.</p><p><b>해석</b> 여러 지수가 함께 오르면 위험선호가 넓게 확산된 흐름이고, 반도체 등 일부 지수만 오르면 특정 업종 집중도가 높은 장세일 수 있습니다.</p></div></section>'+
       '<section class="stack-chart economic-indicator"><div class="economic-title"><b>비트코인</b><span>월말 · USD</span></div><div class="economic-chart"><canvas class="bitcoin-chart" aria-label="비트코인 가격 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> 대표 가상자산인 비트코인의 미국 달러 기준 월말 가격입니다.</p><p><b>해석</b> 유동성과 위험선호에 민감하지만 주식보다 변동성이 큽니다. 금리·달러·VIX와 함께 보고 단기 급등락을 일반 자산시장 흐름과 구분해야 합니다.</p></div></section>'+
-      '<section class="stack-chart economic-indicator"><div class="economic-title"><b>시장 심리</b><span>VIX·공포탐욕지수(0~100)</span></div><div class="economic-chart"><canvas class="sentiment-chart" aria-label="VIX 공포탐욕지수 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> VIX는 미국 주식시장의 예상 변동성, 공포탐욕지수는 7개 심리지표를 0(극단적 공포)~100(극단적 탐욕)으로 합산한 값입니다.</p><p><b>해석</b> VIX 급등과 공포탐욕 하락이 겹치면 위험회피가 강해진 상태입니다. 극단값은 반전 가능성도 있지만 단독 매매 신호로 사용하면 안 됩니다.</p></div></section>'+
+      '<section class="stack-chart economic-indicator sentiment-indicator"><div class="economic-title"><b>시장 심리</b><span>VIX·공포탐욕지수(0~100)</span></div><div class="economic-chart"><canvas class="sentiment-chart" aria-label="VIX 공포탐욕지수 그래프"></canvas></div><div class="sentiment-reference-guide" aria-label="시장 심리 기준선 설명"><span class="vix"><b>VIX</b><em>20 안정·보통</em><em>30 공포</em><em>40 극단적 공포</em></span><span class="greed"><b>공포탐욕</b><em>25 극단적 공포</em><em>45 공포↔중립</em><em>55 중립↔탐욕</em><em>75 극단적 탐욕</em></span></div><div class="indicator-description"><p><b>의미</b> VIX는 미국 주식시장의 예상 변동성, 공포탐욕지수는 7개 심리지표를 0(극단적 공포)~100(극단적 탐욕)으로 합산한 값입니다.</p><p><b>해석</b> VIX 급등과 공포탐욕 하락이 겹치면 위험회피가 강해진 상태입니다. 극단값은 반전 가능성도 있지만 단독 매매 신호로 사용하면 안 됩니다.</p></div></section>'+
     '</div>'+
     '<div class="policy-panel"><div class="economic-title"><b>주요 정부 부동산 정책</b><span>번호를 누르면 아래에 상세 내용이 표시됩니다</span></div><ol class="policy-list"></ol><div class="policy-detail" aria-live="polite"><p>선택한 기간의 정책을 누르면 핵심 요약이 여기에 표시됩니다.</p></div></div>'+
     '<section class="tax-estimator" aria-labelledby="taxEstimatorTitle">'+
@@ -1820,16 +1820,17 @@ function renderBoardChart(board,container){
   const marketDefs=[["KOSPI","kospi","#1d4ed8"],["KOSDAQ","kosdaq","#06b6d4"],["S&P 500","sp500","#dc2626"],["나스닥","nasdaq","#7c3aed"],["다우","dow","#111827"],["필라델피아 반도체","sox","#16a34a"]];
   const marketChart=new Chart(container.querySelector(".market-chart"),{type:"line",data:{labels,datasets:marketDefs.map(([label,key,color])=>lineDataset(label,normalized(metricMap("market_indices",key)),color))},options:commonOptions("시작값=100",c=>c.dataset.label+": "+fmt(c.raw),false,true,normalizedBaseline)});
   const bitcoinChart=new Chart(container.querySelector(".bitcoin-chart"),{type:"line",data:{labels,datasets:[lineDataset("비트코인",values(metricMap("market_indices","bitcoin")),"#f59e0b")]},options:commonOptions("USD",c=>"비트코인: $"+fmt(c.raw),false,false)});
-  const sentimentOptions=commonOptions("VIX",c=>c.dataset.label+": "+fmt(c.raw),false,true);
-  sentimentOptions.scales.y1={position:"right",min:0,max:100,title:{display:true,text:"공포탐욕 0~100"},grid:{drawOnChartArea:false}};
+  const sentimentOptions=commonOptions("",c=>c.dataset.label+": "+fmt(c.raw),false,true);
+  sentimentOptions.scales.y.title={display:false};
+  sentimentOptions.scales.y1={position:"right",min:0,max:100,title:{display:false},grid:{drawOnChartArea:false}};
   sentimentOptions.plugins.referenceLines.lines=[
-    {axis:"y",value:20,label:"VIX 안정·보통 20",color:"rgba(220,38,38,.15)"},
-    {axis:"y",value:30,label:"VIX 공포 30",color:"rgba(220,38,38,.22)"},
-    {axis:"y",value:40,label:"VIX 극단적 공포 40",color:"rgba(220,38,38,.3)"},
-    {axis:"y1",value:25,label:"극단적 공포 25",side:"right",color:"rgba(37,99,235,.16)"},
-    {axis:"y1",value:45,label:"공포↔중립 45",side:"right",color:"rgba(37,99,235,.18)"},
-    {axis:"y1",value:55,label:"중립↔탐욕 55",side:"right",color:"rgba(37,99,235,.18)"},
-    {axis:"y1",value:75,label:"극단적 탐욕 75",side:"right",color:"rgba(37,99,235,.24)"}
+    {axis:"y",value:20,color:"rgba(220,38,38,.15)"},
+    {axis:"y",value:30,color:"rgba(220,38,38,.22)"},
+    {axis:"y",value:40,color:"rgba(220,38,38,.3)"},
+    {axis:"y1",value:25,color:"rgba(37,99,235,.16)"},
+    {axis:"y1",value:45,color:"rgba(37,99,235,.18)"},
+    {axis:"y1",value:55,color:"rgba(37,99,235,.18)"},
+    {axis:"y1",value:75,color:"rgba(37,99,235,.24)"}
   ];
   const sentimentChart=new Chart(container.querySelector(".sentiment-chart"),{type:"line",data:{labels,datasets:[lineDataset("VIX",values(metricMap("market_indices","vix")),"#dc2626"),lineDataset("공포탐욕지수",values(metricMap("fear_greed","score")),"#2563eb",{yAxisID:"y1"})]},options:sentimentOptions});
   renderLatestValues(priceChart,(value,dataset,index)=>fmt(value)+(isPyeong?"만원/평":"억원")+(dataset.tradeCounts?.[index]?" · "+fmt(dataset.tradeCounts[index])+"건":""));
