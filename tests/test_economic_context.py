@@ -19,6 +19,29 @@ def test_economic_context_contains_dashboard_series() -> None:
     assert {"brent_usd_barrel", "wti_usd_barrel", "dubai_usd_barrel"} <= series_fields(data["oil_prices"])
     assert {"kospi", "kosdaq", "sp500", "nasdaq", "dow", "bitcoin", "sox", "vix"} <= data["market_indices"][-1].keys()
     assert 0 <= data["fear_greed"][-1]["score"] <= 100
+    assert all(500 <= row["krw_per_usd"] <= 3000 for row in data["exchange_rates"])
+
+
+def test_exchange_rate_collector_rejects_impossible_values() -> None:
+    from scripts.update_economic_context import filter_numeric_range
+
+    rows = [
+        {"month": "2015-01", "krw_per_usd": 1090.0},
+        {"month": "2015-02", "krw_per_usd": 0.1103},
+        {"month": "2015-03", "krw_per_usd": 1120.0},
+    ]
+    assert filter_numeric_range(rows, "krw_per_usd", 500, 3000) == [rows[0], rows[2]]
+
+
+def test_current_overlay_keeps_only_the_latest_month() -> None:
+    from scripts.update_economic_context import latest_month_rows
+
+    rows = [
+        {"month": "2015-02", "krw_per_usd": 0.1103},
+        {"month": "2026-07", "krw_per_usd": 1380.0},
+        {"month": "2026-08", "krw_per_usd": 1371.5},
+    ]
+    assert latest_month_rows(rows) == [rows[2]]
 
 
 def test_news_archive_has_historical_days_and_articles() -> None:

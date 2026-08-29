@@ -281,6 +281,34 @@ def convert_field(rows: list[dict[str, object]], key: str, factor: float) -> lis
     return converted
 
 
+def filter_numeric_range(
+    rows: list[dict[str, object]], key: str, minimum: float, maximum: float
+) -> list[dict[str, object]]:
+    """Drop impossible observations so a stale/corrupt fallback cannot distort charts."""
+    filtered: list[dict[str, object]] = []
+    for row in rows:
+        if key not in row:
+            continue
+        try:
+            value = float(row[key])
+        except (TypeError, ValueError):
+            continue
+        if minimum <= value <= maximum:
+            filtered.append(row)
+        else:
+            print(f"비정상 {key} 값 제외: {row.get('month')}={value}")
+    return filtered
+
+
+def latest_month_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Keep only the newest month from a feed used as a current-month overlay."""
+    months = [str(row.get("month", "")) for row in rows if row.get("month")]
+    if not months:
+        return []
+    latest_month = max(months)
+    return [row for row in rows if str(row.get("month")) == latest_month]
+
+
 def fetch_bok_bond_yields() -> list[dict[str, object]]:
     api_key = os.environ.get("BOK_ECOS_API_KEY", "").strip()
     if not api_key:
@@ -407,7 +435,8 @@ def main() -> None:
         print(f"구리 당월 선물가격 갱신 실패, 공식 월간자료 유지: {error}")
     for output_key, mapping in YAHOO_CURRENT_MONTH_GROUPS.items():
         try:
-            payload[output_key] = merge_rows(payload[output_key], fetch_yahoo_monthly(mapping))
+            current_rows = latest_month_rows(fetch_yahoo_monthly(mapping))
+            payload[output_key] = merge_rows(payload[output_key], current_rows)
         except Exception as error:
             print(f"{output_key} 당월 공개시세 갱신 실패, 공식 월간자료 유지: {error}")
     try:
@@ -442,6 +471,9 @@ def main() -> None:
             raise
         payload["money_supply"] = existing["money_supply"]
         print(f"한국은행 M1·M2 갱신 실패, 기존 자료 유지: {error}")
+    payload["exchange_rates"] = filter_numeric_range(
+        payload.get("exchange_rates", []), "krw_per_usd", 500.0, 3000.0
+    )
     base_rates = [{"date": date, "rate": rate} for date, rate in BASE_RATES]
     try:
         official_base_rates = fetch_bok_base_rates()
