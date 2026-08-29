@@ -15,10 +15,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from realestate.local_store import LocalStore
+from realestate.official_prices import OfficialPriceStore
 
 
 ROOT = Path(os.environ.get("AISERVER_ROOT", Path(__file__).resolve().parents[2]))
 STORE = LocalStore(ROOT)
+OFFICIAL_PRICES = OfficialPriceStore(ROOT / "data" / "local" / "official_prices.sqlite3")
 STORE.initialize()
 if not STORE.catalog_path.exists():
     STORE.import_complexes(ROOT / "data" / "raw" / "complexes.csv")
@@ -130,6 +132,19 @@ def meta() -> dict:
     if not STORE.catalog_path.exists():
         return STORE.build_catalog()["meta"]
     return json.loads(STORE.catalog_path.read_text(encoding="utf-8")).get("meta", {})
+
+
+@app.get("/api/official-price")
+def official_price(
+    apt_name: str = Query(min_length=1, max_length=120),
+    area_m2: float = Query(gt=0, le=1000),
+    address: str = Query(default="", max_length=220),
+    building: str = Query(default="", max_length=30),
+    unit: str = Query(default="", max_length=30),
+    year: int = Query(default=2026, ge=2005, le=2100),
+) -> dict:
+    """Return an exact unit price or a clearly labelled area-level median from the local official index."""
+    return OFFICIAL_PRICES.lookup(apt_name=apt_name, area_m2=area_m2, address=address, building=building, unit=unit, year=year)
 
 
 @app.get("/api/status")

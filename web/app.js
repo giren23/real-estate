@@ -1291,13 +1291,13 @@ function renderGraphBoards(){
     '<section class="tax-estimator" aria-labelledby="taxEstimatorTitle">'+
       '<div class="tax-estimator-head"><div><b id="taxEstimatorTitle">주택 세금 예상 계산</b><span>2023~2027년 · 현행 세율 기준 단순 추정</span></div><strong class="tax-current-total">—</strong></div>'+
       '<div class="tax-property-picker">'+
-        '<label>아파트·단지 검색<small>단지와 평형을 고른 뒤 동·호별 공동주택 공시가격을 확인하세요.</small><input class="tax-property-search" type="search" placeholder="아파트명 또는 지역 입력" autocomplete="off"></label>'+
+        '<label>아파트·단지 검색<small>단지와 평형을 고르면 PC의 공식 자료에서 대표 공시가격을 자동으로 불러옵니다.</small><input class="tax-property-search" type="search" placeholder="아파트명 또는 지역 입력" autocomplete="off"></label>'+
         '<div class="tax-property-results" hidden></div>'+
         '<div class="tax-property-selected" hidden><div><b class="tax-selected-name"></b><small class="tax-selected-address"></small></div><label>평형 선택<select class="tax-area-select"></select></label><label>동<input class="tax-building" type="text" inputmode="numeric" placeholder="예: 101"></label><label>호<input class="tax-unit" type="text" inputmode="numeric" placeholder="예: 1203"></label><a class="tax-official-link" href="https://www.realtyprice.kr/notice/m/gss/search.do" target="_blank" rel="noopener">공식 공시가격 조회 ↗</a><p class="tax-property-note"></p></div>'+
       '</div>'+
       '<div class="tax-form">'+
         '<label>주택 취득가액<small>취득세 계산 기준</small><span><input class="tax-purchase-price" type="number" min="0" max="10000" step="0.1" value="10"><em>억원</em></span></label>'+
-        '<label>2026년 공동주택 공시가격<small>동·호별 공식값 · 보유주택 합계</small><span><input class="tax-official-price" type="number" min="0" max="10000" step="0.1" placeholder="공식값 입력"><em>억원</em></span></label>'+
+        '<label>2026년 공동주택 공시가격<small>자동 조회값 · 필요하면 직접 수정</small><span><input class="tax-official-price" type="number" min="0" max="10000" step="0.001" placeholder="단지·평형 선택"><em>억원</em></span></label>'+
         '<label>취득 후 주택 수<small>세대 기준</small><select class="tax-home-count"><option value="1">1주택</option><option value="2">2주택</option><option value="3">3주택</option><option value="4">4주택 이상</option></select></label>'+
         '<label>취득연도<small>취득세는 선택 연도만</small><select class="tax-acquisition-year"><option value="2022">2022년 이전</option><option value="2023">2023년</option><option value="2024">2024년</option><option value="2025">2025년</option><option value="2026">2026년</option><option value="2027">2027년</option></select></label>'+
         '<label class="tax-check"><input class="tax-adjusted-area" type="checkbox"><span><b>조정대상지역 취득</b><small>다주택 취득세 중과 판단</small></span></label>'+
@@ -1307,7 +1307,7 @@ function renderGraphBoards(){
       '<div class="tax-summary" aria-live="polite"></div>'+
       '<div class="tax-table-wrap"><table class="tax-table"><thead><tr><th>연도</th><th>예상 공시가격</th><th>재산세</th><th>지방교육세</th><th>도시지역분</th><th>종합부동산세</th><th>농어촌특별세</th><th>보유세 합계</th><th>취득세</th></tr></thead><tbody></tbody></table></div>'+
       '<div class="tax-chart-wrap"><canvas class="tax-chart" aria-label="연도별 예상 보유세 그래프"></canvas></div>'+
-      '<details class="tax-method"><summary>계산 기준과 꼭 확인할 점</summary><ul><li>아파트의 과세 기준은 토지의 공시지가가 아니라 동·호별 공동주택 공시가격입니다. 단지·평형 검색은 대상을 찾기 위한 기능이며, 공식 공시가격은 부동산공시가격 알리미에서 동·호까지 확인해 입력해야 합니다.</li><li>2023~2027년 공시가격은 입력한 2026년 값을 같은 증감률로 역산·예측합니다. 과거 실제 공시가격을 입력하는 방식이 아니므로 비교용입니다.</li><li>재산세, 지방교육세(재산세의 20%), 선택 시 도시지역분을 각각 계산합니다. 여러 주택의 합계 공시가격을 하나의 주택처럼 계산하므로 실제 고지액과 차이가 날 수 있습니다.</li><li>종합부동산세는 1주택 12억원·일반 9억원 기본공제와 공정시장가액비율 60%를 적용한 공제 전 추정치이며 농어촌특별세는 별도 항목으로 표시합니다. 재산세 중복분, 고령자·장기보유 세액공제, 공동명의·법인·특례는 반영하지 않습니다.</li><li>취득세는 본세만 표시하며 취득 관련 지방교육세·농어촌특별세, 생애최초·일시적 2주택·저가주택 등 감면과 예외는 주택 면적과 취득 사유가 더 필요해 계산에 포함하지 않습니다.</li></ul><p>이 결과는 세무 신고용이 아닌 모의 계산입니다. 실제 계약·신고 전에는 부동산공시가격 알리미의 공식 공시가격과 관할 지방자치단체 또는 세무 전문가의 계산을 확인하세요.</p></details>'+
+      '<details class="tax-method"><summary>계산 기준과 꼭 확인할 점</summary><ul><li>아파트의 과세 기준은 토지의 공시지가가 아니라 동·호별 공동주택 공시가격입니다. 단지·평형만 선택하면 같은 전용면적 전체의 중앙값과 범위를 불러오고, 동·호까지 입력하면 일치하는 정확값으로 바꿉니다.</li><li>공식 가격 색인은 대용량이라 GitHub에 공개하지 않고 이 PC에만 저장합니다. 화면의 자동값 옆 안내가 ‘중앙값’이면 실제 동·호 값과 다를 수 있습니다.</li><li>2023~2027년 공시가격은 입력한 2026년 값을 같은 증감률로 역산·예측합니다. 과거 실제 공시가격을 입력하는 방식이 아니므로 비교용입니다.</li><li>재산세, 지방교육세(재산세의 20%), 선택 시 도시지역분을 각각 계산합니다. 여러 주택의 합계 공시가격을 하나의 주택처럼 계산하므로 실제 고지액과 차이가 날 수 있습니다.</li><li>종합부동산세는 1주택 12억원·일반 9억원 기본공제와 공정시장가액비율 60%를 적용한 공제 전 추정치이며 농어촌특별세는 별도 항목으로 표시합니다. 재산세 중복분, 고령자·장기보유 세액공제, 공동명의·법인·특례는 반영하지 않습니다.</li><li>취득세는 본세만 표시하며 취득 관련 지방교육세·농어촌특별세, 생애최초·일시적 2주택·저가주택 등 감면과 예외는 주택 면적과 취득 사유가 더 필요해 계산에 포함하지 않습니다.</li></ul><p>이 결과는 세무 신고용이 아닌 모의 계산입니다. 실제 계약·신고 전에는 부동산공시가격 알리미의 공식 공시가격과 관할 지방자치단체 또는 세무 전문가의 계산을 확인하세요.</p></details>'+
     '</section>'+
     '<p class="economic-sources">출처: <a href="https://fred.stlouisfed.org/" target="_blank" rel="noopener">FRED</a> · <a href="https://ecos.bok.or.kr/" target="_blank" rel="noopener">한국은행 ECOS</a> · <a href="https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/" target="_blank" rel="noopener">일본 재무성</a> · <a href="https://finance.yahoo.com/markets/" target="_blank" rel="noopener">Yahoo Finance</a> · <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener">CNN Fear &amp; Greed</a> · 국토교통부·관계부처 발표자료. 월이 끝나지 않은 값은 잠정치이며, 대용 지표는 그래프 설명에 표시합니다.</p></article>';
 
@@ -1721,21 +1721,45 @@ function bindTaxEstimator(board,container){
   const adjusted=estimator.querySelector(".tax-adjusted-area"),urban=estimator.querySelector(".tax-urban-area");
   const growthRange=estimator.querySelector(".tax-growth-range"),growthNumber=estimator.querySelector(".tax-growth-number"),growthValue=estimator.querySelector(".tax-growth-value");
   const propertySearch=estimator.querySelector(".tax-property-search"),propertyResults=estimator.querySelector(".tax-property-results"),propertySelected=estimator.querySelector(".tax-property-selected"),areaSelect=estimator.querySelector(".tax-area-select"),propertyNote=estimator.querySelector(".tax-property-note");
+  const buildingInput=estimator.querySelector(".tax-building"),unitInput=estimator.querySelector(".tax-unit");
   const clampGrowth=value=>Math.min(50,Math.max(-30,Number(value)||0));
-  let selectedProperty=null;
+  let selectedProperty=null,officialLookupTimer=0,officialLookupSequence=0;
   const latestAreaPrice=(group,area)=>{
     const trades=group.trades.filter(row=>Math.abs(Number(row.area_m2)-Number(area))<.01).sort((a,b)=>String(a.trade_date).localeCompare(String(b.trade_date)));
     if(trades.length)return Number(trades[trades.length-1].price_eok)||0;
     const history=group.history.filter(row=>Math.abs(Number(row.area_m2)-Number(area))<.01).sort((a,b)=>String(a.month).localeCompare(String(b.month)));
     return history.length?Number(history[history.length-1].median_price_eok)||0:0;
   };
+  const lookupOfficialPrice=async()=>{
+    if(!selectedProperty||!Number(areaSelect.value))return;
+    const sequence=++officialLookupSequence,address=searchAddressOf(selectedProperty).value;
+    const params=new URLSearchParams({apt_name:selectedProperty.apt_name,area_m2:String(areaSelect.value),address,year:String(TAX_BASE_YEAR),building:buildingInput.value.trim(),unit:unitInput.value.trim()});
+    propertyNote.textContent="공식 공동주택가격을 조회하고 있습니다…";
+    try{
+      const response=await fetch("/api/official-price?"+params,{cache:"no-store"});
+      if(!response.ok)throw Error("공식가격 조회 실패");
+      const result=await response.json();
+      if(sequence!==officialLookupSequence)return;
+      if(!result.available){official.value="";propertyNote.textContent=result.message+" 공식 조회 링크에서 확인하거나 PC에 공식 CSV 색인을 설치해 주세요.";render();return;}
+      if(!result.matched){official.value="";propertyNote.textContent=result.message+" 단지명·주소 또는 평형을 확인해 주세요.";render();return;}
+      official.value=(Number(result.price_won)/100000000).toFixed(3).replace(/0+$/,"").replace(/\.$/,"");
+      const range=result.exact?"":` · 범위 ${fmt(Number(result.min_won)/100000000)}~${fmt(Number(result.max_won)/100000000)}억원 · ${fmt(result.count)}세대`;
+      propertyNote.textContent=`${result.year}년 ${result.method} ${official.value}억원을 자동 적용했습니다${range}. ${result.message}`;
+      render();
+    }catch(_error){
+      if(sequence!==officialLookupSequence)return;
+      official.value="";propertyNote.textContent="이 PC의 공식 공시가격 검색 서버에 연결되지 않았습니다. 공식 조회 링크에서 확인할 수 있습니다.";render();
+    }
+  };
+  const scheduleOfficialLookup=()=>{clearTimeout(officialLookupTimer);officialLookupTimer=setTimeout(lookupOfficialPrice,350);};
   const applySelectedArea=()=>{
     if(!selectedProperty)return;
     const area=Number(areaSelect.value),latestPrice=latestAreaPrice(selectedProperty,area);
     if(latestPrice)purchase.value=latestPrice;
     official.value="";
-    propertyNote.textContent=(latestPrice?"최근 실거래 "+fmt(latestPrice)+"억원을 취득가액에 넣었습니다. ":"")+"공시가격은 같은 평형이라도 동·호에 따라 다르므로 공식 조회 후 입력하세요.";
+    propertyNote.textContent=(latestPrice?"최근 실거래 "+fmt(latestPrice)+"억원을 취득가액에 넣었습니다. ":"")+"공식 공시가격 자동 조회를 시작합니다.";
     render();
+    scheduleOfficialLookup();
   };
   const chooseProperty=async key=>{
     const group=apartmentGroups.find(item=>item.key===key);
@@ -1788,6 +1812,7 @@ function bindTaxEstimator(board,container){
   };
   propertySearch.addEventListener("input",showPropertyMatches);
   areaSelect.addEventListener("change",applySelectedArea);
+  [buildingInput,unitInput].forEach(input=>input.addEventListener("input",scheduleOfficialLookup));
   growthRange.addEventListener("input",()=>{growthNumber.value=growthRange.value;growthValue.value=growthRange.value+"%";render();});
   growthNumber.addEventListener("input",()=>{const value=clampGrowth(growthNumber.value);growthRange.value=value;growthValue.value=value+"%";render();});
   [purchase,official,homeCount,acquisitionYear,adjusted,urban].forEach(input=>input.addEventListener("input",render));

@@ -45,7 +45,8 @@ def test_tax_estimator_searches_apartment_area_before_official_price_input() -> 
     assert "공동주택 공시가격" in script
     assert "동·호" in script
     assert "realtyprice.kr/notice/m/gss/search.do" in script
-    assert 'placeholder="공식값 입력"' in script
+    assert 'placeholder="단지·평형 선택"' in script
+    assert "/api/official-price?" in script
     assert 'value="8"' not in script
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,11 @@ from fastapi import HTTPException
 
 from realestate.local_collect import DailyQuotaError, OfficialCsvCollector, Region, _year_batches, parse_rtms_csv, region_priority
 from realestate.local_store import LocalStore, name_score
+from realestate.official_prices import OfficialPriceStore, normalize
 from realestate import server
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_parse_official_csv_and_skip_cancelled() -> None:
@@ -173,3 +178,27 @@ def test_map_complexes_rejects_oversized_bounds() -> None:
     with pytest.raises(HTTPException) as error:
         server.map_complexes(37.0, 126.0, 37.3, 126.1)
     assert error.value.status_code == 400
+
+
+def test_official_price_lookup_returns_area_median_then_exact_unit(tmp_path: Path) -> None:
+    store = OfficialPriceStore(tmp_path / "official.sqlite3")
+    store.initialize()
+    with sqlite3.connect(store.path) as db:
+        for building, unit, price in (("101", "101", 600_000_000), ("101", "201", 620_000_000), ("102", "301", 700_000_000)):
+            db.execute(
+                "INSERT INTO official_prices VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (2026, "경기도 성남시 분당구", normalize("경기도 성남시 분당구"), "테스트단지", normalize("테스트단지"), building, unit, 84.9, price, "2026-01-01"),
+            )
+    summary = store.lookup(apt_name="테스트단지", area_m2=84.9, year=2026)
+    assert summary["exact"] is False
+    assert summary["price_won"] == 620_000_000
+    assert summary["min_won"] == 600_000_000
+    exact = store.lookup(apt_name="테스트단지", area_m2=84.9, year=2026, building="102동", unit="301호")
+    assert exact["exact"] is True
+    assert exact["price_won"] == 700_000_000
+
+
+def test_tax_ui_requests_official_price_after_complex_and_area_selection() -> None:
+    script = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    assert "/api/official-price?" in script
+    assert "같은 전용면적 전체의 중앙값" in script

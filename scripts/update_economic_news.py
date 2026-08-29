@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import html
 import json
+import os
 import re
 import time
 import xml.etree.ElementTree as ET
@@ -22,6 +23,12 @@ FEED_QUERIES = (
     "경제 OR 금융 OR 증시 OR 환율 OR 금리 OR 반도체",
     "부동산 OR 주택 OR 전세 OR 아파트 OR 분양",
     "미국증시 OR 연준 OR 국제유가 OR 금값 OR 비트코인",
+)
+GLOBAL_FEEDS = (
+    ("economy OR markets OR interest rates OR stocks", "en-US", "US", "US:en", "us"),
+    ("site:nytimes.com economy OR markets OR business", "en-US", "US", "US:en", "us"),
+    ("site:fortune.com economy OR markets OR business", "en-US", "US", "US:en", "us"),
+    ("(Reuters OR Bloomberg OR Financial Times OR BBC OR AP OR CNBC OR Economist OR Nikkei) economy markets", "en-US", "US", "US:en", "global"),
 )
 TAG_PATTERN = re.compile(r"<[^>]+>")
 SPACE_PATTERN = re.compile(r"\s+")
@@ -53,7 +60,9 @@ MARKET_COMMENTS = {
 }
 
 CORE_MARKET_CATEGORIES = {"증시", "금리·채권", "환율", "원자재"}
-TRUSTED_PUBLISHERS = ("연합뉴스", "한국은행", "기획재정부", "금융위원회", "한국거래소", "KBS", "MBC", "SBS", "로이터", "Reuters", "블룸버그", "Bloomberg", "한경", "매일경제", "서울경제", "이데일리")
+TRUSTED_PUBLISHERS = ("연합뉴스", "한국은행", "기획재정부", "금융위원회", "한국거래소", "KBS", "MBC", "SBS", "로이터", "Reuters", "블룸버그", "Bloomberg", "한경", "매일경제", "서울경제", "이데일리", "The New York Times", "New York Times", "Fortune", "Financial Times", "The Wall Street Journal", "Wall Street Journal", "Associated Press", "AP News", "BBC", "CNBC", "The Economist", "Nikkei Asia", "The Washington Post")
+US_PUBLISHERS = ("New York Times", "Fortune", "Wall Street Journal", "CNBC", "Bloomberg", "Associated Press", "AP News", "Washington Post", "MarketWatch", "Barron's", "CBS", "NBC", "ABC News", "CNN")
+KOREAN_PUBLISHERS = ("연합뉴스", "한국은행", "기획재정부", "금융위원회", "한국거래소", "KBS", "MBC", "SBS", "한경", "한국경제", "매일경제", "서울경제", "이데일리", "조선일보", "중앙일보", "동아일보", "전자신문")
 IMPACT_KEYWORDS = ("기준금리", "연준", "금리 인상", "금리 인하", "환율", "국채", "물가", "고용", "GDP", "관세", "수출", "실적", "코스피", "코스닥", "나스닥", "유가", "원유", "금값", "반도체", "부동산 정책", "대출 규제", "세제")
 INVESTMENT_RELEVANCE = ("금리", "연준", "환율", "달러", "국채", "채권", "물가", "고용", "GDP", "관세", "무역", "수출", "실적", "코스피", "코스닥", "나스닥", "다우", "주가", "유가", "원유", "금값", "구리", "반도체", "비트코인", "ETF", "주택", "아파트", "대출", "분양", "재건축", "재개발", "공급", "세제", "세금")
 NOISE_KEYWORDS = ("화재", "사망", "숨져", "대피", "홍수", "실종", "범죄", "교통사고", "연예", "Weverse", "TXT-LOG", "프라하하하", "[포토]", "시상식", "페스티벌")
@@ -69,6 +78,28 @@ def classify(text: str) -> str:
         if any(keyword.lower() in text.lower() for keyword in keywords):
             return category
     return "거시경제"
+
+
+def classify_region(publisher: str, hinted: str = "") -> str:
+    if any(name.lower() in publisher.lower() for name in KOREAN_PUBLISHERS):
+        return "domestic"
+    if any(name.lower() in publisher.lower() for name in US_PUBLISHERS):
+        return "us"
+    return hinted if hinted in {"us", "global"} else "domestic"
+
+
+def translate_to_korean(texts: list[str]) -> list[str] | None:
+    """Translate only when an explicit DeepL key exists; never invent a Korean summary."""
+    key = os.environ.get("DEEPL_API_KEY", "").strip()
+    if not key or not texts:
+        return None
+    endpoint = os.environ.get("DEEPL_API_URL", "").strip() or ("https://api-free.deepl.com/v2/translate" if key.endswith(":fx") else "https://api.deepl.com/v2/translate")
+    payload = json.dumps({"text": texts, "target_lang": "KO"}, ensure_ascii=False).encode("utf-8")
+    request = Request(endpoint, data=payload, headers={"User-Agent": USER_AGENT, "Authorization": f"DeepL-Auth-Key {key}", "Content-Type": "application/json", "Accept": "application/json"}, method="POST")
+    with urlopen(request, timeout=45) as response:
+        rows = json.loads(response.read().decode("utf-8")).get("translations", [])
+    translated = [clean_text(row.get("text", "")) for row in rows]
+    return translated if len(translated) == len(texts) and all(translated) else None
 
 
 def is_rate_decision(text: str) -> bool:
@@ -104,9 +135,21 @@ def importance_details(item: dict[str, object]) -> dict[str, object]:
     numeric = 3 if NUMBER_PATTERN.search(title) else 0
     rate_decision = is_rate_decision(title)
     decision_bonus = 30 if rate_decision else 0
+    engagement = item.get("engagement") if isinstance(item.get("engagement"), dict) else {}
+    actual_views = int(engagement.get("views") or 0)
+    actual_reactions = int(engagement.get("reactions") or 0)
+    popularity_rank = int(engagement.get("rank") or 0)
+    engagement_bonus = min(24, int((actual_views + actual_reactions * 4) ** 0.25 * 2)) if actual_views or actual_reactions else max(0, 18 - popularity_rank) if popularity_rank else 0
     noise = 32 if any(keyword in title for keyword in NOISE_KEYWORDS) else 0
     relevant = category in CORE_MARKET_CATEGORIES or any(keyword.lower() in title.lower() for keyword in INVESTMENT_RELEVANCE)
-    score = max(0, min(100, coverage + market + impact + authority + numeric + decision_bonus - noise))
+    score = max(0, min(100, coverage + market + impact + authority + numeric + decision_bonus + engagement_bonus - noise))
+    views_available = actual_views > 0
+    if views_available or actual_reactions:
+        response_basis = f"공개 조회 {actual_views:,}회 · 공개 반응 {actual_reactions:,}건"
+    elif popularity_rank:
+        response_basis = f"매체 공식 인기기사 순위 {popularity_rank}위 · 조회수 원수치는 비공개"
+    else:
+        response_basis = "조회·반응 수치 미제공 · 유사 보도 확산과 매체 다양성으로 대체"
     return {
         "score": score,
         "coverage_score": coverage,
@@ -114,9 +157,10 @@ def importance_details(item: dict[str, object]) -> dict[str, object]:
         "source_score": authority,
         "noise_penalty": noise,
         "attention_basis": f"유사 보도 {related}건 · 확인 매체 {sources}곳",
-        "views_available": False,
+        "engagement_score": engagement_bonus,
+        "views_available": views_available,
         "rate_decision": rate_decision,
-        "response_proxy": "조회·좋아요 미제공 · 유사 보도 확산과 매체 다양성으로 대체",
+        "response_proxy": response_basis,
         "investment_relevant": relevant and noise == 0,
     }
 
@@ -125,13 +169,23 @@ def mark_important(items: list[dict[str, object]], limit: int = 8) -> list[dict[
     for item in items:
         item["category"] = str(item.get("category") or ((item.get("tags") or ["거시경제"])[0]))
         item["publisher"] = str(item.get("publisher") or (((item.get("sources") or [{}])[0]).get("publisher", "원문")))
+        item["region"] = str(item.get("region") or classify_region(str(item["publisher"])))
         item["importance"] = importance_details(item)
         item["importance_score"] = item["importance"]["score"]
         item["important"] = False
     ranked = sorted(items, key=lambda row: (bool(row["importance"].get("rate_decision")), int(row.get("importance_score", 0)), str(row.get("date", ""))), reverse=True)
     category_counts: dict[str, int] = {}
     selected = 0
+    for region in ("domestic", "us", "global"):
+        candidate = next((row for row in ranked if row.get("region") == region and row["importance"].get("investment_relevant") and (int(row.get("importance_score", 0)) >= 28 or row["importance"].get("rate_decision"))), None)
+        if candidate and selected < limit:
+            candidate["important"] = True
+            category = str(candidate.get("category", "거시경제"))
+            category_counts[category] = category_counts.get(category, 0) + 1
+            selected += 1
     for item in ranked:
+        if item.get("important"):
+            continue
         if (int(item.get("importance_score", 0)) < 28 and not item["importance"].get("rate_decision")) or not item["importance"].get("investment_relevant") or selected >= limit:
             continue
         category = str(item.get("category", "거시경제"))
@@ -143,15 +197,15 @@ def mark_important(items: list[dict[str, object]], limit: int = 8) -> list[dict[
     return items
 
 
-def feed_url(query: str, target: date) -> str:
+def feed_url(query: str, target: date, language: str = "ko", country: str = "KR", edition: str = "KR:ko") -> str:
     after = target.isoformat()
     before = (target + timedelta(days=1)).isoformat()
     scoped = f"({query}) after:{after} before:{before}"
-    return f"https://news.google.com/rss/search?q={quote_plus(scoped)}&hl=ko&gl=KR&ceid=KR:ko"
+    return f"https://news.google.com/rss/search?q={quote_plus(scoped)}&hl={language}&gl={country}&ceid={edition}"
 
 
-def fetch_feed(query: str, target: date) -> list[dict[str, str]]:
-    request = Request(feed_url(query, target), headers={"User-Agent": USER_AGENT, "Accept": "application/rss+xml, application/xml"})
+def fetch_feed(query: str, target: date, language: str = "ko", country: str = "KR", edition: str = "KR:ko", region: str = "domestic") -> list[dict[str, str]]:
+    request = Request(feed_url(query, target, language, country, edition), headers={"User-Agent": USER_AGENT, "Accept": "application/rss+xml, application/xml"})
     with urlopen(request, timeout=40) as response:
         root = ET.fromstring(response.read())
     rows: list[dict[str, str]] = []
@@ -171,7 +225,25 @@ def fetch_feed(query: str, target: date) -> list[dict[str, str]]:
             published_date = published_at.date().isoformat()
         except (TypeError, ValueError):
             published_date = target.isoformat()
-        rows.append({"title": title, "url": link, "publisher": publisher or "뉴스 원문", "description": description, "published_at": published_date})
+        rows.append({"title": title, "url": link, "publisher": publisher or "뉴스 원문", "description": description, "published_at": published_date, "region": classify_region(publisher, region)})
+    return rows
+
+
+def fetch_nyt_most_popular(target: date) -> list[dict[str, object]]:
+    key = os.environ.get("NYT_API_KEY", "").strip()
+    if not key:
+        return []
+    request = Request(f"https://api.nytimes.com/svc/mostpopular/v2/viewed/1.json?api-key={quote_plus(key)}", headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+    with urlopen(request, timeout=40) as response:
+        results = json.loads(response.read().decode("utf-8")).get("results", [])
+    rows = []
+    for rank, item in enumerate(results, 1):
+        published = str(item.get("published_date") or target.isoformat())[:10]
+        if published != target.isoformat():
+            continue
+        title, description, link = clean_text(item.get("title", "")), clean_text(item.get("abstract", "")), clean_text(item.get("url", ""))
+        if title and link:
+            rows.append({"title": title, "url": link, "publisher": "The New York Times", "description": description, "published_at": published, "region": "us", "engagement": {"rank": rank, "metric": "NYT most viewed"}})
     return rows
 
 
@@ -212,7 +284,10 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
         if source["publisher"] in seen_publishers:
             continue
         seen_publishers.add(source["publisher"])
-        sources.append({"publisher": source["publisher"], "title": source["title"], "url": source["url"], "published_at": source["published_at"]})
+        source_entry = {"publisher": source["publisher"], "title": source["title"], "url": source["url"], "published_at": source["published_at"], "region": source.get("region", "domestic")}
+        if source.get("region") in {"us", "global"}:
+            source_entry.update({"summary_original": source["description"][:500], "translation_status": "translation_api_key_required"})
+        sources.append(source_entry)
     numbers = []
     for source in related:
         for value in NUMBER_PATTERN.findall(f"{source['title']} {source['description']}"):
@@ -231,6 +306,8 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
         "tags": [category, row["publisher"][:18]],
         "category": category,
         "publisher": row["publisher"][:40],
+        "region": row.get("region", "domestic"),
+        "engagement": row.get("engagement", {}),
         "related_reports": len(related),
         "source_count": len(sources),
         "easy_explanation": description,
@@ -250,6 +327,29 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
     }
 
 
+def translate_foreign_sources(items: list[dict[str, object]]) -> None:
+    pending: list[tuple[dict[str, object], str, str]] = []
+    texts: list[str] = []
+    for item in items:
+        for source in item.get("sources") or []:
+            if source.get("region") not in {"us", "global"}:
+                continue
+            title, summary = str(source.get("title", "")), str(source.get("summary_original", ""))
+            pending.append((source, title, summary))
+            texts.extend([title, summary or title])
+    if not texts:
+        return
+    try:
+        translated = translate_to_korean(texts)
+    except Exception as error:
+        print(f"해외 기사 번역 실패: {error}")
+        translated = None
+    if not translated:
+        return
+    for index, (source, _title, _summary) in enumerate(pending):
+        source.update({"title_ko": translated[index * 2], "summary_ko": translated[index * 2 + 1], "translation_status": "translated", "translation_provider": "DeepL"})
+
+
 def collect_day(target: date, limit: int) -> list[dict[str, object]]:
     unique: dict[str, dict[str, str]] = {}
     for query in FEED_QUERIES:
@@ -260,9 +360,24 @@ def collect_day(target: date, limit: int) -> list[dict[str, object]]:
         except Exception as error:
             print(f"{target} 뉴스 피드 일부 실패: {error}")
         time.sleep(0.2)
+    for query, language, country, edition, region in GLOBAL_FEEDS:
+        try:
+            for row in fetch_feed(query, target, language, country, edition, region):
+                key = SPACE_PATTERN.sub("", row["title"].lower())
+                unique.setdefault(key, row)
+        except Exception as error:
+            print(f"{target} 해외 뉴스 피드 일부 실패: {error}")
+        time.sleep(0.2)
+    try:
+        for row in fetch_nyt_most_popular(target):
+            key = SPACE_PATTERN.sub("", str(row["title"]).lower())
+            unique[key] = row
+    except Exception as error:
+        print(f"{target} NYT 인기기사 API 실패: {error}")
     clusters = cluster_rows(list(unique.values()))
     clusters.sort(key=lambda cluster: (len({row["publisher"] for row in cluster}), len(cluster), len(NUMBER_PATTERN.findall(" ".join(row["title"] for row in cluster)))), reverse=True)
     items = [item_from_feed(cluster[0], cluster) for cluster in clusters[:limit]]
+    translate_foreign_sources(items)
     mark_important(items)
     return sorted(items, key=lambda row: int(row.get("importance_score", 0)), reverse=True)
 

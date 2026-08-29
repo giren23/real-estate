@@ -65,7 +65,8 @@
 
   function sourceLedgerHtml(sources) {
     if (!Array.isArray(sources) || !sources.length) return "";
-    return `<section class="report-sources"><h3>주요 경제·시장 뉴스 원문</h3><p>비슷한 보도를 매체별로 확인할 수 있습니다. 제목을 누르면 해당 언론사의 원문으로 이동합니다.</p><ol class="report-source-links">${sources.map((source, index) => `<li><a href="${safe(source.url)}" target="_blank" rel="noopener noreferrer"><span>${index === 0 ? "대표 기사 · " : ""}${esc(source.publisher || "원문")} · ${esc(source.published_at || "-")}</span><b>${esc(source.title || "원문 보기")}</b><em>원문 보기 ↗</em></a></li>`).join("")}</ol></section>`;
+    const labels={domestic:"국내",us:"미국",global:"글로벌"};
+    return `<section class="report-sources"><h3>주요 경제·시장 뉴스 원문</h3><p>비슷한 보도를 매체별로 확인할 수 있습니다. 해외 기사는 정식 번역 API로 생성된 한국어 요약만 표시합니다.</p><ol class="report-source-links">${sources.map((source, index) => `<li><a href="${safe(source.url)}" target="_blank" rel="noopener noreferrer"><span>${index === 0 ? "대표 기사 · " : ""}${esc(labels[source.region]||"국내")} · ${esc(source.publisher || "원문")} · ${esc(source.published_at || "-")}</span><b>${esc(source.title_ko || source.title || "원문 보기")}</b><em>원문 보기 ↗</em></a>${source.summary_ko?`<p class="source-translation"><b>한국어 번역 요약</b>${esc(source.summary_ko)}</p>`:source.region&&source.region!=="domestic"?'<p class="source-translation pending">번역 API가 연결되면 검증된 한국어 요약이 이 위치에 자동 표시됩니다.</p>':""}</li>`).join("")}</ol></section>`;
   }
 
   function sectionHtml(section, index) {

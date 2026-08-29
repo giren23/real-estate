@@ -43,10 +43,11 @@
 
   function importantHtml(items) {
     if (!importantList) return;
-    const order = ["증시", "금리·채권", "환율", "원자재", "산업·기업", "거시경제", "부동산", "가상자산"];
-    const groups = order.map(category => ({ category, items: items.filter(item => (item.category || item.tags?.[0]) === category) })).filter(group => group.items.length);
-    importantList.innerHTML = groups.length ? groups.map(group => `<section class="important-news-group">
-      <header><a href="news.html?category=${encodeURIComponent(group.category)}">${escapeHtml(group.category)}</a><small>${group.items.length}건</small></header>
+    const labels = {domestic:"국내 뉴스",us:"미국 뉴스",global:"기타 글로벌 뉴스"};
+    const regionOf = item => item.region || ((item.publisher || "").match(/New York Times|Fortune|Wall Street Journal|CNBC|Bloomberg|Washington Post/i)?"us":((item.publisher || "").match(/Reuters|Financial Times|BBC|Economist|Nikkei|AP News/i)?"global":"domestic"));
+    const groups = ["domestic","us","global"].map(region => ({ region, items: items.filter(item => regionOf(item) === region) })).filter(group => group.items.length);
+    importantList.innerHTML = groups.length ? groups.map(group => `<section class="important-news-group important-region-${group.region}">
+      <header><a href="news.html?region=${encodeURIComponent(group.region)}">${labels[group.region]}</a><small>${group.items.length}건 · 파급력·공개 반응·보도 확산 반영</small></header>
       <div>${group.items.map(cardHtml).join("")}</div>
     </section>`).join("") : '<p class="editorial-loading">오늘의 중요 경제·시장 뉴스를 준비 중입니다.</p>';
   }
@@ -124,7 +125,7 @@
       if (!response.ok) throw new Error("브리핑 자료를 불러오지 못했습니다.");
       return response.json();
     }),
-    fetch("content/news/index.json?v=1", { cache: "no-store" }).then(response => response.ok ? response.json() : null).catch(() => null),
+    fetch("content/news/index.json?v=5", { cache: "no-store" }).then(response => response.ok ? response.json() : null).catch(() => null),
     fetch("content/analysis/index.json?v=1", { cache: "no-store" }).then(response => response.ok ? response.json() : null).catch(() => null)
   ])
     .then(([data, news, automatic]) => {

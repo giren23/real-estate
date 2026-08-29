@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.update_economic_news import importance_details, mark_important, representative_score
+from scripts.update_economic_news import classify_region, importance_details, mark_important, representative_score
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,3 +78,23 @@ def test_news_archive_has_two_paginations_and_clickable_filters() -> None:
 def test_latest_policy_is_the_default_selection() -> None:
     script = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
     assert ".sort((a,b)=>b.date.localeCompare(a.date))" in script
+
+
+def test_news_regions_and_real_engagement_are_explicit() -> None:
+    assert classify_region("The New York Times", "global") == "us"
+    assert classify_region("연합뉴스", "us") == "domestic"
+    ranked = sample("연준 금리 결정", "금리·채권", 1, 1)
+    ranked["engagement"] = {"rank": 1, "metric": "NYT most viewed"}
+    detail = importance_details(ranked)
+    assert detail["engagement_score"] > 0
+    assert detail["views_available"] is False
+    assert "공식 인기기사 순위" in detail["response_proxy"]
+
+
+def test_news_ui_groups_regions_and_shows_verified_translation_below_link() -> None:
+    editorial = (ROOT / "web" / "editorial.js").read_text(encoding="utf-8")
+    report = (ROOT / "web" / "report.js").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "economic-indicators-daily.yml").read_text(encoding="utf-8")
+    assert all(label in editorial for label in ("국내 뉴스", "미국 뉴스", "기타 글로벌 뉴스"))
+    assert "summary_ko" in report and "한국어 번역 요약" in report
+    assert "NYT_API_KEY" in workflow and "DEEPL_API_KEY" in workflow

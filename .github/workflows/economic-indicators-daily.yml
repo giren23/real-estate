@@ -38,6 +38,9 @@ jobs:
 
       - name: Refresh economic news archive
         continue-on-error: true
+        env:
+          NYT_API_KEY: ${{ secrets.NYT_API_KEY }}
+          DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
         run: python scripts/update_economic_news.py --backfill-days 2 --limit-per-day 60
 
       - name: Refresh company and deep-dive analysis
