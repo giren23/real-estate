@@ -1,0 +1,44 @@
+name: Daily economic indicators
+
+on:
+  schedule:
+    # 매일 한국시간 오전 7시 15분(UTC 전날 22시 15분), 미국장 마감 이후 실행
+    - cron: "15 22 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: economic-indicators-daily
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Refresh all economic indicator series
+        env:
+          BOK_ECOS_API_KEY: ${{ secrets.BOK_ECOS_API_KEY }}
+        run: python scripts/update_economic_context.py
+
+      - name: Build daily market snapshot
+        run: python scripts/update_market_snapshot.py
+
+      - name: Verify generated data and chart freshness wiring
+        run: python -m pytest -q tests/test_economic_context.py tests/test_market_snapshot.py tests/test_latest_chart_values.py
+
+      - name: Commit refreshed indicators
+        run: |
+          git config user.name "economic-indicator-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/public/economic_context.json data/public/market_snapshot.json
+          git commit -m "Daily economic indicator update" || exit 0
+          git pull --rebase origin main
+          git push

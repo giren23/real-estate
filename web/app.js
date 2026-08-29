@@ -1293,8 +1293,11 @@ function periodBounds(board,seriesRows){
     ...(economicContext.us_policy_rates||[]).map(item=>String(item.month||"").slice(0,7)),
     ...(economicContext.japan_policy_rates||[]).map(item=>String(item.month||"").slice(0,7)),
     ...(economicContext.money_supply||[]).map(item=>String(item.month||"").slice(0,7)),
+    ...(economicContext.metal_prices||[]).map(item=>String(item.month||"").slice(0,7)),
     ...(economicContext.bond_yields||[]).map(item=>String(item.month||"").slice(0,7)),
     ...(economicContext.oil_prices||[]).map(item=>String(item.month||"").slice(0,7)),
+    ...(economicContext.market_indices||[]).map(item=>String(item.month||"").slice(0,7)),
+    ...(economicContext.fear_greed||[]).map(item=>String(item.month||"").slice(0,7)),
     ...(economicContext.base_rates||[]).map(item=>String(item.date||"").slice(0,7))
   ].filter(Boolean);
   const allMonths=[...tradeMonths,...economicMonths].filter(Boolean).sort();

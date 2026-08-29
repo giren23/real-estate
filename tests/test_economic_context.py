@@ -7,12 +7,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def series_fields(rows: list[dict]) -> set[str]:
+    return {key for row in rows for key in row}
+
+
 def test_economic_context_contains_dashboard_series() -> None:
     data = json.loads((ROOT / "data" / "public" / "economic_context.json").read_text(encoding="utf-8"))
     required = {"exchange_rates", "money_supply", "metal_prices", "oil_prices", "bond_yields", "market_indices", "fear_greed"}
     assert required <= data.keys()
-    assert {"gold_usd_oz", "silver_usd_oz"} <= data["metal_prices"][-1].keys()
-    assert {"brent_usd_barrel", "wti_usd_barrel", "dubai_usd_barrel"} <= data["oil_prices"][-1].keys()
+    assert {"gold_usd_oz", "silver_usd_oz", "copper_usd_ton"} <= series_fields(data["metal_prices"])
+    assert {"brent_usd_barrel", "wti_usd_barrel", "dubai_usd_barrel"} <= series_fields(data["oil_prices"])
     assert {"kospi", "kosdaq", "sp500", "nasdaq", "dow", "bitcoin", "sox", "vix"} <= data["market_indices"][-1].keys()
     assert 0 <= data["fear_greed"][-1]["score"] <= 100
 

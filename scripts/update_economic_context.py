@@ -48,6 +48,11 @@ YAHOO_SERIES = {
     "vix": "^VIX",
 }
 YAHOO_METAL_SERIES = {"gold_usd_oz": "GC=F", "silver_usd_oz": "SI=F"}
+YAHOO_CURRENT_MONTH_GROUPS = {
+    "exchange_rates": {"krw_per_usd": "KRW=X"},
+    "oil_prices": {"brent_usd_barrel": "BZ=F", "wti_usd_barrel": "CL=F"},
+    "bond_yields": {"us_10y": "^TNX", "us_30y": "^TYX"},
+}
 BOK_BOND_ITEMS = {"kr_1y": "010190000", "kr_10y": "010210000", "kr_30y": "010230000"}
 BOK_BOND_TABLE = "817Y002"
 CNN_FEAR_GREED_URL = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata/2021-02-01"
@@ -164,9 +169,18 @@ def fred_url(series_id: str) -> str:
 def download(url: str, *, headers: dict[str, str] | None = None) -> bytes:
     request_headers = {"User-Agent": USER_AGENT, "Accept": "*/*"}
     request_headers.update(headers or {})
-    request = Request(url, headers=request_headers)
-    with urlopen(request, timeout=45) as response:
-        return response.read()
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            request = Request(url, headers=request_headers)
+            with urlopen(request, timeout=45) as response:
+                return response.read()
+        except Exception as error:
+            last_error = error
+            if attempt < 2:
+                time.sleep(2**attempt)
+    assert last_error is not None
+    raise last_error
 
 
 def fetch_fred_series(series_id: str, value_key: str) -> list[dict[str, object]]:
@@ -191,10 +205,14 @@ def merge_monthly_series(series: dict[str, tuple[str, list[dict[str, object]]]])
 
 
 def fetch_fred_group(mapping: dict[str, str]) -> list[dict[str, object]]:
-    fetched = {
-        value_key: (series_id, fetch_fred_series(series_id, value_key))
-        for value_key, series_id in mapping.items()
-    }
+    fetched: dict[str, tuple[str, list[dict[str, object]]]] = {}
+    for value_key, series_id in mapping.items():
+        try:
+            fetched[value_key] = (series_id, fetch_fred_series(series_id, value_key))
+        except Exception as error:
+            print(f"{series_id} 개별 갱신 실패, 나머지 FRED 지표 계속: {error}")
+    if not fetched:
+        raise RuntimeError("FRED 묶음 지표를 하나도 갱신하지 못했습니다.")
     return merge_monthly_series(fetched)
 
 
@@ -202,23 +220,65 @@ def fetch_yahoo_monthly(mapping: dict[str, str] = YAHOO_SERIES) -> list[dict[str
     now = int(time.time())
     series: dict[str, tuple[str, list[dict[str, object]]]] = {}
     for value_key, symbol in mapping.items():
-        url = (
-            "https://query1.finance.yahoo.com/v8/finance/chart/"
-            f"{quote(symbol, safe='')}?period1=946684800&period2={now}&interval=1mo&events=history"
-        )
-        payload = json.loads(download(url, headers={"Accept": "application/json"}).decode("utf-8"))
-        result = payload["chart"]["result"][0]
-        timestamps = result.get("timestamp") or []
-        quote_rows = result.get("indicators", {}).get("quote", [{}])[0]
-        closes = quote_rows.get("close") or []
-        rows: list[dict[str, object]] = []
-        for timestamp, value in zip(timestamps, closes):
-            if value is None:
-                continue
-            month = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m")
-            rows.append({"month": month, value_key: round(float(value), 4)})
-        series[value_key] = (symbol, rows)
+        try:
+            url = (
+                "https://query1.finance.yahoo.com/v8/finance/chart/"
+                f"{quote(symbol, safe='')}?period1=946684800&period2={now}&interval=1mo&events=history"
+            )
+            payload = json.loads(download(url, headers={"Accept": "application/json"}).decode("utf-8"))
+            result = payload["chart"]["result"][0]
+            timestamps = result.get("timestamp") or []
+            quote_rows = result.get("indicators", {}).get("quote", [{}])[0]
+            closes = quote_rows.get("close") or []
+            rows: list[dict[str, object]] = []
+            for timestamp, value in zip(timestamps, closes):
+                if value is None:
+                    continue
+                month = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m")
+                rows.append({"month": month, value_key: round(float(value), 4)})
+            if rows:
+                series[value_key] = (symbol, rows)
+        except Exception as error:
+            print(f"{symbol} 개별 갱신 실패, 나머지 Yahoo 지표 계속: {error}")
+    if not series:
+        raise RuntimeError("Yahoo 지표를 하나도 갱신하지 못했습니다.")
     return merge_monthly_series(series)
+
+
+def fetch_bok_base_rates() -> list[dict[str, object]]:
+    """Fetch official daily BOK base rates and keep only actual change dates."""
+    api_key = os.environ.get("BOK_ECOS_API_KEY", "").strip()
+    if not api_key:
+        return []
+    end = datetime.now().strftime("%Y%m%d")
+    url = (
+        f"https://ecos.bok.or.kr/api/StatisticSearch/{api_key}/json/kr/1/10000/"
+        f"722Y001/D/20060101/{end}/0101000"
+    )
+    payload = json.loads(download(url, headers={"Accept": "application/json"}).decode("utf-8"))
+    source_rows = payload.get("StatisticSearch", {}).get("row", [])
+    changes: list[dict[str, object]] = []
+    previous: float | None = None
+    for row in source_rows:
+        stamp = str(row.get("TIME") or "")
+        value_text = row.get("DATA_VALUE")
+        if len(stamp) != 8 or value_text in (None, ""):
+            continue
+        value = float(value_text)
+        if previous is None or value != previous:
+            changes.append({"date": f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:8]}", "rate": value})
+            previous = value
+    return changes
+
+
+def convert_field(rows: list[dict[str, object]], key: str, factor: float) -> list[dict[str, object]]:
+    converted: list[dict[str, object]] = []
+    for row in rows:
+        output = dict(row)
+        if key in output:
+            output[key] = round(float(output[key]) * factor, 4)
+        converted.append(output)
+    return converted
 
 
 def fetch_bok_bond_yields() -> list[dict[str, object]]:
@@ -327,7 +387,7 @@ def main() -> None:
             print(f"{series_id} 갱신 실패, 기존 자료 유지: {error}")
     for output_key, mapping in GROUPED_FRED_SERIES.items():
         try:
-            payload[output_key] = fetch_fred_group(mapping)
+            payload[output_key] = merge_rows(existing.get(output_key, []), fetch_fred_group(mapping))
         except Exception as error:
             if output_key not in existing:
                 raise
@@ -337,6 +397,19 @@ def main() -> None:
         payload["metal_prices"] = merge_rows(payload["metal_prices"], fetch_yahoo_monthly(YAHOO_METAL_SERIES))
     except Exception as error:
         print(f"금·은 선물 월말가격 갱신 실패, 구리 자료만 유지: {error}")
+    try:
+        copper = fetch_yahoo_monthly({"copper_usd_ton": "HG=F"})
+        payload["metal_prices"] = merge_rows(
+            payload["metal_prices"],
+            convert_field(copper, "copper_usd_ton", 2204.62262185),
+        )
+    except Exception as error:
+        print(f"구리 당월 선물가격 갱신 실패, 공식 월간자료 유지: {error}")
+    for output_key, mapping in YAHOO_CURRENT_MONTH_GROUPS.items():
+        try:
+            payload[output_key] = merge_rows(payload[output_key], fetch_yahoo_monthly(mapping))
+        except Exception as error:
+            print(f"{output_key} 당월 공개시세 갱신 실패, 공식 월간자료 유지: {error}")
     try:
         exact_korean_bonds = fetch_bok_bond_yields()
         if exact_korean_bonds:
@@ -348,7 +421,7 @@ def main() -> None:
     except Exception as error:
         print(f"일본 재무성 만기별 국채 갱신 실패, FRED 대용지표 유지: {error}")
     try:
-        payload["market_indices"] = fetch_yahoo_monthly()
+        payload["market_indices"] = merge_rows(existing.get("market_indices", []), fetch_yahoo_monthly())
     except Exception as error:
         if "market_indices" not in existing:
             raise
@@ -369,9 +442,16 @@ def main() -> None:
             raise
         payload["money_supply"] = existing["money_supply"]
         print(f"한국은행 M1·M2 갱신 실패, 기존 자료 유지: {error}")
+    base_rates = [{"date": date, "rate": rate} for date, rate in BASE_RATES]
+    try:
+        official_base_rates = fetch_bok_base_rates()
+        if official_base_rates:
+            base_rates = official_base_rates
+    except Exception as error:
+        print(f"한국은행 기준금리 갱신 실패, 내장 이력 유지: {error}")
     payload.update(
         {
-            "base_rates": [{"date": date, "rate": rate} for date, rate in BASE_RATES],
+            "base_rates": base_rates,
             "policies": POLICIES,
             "sources": {
                 "exchange_rate": "https://fred.stlouisfed.org/series/EXKOUS/",
@@ -390,7 +470,9 @@ def main() -> None:
             },
             "metadata": {
                 "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-                "frequency": "monthly",
+                "refresh_frequency": "daily",
+                "observation_frequency": "지표별 일·월·정책변경 시점",
+                "current_month_overlay": "환율·금속·원유·미국채·시장지수는 일일 공개시세의 당월 최신값을 포함하며 월이 끝나기 전에는 잠정치입니다.",
                 "bond_notes": {
                     "kr_short_proxy": "한국 1년 국채 자료가 없을 때 OECD 단기금리를 대용지표로 사용합니다.",
                     "jp_1y": "일본 재무성 1년 만기 국채 수익률의 월평균입니다.",

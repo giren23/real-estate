@@ -55,9 +55,18 @@ CATEGORY_META = {
 
 
 def download_json(url: str) -> dict:
-    request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-    with urlopen(request, timeout=40) as response:
-        return json.loads(response.read().decode("utf-8"))
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+            with urlopen(request, timeout=40) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except Exception as error:
+            last_error = error
+            if attempt < 2:
+                time.sleep(2**attempt)
+    assert last_error is not None
+    raise last_error
 
 
 def fetch_yahoo(symbol: str, invert: bool = False) -> list[dict[str, object]]:
