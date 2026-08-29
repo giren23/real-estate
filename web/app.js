@@ -8,7 +8,7 @@ const markers = new Map(), charts = new Map();
 const groupByKey = new Map(), groupsByLawd = new Map(), groupsByMapName = new Map();
 const regionHierarchy = new Map();
 let regionSelection={sido:"",sigungu:"",dong:""},regionFilteredKeys=null,regionSelectionRunId=0;
-let lastGeocodeAt = 0, searchRunId = 0;
+let lastGeocodeAt = 0, searchRunId = 0, searchSuggestionTimer = null;
 const geoCache = JSON.parse(localStorage.getItem("aptGeoCache") || "{}");
 const groupCoordinates = new Map();
 const mapNameGroupCache = new Map();
@@ -232,6 +232,12 @@ function normalizeAdministrativeAddress(value){
   return String(value||"").replace(/(수원|성남|안양|안산|고양|용인|부천|화성|청주|천안|전주|포항|창원)(?=[가-힣]+구(?:\s|$))/g,"$1시 ");
 }
 function addressOf(group){ return normalizeAdministrativeAddress(group.address||[group.region_name,group.dong,group.jibun].filter(Boolean).join(" ")); }
+function searchAddressOf(group){
+  const road=normalizeAdministrativeAddress(group.road_address||group.roadAddress||"");
+  const base=addressOf(group),jibun=String(group.jibun||"").trim();
+  const value=road||[base,jibun&&!base.endsWith(jibun)?jibun:""].filter(Boolean).join(" ");
+  return {label:road?"도로명":"소재지",value:value||group.region_name||group.dong||"주소 정보 없음"};
+}
 function apartmentGeocodeName(value){
   const name=String(value||"").trim();
   return name&& !name.endsWith("아파트")?name+"아파트":name;
@@ -461,6 +467,53 @@ function score(group, query){
   return tokenScores.reduce((sum,value)=>sum+value,0);
 }
 
+function matchingApartments(query,limit=12){
+  return apartmentGroups.map(group=>({group,score:score(group,query)}))
+    .filter(item=>item.score>0)
+    .sort((a,b)=>b.score-a.score||a.group.apt_name.localeCompare(b.group.apt_name,"ko",{numeric:true,sensitivity:"base"})||searchAddressOf(a.group).value.localeCompare(searchAddressOf(b.group).value,"ko"))
+    .slice(0,limit);
+}
+
+function hideSearchSuggestions(){
+  const suggestions=byId("searchSuggestions"),input=byId("searchInput");
+  suggestions.hidden=true;suggestions.innerHTML="";input.setAttribute("aria-expanded","false");
+}
+
+function renderSearchSuggestions(matches,query){
+  const suggestions=byId("searchSuggestions"),input=byId("searchInput");
+  if(!query){hideSearchSuggestions();return;}
+  if(!matches.length){
+    suggestions.innerHTML='<div class="search-suggestion-empty">‘'+esc(query)+'’와 비슷한 단지를 찾지 못했습니다.</div>';
+  }else{
+    suggestions.innerHTML=matches.map((item,index)=>{
+      const group=item.group,address=searchAddressOf(group);
+      const area=group.latest?.area_m2?'최근 '+fmt(group.latest.area_m2)+'㎡':(group.areas?.length?fmt(group.areas.length)+'개 평형':'단지 정보');
+      return '<button class="search-suggestion" type="button" role="option" aria-selected="false" data-key="'+esc(group.key)+'" data-index="'+index+'"><span class="search-suggestion-main"><b>'+esc(group.apt_name)+'</b><small><em>'+address.label+'</em>'+esc(address.value)+'</small></span><span>'+esc(area)+'</span></button>';
+    }).join("");
+    suggestions.querySelectorAll(".search-suggestion").forEach(button=>{
+      button.addEventListener("click",()=>chooseSearchSuggestion(button.dataset.key));
+      button.addEventListener("keydown",event=>{
+        const buttons=[...suggestions.querySelectorAll(".search-suggestion")],index=buttons.indexOf(button);
+        if(event.key==="ArrowDown"){event.preventDefault();buttons[(index+1)%buttons.length].focus();}
+        if(event.key==="ArrowUp"){event.preventDefault();buttons[(index-1+buttons.length)%buttons.length].focus();}
+        if(event.key==="Escape"){event.preventDefault();hideSearchSuggestions();input.focus();}
+      });
+    });
+  }
+  suggestions.hidden=false;input.setAttribute("aria-expanded","true");
+}
+
+async function chooseSearchSuggestion(key){
+  const group=apartmentGroups.find(item=>item.key===key);
+  if(!group)return;
+  const runId=++searchRunId;
+  byId("searchInput").value=group.apt_name;
+  hideSearchSuggestions();regionFilteredKeys=null;clearMapMarkers();
+  renderResults([{group,score:1000}],group.apt_name);
+  setStatus("‘"+group.apt_name+"’ 단지를 선택했습니다.");
+  await selectSearchGroup(group,runId);
+}
+
 async function search(){
   const runId=++searchRunId;
   const query=byId("searchInput").value.trim();
@@ -468,9 +521,11 @@ async function search(){
   regionFilteredKeys=null;
   clearMapMarkers();
   setStatus("‘"+query+"’ 주변 단지를 찾는 중입니다…");
-  const matches=apartmentGroups.map(g=>({group:g,score:score(g,query)})).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,12);
+  const matches=matchingApartments(query,12);
   renderResults(matches,query);
-  if(matches.length)await selectSearchGroup(matches[0].group,runId);
+  renderSearchSuggestions(matches,query);
+  if(matches.length===1){hideSearchSuggestions();await selectSearchGroup(matches[0].group,runId);}
+  else if(matches.length>1)setStatus("비슷한 단지 "+matches.length+"개 중 하나를 선택해 주세요.");
 }
 
 function activeBoard(){
@@ -1676,6 +1731,24 @@ async function refreshCatalogIfUpdated(){
   }catch(_error){}finally{catalogRefreshChecking=false;}
 }
 byId("searchForm").addEventListener("submit",e=>{e.preventDefault();search();});
+byId("searchInput").addEventListener("input",event=>{
+  clearTimeout(searchSuggestionTimer);
+  const query=event.currentTarget.value.trim();
+  if(query.length<2){hideSearchSuggestions();return;}
+  searchSuggestionTimer=setTimeout(()=>renderSearchSuggestions(matchingApartments(query,10),query),120);
+});
+byId("searchInput").addEventListener("focus",event=>{
+  const query=event.currentTarget.value.trim();
+  if(query.length>=2)renderSearchSuggestions(matchingApartments(query,10),query);
+});
+byId("searchInput").addEventListener("keydown",event=>{
+  if(event.key==="Escape")hideSearchSuggestions();
+  if(event.key==="ArrowDown"&&!byId("searchSuggestions").hidden){
+    const first=byId("searchSuggestions").querySelector(".search-suggestion");
+    if(first){event.preventDefault();first.focus();}
+  }
+});
+document.addEventListener("click",event=>{if(!event.target.closest("#searchForm,#searchSuggestions"))hideSearchSuggestions();});
 byId("addGraphBtn").addEventListener("click",addGraphBoard);
 byId("removeGraphBtn").addEventListener("click",removeActiveGraphBoard);
 byId("saveGraphsBtn").addEventListener("click",saveGraphBoards);

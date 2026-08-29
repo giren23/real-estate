@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="전국 아파트를 검색하고 최대 10개 그래프 작업공간에서 평형별 장기 실거래가를 비교하고 저장합니다.">
 <title>Korean real estate prices</title>
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=21">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <!-- 시험용 MANIA 스타일: 원복하려면 아래 CSS와 mania-theme.js 연결만 제거하세요. -->
 <link rel="stylesheet" href="mania-theme.css?v=5">
@@ -35,9 +35,10 @@
   </div>
   <form id="searchForm" class="search-bar">
     <label class="sr-only" for="searchInput">지역 또는 아파트 단지 검색</label>
-    <input id="searchInput" autocomplete="off" placeholder="예: 해운대, 우동, 반도보라빌" />
+    <input id="searchInput" autocomplete="off" placeholder="예: 해운대, 우동, 반도보라빌" aria-controls="searchSuggestions" aria-expanded="false" />
     <button type="submit">검색</button>
   </form>
+  <div id="searchSuggestions" class="search-suggestions" role="listbox" aria-label="비슷한 단지 검색 결과" hidden></div>
   <div class="quick-search" id="quickSearch" hidden></div>
   <p class="status" id="status" role="status">데이터를 불러오는 중입니다…</p>
   <section id="regionComplexPanel" class="region-complex-panel" hidden>
@@ -90,6 +91,6 @@
 </section>
 
 </main>
-<script src="app.js?v=47"></script>
+<script src="app.js?v=48"></script>
 </body>
 </html>
