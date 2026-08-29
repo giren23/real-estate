@@ -1091,7 +1091,7 @@ function addGraphBoard(){
 }
 
 function newGraphBoard(){
-  return {id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),periodYears:20,priceMode:"trade",chartWidth:100,chartHeight:0,series:[]};
+  return {id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),periodYears:20,priceMode:"trade",chartWidth:100,chartHeight:0,economicWidth:100,series:[]};
 }
 
 function ensureInitialGraphBoard(){
@@ -1147,6 +1147,7 @@ function restoreGraphBoards(){
       priceMode:board.priceMode==="pyeong"?"pyeong":"trade",
       chartWidth:Math.min(200,Math.max(100,Number(board.chartWidth)||100)),
       chartHeight:Number(board.chartHeight)>=260&&Number(board.chartHeight)<=720?Number(board.chartHeight):0,
+      economicWidth:Math.min(200,Math.max(100,Number(board.economicWidth)||100)),
       series:Array.isArray(board.series)?board.series.slice(0,10).filter(series=>apartmentGroups.some(g=>g.key===series.key)).map((series,seriesIndex)=>({
         id:String(series.id||makeId("series")),
         key:String(series.key),
@@ -1215,10 +1216,11 @@ function renderGraphBoards(){
   const chartSubtitle=board.priceMode==="pyeong"?"입력한 공급면적 기준 · 만원/평":"선택 평형의 월별 중앙값 · 억원";
   board.chartWidth=Math.min(200,Math.max(100,Number(board.chartWidth)||100));
   board.chartHeight=Number(board.chartHeight)>=260&&Number(board.chartHeight)<=720?Number(board.chartHeight):0;
+  board.economicWidth=Math.min(200,Math.max(100,Number(board.economicWidth)||100));
   const defaultChartHeight=window.matchMedia("(max-width:600px)").matches?320:390;
   const shownChartHeight=board.chartHeight||defaultChartHeight;
   const chartSizeStyle='width:'+board.chartWidth+'%;'+(board.chartHeight?'height:'+board.chartHeight+'px;':'');
-  byId("graphBoards").innerHTML='<article class="graph-board" data-board-id="'+esc(board.id)+'">'+
+  byId("graphBoards").innerHTML='<article class="graph-board" data-board-id="'+esc(board.id)+'" style="--economic-chart-width:'+board.economicWidth+'%">'+
     '<div class="graph-board-head"><div class="graph-head-fields"><div><label for="graphName">그래프 이름</label><input id="graphName" class="graph-name" maxlength="30" value="'+esc(board.name)+'"></div>'+
     '<div class="period-control"><label for="graphPeriod">그래프 표시 기간</label><select id="graphPeriod">'+periodOptions+'</select></div>'+
     '<div class="period-control"><label for="priceMode">그래프 기준</label><select id="priceMode">'+priceModeOptions+'</select></div></div>'+
@@ -1228,8 +1230,8 @@ function renderGraphBoards(){
     '<section class="stack-chart price-section"><div class="economic-title"><b>'+chartHeading+'</b><span>'+chartSubtitle+'</span></div>'+
     '<div class="graph-size-controls" aria-label="실거래 그래프 크기 조절">'+
       '<label>가로 <input id="graphWidth" type="range" min="100" max="200" step="10" value="'+board.chartWidth+'"><output id="graphWidthValue">'+board.chartWidth+'%</output></label>'+
-      '<label>높이 <input id="graphHeight" type="range" min="260" max="720" step="20" value="'+shownChartHeight+'"><output id="graphHeightValue">'+shownChartHeight+'px</output></label>'+
-      '<button id="resetGraphSize" type="button">기본 크기</button></div>'+
+      '<label>높이 <input id="graphHeight" type="range" min="260" max="720" step="10" value="'+shownChartHeight+'"><output id="graphHeightValue">'+shownChartHeight+'px</output></label>'+
+      '<span class="graph-size-actions"><button id="alignEconomicCharts" type="button">경제지표 그래프 정렬</button><button id="resetAllGraphScales" type="button">그래프 배율 초기화</button></span></div>'+
     '<div class="price-chart-scroll"><div class="chart-wrap graph-chart-wrap" style="'+chartSizeStyle+'"><canvas class="price-chart" aria-label="'+esc(board.name)+' '+chartHeading+' 그래프"></canvas></div></div></section>'+
     '<p class="chart-help">그래프 위를 움직이거나 누르면 모든 지표의 같은 연월을 잇는 세로선이 표시됩니다. 숫자 세로선은 아래 주요 정책 발표 시점입니다.</p>'+
     '<div class="economic-stack stacked">'+
@@ -1277,8 +1279,12 @@ function renderGraphBoards(){
     graphChartWrap.style.height=board.chartHeight+"px";byId("graphHeightValue").textContent=board.chartHeight+"px";resizePriceChart();
   });
   graphHeightInput.addEventListener("change",()=>markUnsaved("실거래 그래프의 높이를 변경했습니다."));
-  byId("resetGraphSize").addEventListener("click",()=>{
-    board.chartWidth=100;board.chartHeight=0;renderGraphBoards();markUnsaved("실거래 그래프 크기를 기본값으로 되돌렸습니다.");
+  byId("alignEconomicCharts").addEventListener("click",()=>{
+    board.economicWidth=board.chartWidth;renderGraphBoards();markUnsaved("경제지표 그래프를 실거래 그래프의 가로 배율에 맞췄습니다.");
+  });
+  byId("resetAllGraphScales").addEventListener("click",()=>{
+    graphBoards.forEach(item=>{item.chartWidth=100;item.chartHeight=0;item.economicWidth=100;});
+    renderGraphBoards();markUnsaved("모든 그래프의 가로·높이·경제지표 배율을 기본값으로 되돌렸습니다.");
   });
   byId("graphBoards").querySelectorAll(".series-item").forEach(card=>{
     const series=board.series.find(item=>item.id===card.dataset.seriesId);
@@ -1544,6 +1550,21 @@ function bindTimelineGuide(container,timelineCharts,labels){
   container.addEventListener("mouseleave",hide);
 }
 
+function bindEconomicChartAlignment(container,timelineCharts){
+  const priceScroll=container.querySelector(".price-chart-scroll");
+  const economicWraps=[...container.querySelectorAll(".economic-indicator .economic-chart")];
+  if(!priceScroll||!economicWraps.length)return;
+  const sync=()=>{
+    const shift=Math.max(0,priceScroll.scrollLeft);
+    economicWraps.forEach(wrap=>{wrap.style.transform="translateX("+(-shift)+"px)";});
+  };
+  priceScroll.addEventListener("scroll",sync,{passive:true});
+  requestAnimationFrame(()=>{
+    timelineCharts.slice(1).forEach(chart=>chart.resize());
+    sync();
+  });
+}
+
 function renderBoardChart(board,container){
   const seriesRows=board.series.map(series=>{
     const group=apartmentGroups.find(g=>g.key===series.key);
@@ -1631,6 +1652,7 @@ function renderBoardChart(board,container){
   renderLatestValues(bitcoinChart,value=>"$"+fmt(value),economicConfirmedOn);
   renderLatestValues(sentimentChart,value=>fmt(value),economicConfirmedOn);
   const timelineCharts=[priceChart,exchangeChart,rateChart,moneyChart,metalChart,oilChart,krBondChart,usBondChart,jpBondChart,marketChart,bitcoinChart,sentimentChart];
+  bindEconomicChartAlignment(container,timelineCharts);
   bindTimelineGuide(container,timelineCharts,labels);
 
   charts.set(board.id+"-price",priceChart);
