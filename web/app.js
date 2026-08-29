@@ -1286,7 +1286,7 @@ function renderGraphBoards(){
       '<section class="stack-chart economic-indicator"><div class="economic-title"><b>비트코인</b><span>월말 · USD</span></div><div class="economic-chart"><canvas class="bitcoin-chart" aria-label="비트코인 가격 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> 대표 가상자산인 비트코인의 미국 달러 기준 월말 가격입니다.</p><p><b>해석</b> 유동성과 위험선호에 민감하지만 주식보다 변동성이 큽니다. 금리·달러·VIX와 함께 보고 단기 급등락을 일반 자산시장 흐름과 구분해야 합니다.</p></div></section>'+
       '<section class="stack-chart economic-indicator"><div class="economic-title"><b>시장 심리</b><span>VIX·공포탐욕지수(0~100)</span></div><div class="economic-chart"><canvas class="sentiment-chart" aria-label="VIX 공포탐욕지수 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> VIX는 미국 주식시장의 예상 변동성, 공포탐욕지수는 7개 심리지표를 0(극단적 공포)~100(극단적 탐욕)으로 합산한 값입니다.</p><p><b>해석</b> VIX 급등과 공포탐욕 하락이 겹치면 위험회피가 강해진 상태입니다. 극단값은 반전 가능성도 있지만 단독 매매 신호로 사용하면 안 됩니다.</p></div></section>'+
     '</div>'+
-    '<div class="policy-panel"><div class="economic-title"><b>주요 정부 부동산 정책</b><span>발표·고지일에 마우스를 올리거나 누르세요</span></div><ol class="policy-list"></ol><div class="policy-detail" aria-live="polite"><p>선택한 기간의 정책을 누르면 핵심 요약이 여기에 표시됩니다.</p></div></div>'+
+    '<div class="policy-panel"><div class="economic-title"><b>주요 정부 부동산 정책</b><span>번호를 누르면 아래에 상세 내용이 표시됩니다</span></div><ol class="policy-list"></ol><div class="policy-detail" aria-live="polite"><p>선택한 기간의 정책을 누르면 핵심 요약이 여기에 표시됩니다.</p></div></div>'+
     '<p class="economic-sources">출처: <a href="https://fred.stlouisfed.org/" target="_blank" rel="noopener">FRED</a> · <a href="https://ecos.bok.or.kr/" target="_blank" rel="noopener">한국은행 ECOS</a> · <a href="https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate/" target="_blank" rel="noopener">일본 재무성</a> · <a href="https://finance.yahoo.com/markets/" target="_blank" rel="noopener">Yahoo Finance</a> · <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener">CNN Fear &amp; Greed</a> · 국토교통부·관계부처 발표자료. 월이 끝나지 않은 값은 잠정치이며, 대용 지표는 그래프 설명에 표시합니다.</p></article>';
 
   const nameInput=byId("graphName");
@@ -1460,9 +1460,38 @@ const policyMarkerPlugin={
   }
 };
 
+const referenceLinesPlugin={
+  id:"referenceLines",
+  beforeDatasetsDraw(chart,args,options){
+    const lines=options.lines||[],area=chart.chartArea,ctx=chart.ctx;
+    if(!area||!lines.length)return;
+    ctx.save();
+    lines.forEach(line=>{
+      const scale=chart.scales[line.axis||"y"];
+      if(!scale)return;
+      const y=scale.getPixelForValue(Number(line.value));
+      if(!Number.isFinite(y)||y<area.top||y>area.bottom)return;
+      ctx.strokeStyle=line.color||"rgba(71,84,103,.22)";
+      ctx.lineWidth=line.width||1;
+      ctx.setLineDash(line.dash||[4,4]);
+      ctx.beginPath();ctx.moveTo(area.left,y);ctx.lineTo(area.right,y);ctx.stroke();
+      ctx.setLineDash([]);
+      if(line.label){
+        const onRight=line.side==="right";
+        ctx.font="600 9px system-ui";
+        ctx.textAlign=onRight?"right":"left";ctx.textBaseline="bottom";
+        ctx.fillStyle=line.textColor||"rgba(71,84,103,.62)";
+        ctx.fillText(String(line.label),onRight?area.right-4:area.left+4,Math.max(area.top+10,y-3));
+      }
+    });
+    ctx.restore();
+  }
+};
+Chart.register(referenceLinesPlugin);
+
 function policyHtml(items){
   if(!items.length)return '<li class="policy-empty">선택한 기간 안에 표시할 주요 정책이 없습니다.</li>';
-  return items.map((item,index)=>'<li><button type="button" class="policy-item" data-policy-index="'+index+'" aria-label="'+(index+1)+'번 정책 '+esc(item.date)+' '+esc(item.title)+'"><span class="policy-number" aria-hidden="true">'+(index+1)+'</span><time>'+esc(item.date)+'</time><b>'+esc(item.title)+'</b></button></li>').join("");
+  return items.map((item,index)=>'<li><button type="button" class="policy-item '+(index===0?'active':'')+'" data-policy-index="'+index+'" title="'+esc(item.date+' · '+item.title)+'" aria-label="'+(index+1)+'번 정책 '+esc(item.date)+' '+esc(item.title)+'"><span class="policy-number" aria-hidden="true">'+(index+1)+'</span></button></li>').join("");
 }
 function policyChangeColumn(title,items,className){
   return '<section class="policy-change '+className+'"><h4>'+esc(title)+'</h4><ul>'+items.map(text=>'<li>'+esc(text)+'</li>').join("")+'</ul></section>';
@@ -1573,14 +1602,22 @@ function bindTimelineGuide(container,timelineCharts,labels){
     const index=Math.max(0,Math.min(labels.length-1,Math.round(rawIndex)));
     const anchor=timelineCharts[0],last=timelineCharts[timelineCharts.length-1];
     const containerRect=container.getBoundingClientRect();
-    const anchorRect=anchor.canvas.getBoundingClientRect(),lastRect=last.canvas.getBoundingClientRect();
+    const anchorRect=anchor.canvas.getBoundingClientRect(),firstEconomicRect=timelineCharts[1]?.canvas?.getBoundingClientRect(),lastRect=last.canvas.getBoundingClientRect();
     const anchorScaleX=anchorRect.width/anchor.width,anchorScaleY=anchorRect.height/anchor.height,lastScaleY=lastRect.height/last.height;
     const left=anchorRect.left-containerRect.left+anchor.scales.x.getPixelForValue(index)*anchorScaleX;
     const top=anchorRect.top-containerRect.top+anchor.chartArea.top*anchorScaleY;
     const bottom=lastRect.top-containerRect.top+last.chartArea.bottom*lastScaleY;
     guide.style.left=left+"px";guide.style.top=top+"px";guide.style.height=Math.max(0,bottom-top)+"px";
     label.textContent=labels[index];popup.innerHTML=popupHtml(index);
-    guide.classList.toggle("is-left",left>containerRect.width-190);guide.hidden=false;
+    const gapTop=(anchorRect.bottom-containerRect.top)+30;
+    const gapBottom=firstEconomicRect?(firstEconomicRect.top-containerRect.top)-8:gapTop+110;
+    const popupTop=Math.max(10,gapTop-top+Math.max(0,(gapBottom-gapTop-96)/2));
+    guide.style.setProperty("--timeline-popup-top",popupTop+"px");
+    guide.classList.remove("is-left");guide.hidden=false;
+    popup.style.right="auto";
+    const popupWidth=popup.getBoundingClientRect().width;
+    const popupLeft=Math.max(8,Math.min(containerRect.width-popupWidth-8,left+10));
+    popup.style.left=(popupLeft-left)+"px";
   };
   timelineCharts.forEach(chart=>{
     chart.canvas.addEventListener("mousemove",event=>show(chart,event.clientX));
@@ -1634,12 +1671,14 @@ function renderBoardChart(board,container){
   });
   const policies=(economicContext.policies||[]).map(policyRecord).filter(item=>item.date&&item.date.slice(0,7)>=bounds.start&&item.date.slice(0,7)<=bounds.end);
   container.querySelector(".policy-list").innerHTML=policyHtml(policies);
+  const selectPolicy=(button,item)=>{
+    container.querySelectorAll(".policy-item").forEach(node=>node.classList.toggle("active",node===button));
+    showPolicyDetail(container,item);
+  };
   container.querySelectorAll(".policy-item").forEach(button=>{
     const item=policies[Number(button.dataset.policyIndex)];
-    button.addEventListener("mouseenter",()=>{showPolicyDetail(container,item);clearTimeout(policyHoverTimer);const rect=button.getBoundingClientRect();policyHoverTimer=setTimeout(()=>showPolicyPopup(item,rect.right,rect.top,false),1000);});
-    button.addEventListener("mouseleave",()=>{clearTimeout(policyHoverTimer);schedulePolicyPopupHide();});
-    button.addEventListener("focus",()=>showPolicyDetail(container,item));
-    button.addEventListener("click",()=>{const rect=button.getBoundingClientRect();showPolicyDetail(container,item);showPolicyPopup(item,rect.right,rect.top,true);});
+    button.addEventListener("focus",()=>selectPolicy(button,item));
+    button.addEventListener("click",()=>selectPolicy(button,item));
   });
   if(policies.length) showPolicyDetail(container,policies[0]);
 
@@ -1656,26 +1695,37 @@ function renderBoardChart(board,container){
   const values=(map)=>labels.map(month=>map.get(month)??null);
   const normalized=(map)=>{const raw=values(map),base=raw.find(value=>Number.isFinite(value)&&value!==0);return raw.map(value=>Number.isFinite(value)&&base?value/base*100:null);};
   const hasData=data=>data.some(Number.isFinite);
-  const commonOptions=(yTitle,callback,showTitle=false,showLegend=false)=>({maintainAspectRatio:false,responsive:true,interaction:{mode:"index",intersect:false},scales:{x:{offset:false,ticks:{...timelineTicks},grid:{display:false},title:{display:showTitle,text:"연월"}},y:{afterFit:alignTimelineYAxis,title:{display:true,text:yTitle},beginAtZero:false}},plugins:{legend:{display:showLegend,position:"bottom",labels:{usePointStyle:true,boxWidth:7}},tooltip:{callbacks:{title:items=>items[0]?.label||"",label:c=>c.raw==null?c.dataset.label+": 자료 없음":callback(c)}}}});
+  const commonOptions=(yTitle,callback,showTitle=false,showLegend=false,referenceLines=[])=>({maintainAspectRatio:false,responsive:true,interaction:{mode:"index",intersect:false},scales:{x:{offset:false,ticks:{...timelineTicks},grid:{display:false},title:{display:showTitle,text:"연월"}},y:{afterFit:alignTimelineYAxis,title:{display:true,text:yTitle},beginAtZero:false}},plugins:{referenceLines:{lines:referenceLines},legend:{display:showLegend,position:"bottom",labels:{usePointStyle:true,boxWidth:7}},tooltip:{callbacks:{title:items=>items[0]?.label||"",label:c=>c.raw==null?c.dataset.label+": 자료 없음":callback(c)}}}});
   const lineDataset=(label,data,color,extra={})=>({label,data,borderColor:color,backgroundColor:color,pointRadius:0,pointHoverRadius:3,borderWidth:1.25,tension:.18,spanGaps:true,...extra});
   const exchangeChart=new Chart(container.querySelector(".exchange-chart"),{type:"line",data:{labels,datasets:[lineDataset("원·달러 환율",labels.map(month=>exchangeMap.get(month)??null),"#0f766e")]},options:commonOptions("원/USD",c=>fmt(c.raw)+"원/USD")});
-  const rateChart=new Chart(container.querySelector(".rate-chart"),{type:"line",data:{labels,datasets:[lineDataset("한국(원)",labels.map(rateAtMonth),"#7c3aed",{stepped:true,spanGaps:false}),lineDataset("미국(달러)",labels.map(month=>usRateMap.get(month)??null),"#dc2626"),lineDataset("일본(엔)",labels.map(month=>japanRateMap.get(month)??null),"#2563eb")]},options:commonOptions("%",c=>c.dataset.label+": "+fmt(c.raw)+"%",false,true)});
+  const zeroRateLine=[{value:0,label:"0% 기준",color:"rgba(71,84,103,.18)"}];
+  const rateChart=new Chart(container.querySelector(".rate-chart"),{type:"line",data:{labels,datasets:[lineDataset("한국(원)",labels.map(rateAtMonth),"#7c3aed",{stepped:true,spanGaps:false}),lineDataset("미국(달러)",labels.map(month=>usRateMap.get(month)??null),"#dc2626"),lineDataset("일본(엔)",labels.map(month=>japanRateMap.get(month)??null),"#2563eb")]},options:commonOptions("%",c=>c.dataset.label+": "+fmt(c.raw)+"%",false,true,zeroRateLine)});
   const moneyChart=new Chart(container.querySelector(".money-chart"),{type:"line",data:{labels,datasets:[lineDataset("M1 협의통화",labels.map(month=>m1Map.get(month)??null),"#0f766e"),lineDataset("M2 광의통화",labels.map(month=>m2Map.get(month)??null),"#b45309")]},options:commonOptions("조원",c=>c.dataset.label+": "+fmt(c.raw)+"조원",false,true)});
-  const metalChart=new Chart(container.querySelector(".metal-chart"),{type:"line",data:{labels,datasets:[lineDataset("금",normalized(metricMap("metal_prices","gold_usd_oz")),"#d4a017"),lineDataset("은",normalized(metricMap("metal_prices","silver_usd_oz")),"#64748b"),lineDataset("구리",normalized(metricMap("metal_prices","copper_usd_ton")),"#b45309")]},options:commonOptions("시작값=100",c=>c.dataset.label+": "+fmt(c.raw),false,true)});
+  const normalizedBaseline=[{value:100,label:"시작 기준 100",color:"rgba(71,84,103,.22)"}];
+  const metalChart=new Chart(container.querySelector(".metal-chart"),{type:"line",data:{labels,datasets:[lineDataset("금",normalized(metricMap("metal_prices","gold_usd_oz")),"#d4a017"),lineDataset("은",normalized(metricMap("metal_prices","silver_usd_oz")),"#64748b"),lineDataset("구리",normalized(metricMap("metal_prices","copper_usd_ton")),"#b45309")]},options:commonOptions("시작값=100",c=>c.dataset.label+": "+fmt(c.raw),false,true,normalizedBaseline)});
   const oilChart=new Chart(container.querySelector(".oil-chart"),{type:"line",data:{labels,datasets:[lineDataset("브렌트",values(metricMap("oil_prices","brent_usd_barrel")),"#111827"),lineDataset("WTI",values(metricMap("oil_prices","wti_usd_barrel")),"#dc2626"),lineDataset("두바이",values(metricMap("oil_prices","dubai_usd_barrel")),"#2563eb")]},options:commonOptions("USD/배럴",c=>c.dataset.label+": "+fmt(c.raw)+" USD/배럴",false,true)});
   const bondData=(prefix,shortLabel)=>{
     const shortExact=values(metricMap("bond_yields",prefix+"_1y")),shortProxy=values(metricMap("bond_yields",prefix+"_short_proxy"));
     const rows=[lineDataset(hasData(shortExact)?"1년":shortLabel,hasData(shortExact)?shortExact:shortProxy,"#dc2626"),lineDataset("10년",values(metricMap("bond_yields",prefix+"_10y")),"#2563eb"),lineDataset("30년",values(metricMap("bond_yields",prefix+"_30y")),"#111827")];
     return rows.filter(row=>hasData(row.data));
   };
-  const krBondChart=new Chart(container.querySelector(".kr-bond-chart"),{type:"line",data:{labels,datasets:bondData("kr","단기 대용")},options:commonOptions("%",c=>c.dataset.label+": "+fmt(c.raw)+"%",false,true)});
-  const usBondChart=new Chart(container.querySelector(".us-bond-chart"),{type:"line",data:{labels,datasets:bondData("us","단기")},options:commonOptions("%",c=>c.dataset.label+": "+fmt(c.raw)+"%",false,true)});
-  const jpBondChart=new Chart(container.querySelector(".jp-bond-chart"),{type:"line",data:{labels,datasets:bondData("jp","단기 대용")},options:commonOptions("%",c=>c.dataset.label+": "+fmt(c.raw)+"%",false,true)});
+  const krBondChart=new Chart(container.querySelector(".kr-bond-chart"),{type:"line",data:{labels,datasets:bondData("kr","단기 대용")},options:commonOptions("%",c=>c.dataset.label+": "+fmt(c.raw)+"%",false,true,zeroRateLine)});
+  const usBondChart=new Chart(container.querySelector(".us-bond-chart"),{type:"line",data:{labels,datasets:bondData("us","단기")},options:commonOptions("%",c=>c.dataset.label+": "+fmt(c.raw)+"%",false,true,zeroRateLine)});
+  const jpBondChart=new Chart(container.querySelector(".jp-bond-chart"),{type:"line",data:{labels,datasets:bondData("jp","단기 대용")},options:commonOptions("%",c=>c.dataset.label+": "+fmt(c.raw)+"%",false,true,zeroRateLine)});
   const marketDefs=[["KOSPI","kospi","#1d4ed8"],["KOSDAQ","kosdaq","#06b6d4"],["S&P 500","sp500","#dc2626"],["나스닥","nasdaq","#7c3aed"],["다우","dow","#111827"],["필라델피아 반도체","sox","#16a34a"]];
-  const marketChart=new Chart(container.querySelector(".market-chart"),{type:"line",data:{labels,datasets:marketDefs.map(([label,key,color])=>lineDataset(label,normalized(metricMap("market_indices",key)),color))},options:commonOptions("시작값=100",c=>c.dataset.label+": "+fmt(c.raw),false,true)});
+  const marketChart=new Chart(container.querySelector(".market-chart"),{type:"line",data:{labels,datasets:marketDefs.map(([label,key,color])=>lineDataset(label,normalized(metricMap("market_indices",key)),color))},options:commonOptions("시작값=100",c=>c.dataset.label+": "+fmt(c.raw),false,true,normalizedBaseline)});
   const bitcoinChart=new Chart(container.querySelector(".bitcoin-chart"),{type:"line",data:{labels,datasets:[lineDataset("비트코인",values(metricMap("market_indices","bitcoin")),"#f59e0b")]},options:commonOptions("USD",c=>"비트코인: $"+fmt(c.raw),false,false)});
   const sentimentOptions=commonOptions("VIX",c=>c.dataset.label+": "+fmt(c.raw),false,true);
   sentimentOptions.scales.y1={position:"right",min:0,max:100,title:{display:true,text:"공포탐욕 0~100"},grid:{drawOnChartArea:false}};
+  sentimentOptions.plugins.referenceLines.lines=[
+    {axis:"y",value:20,label:"VIX 안정·보통 20",color:"rgba(220,38,38,.15)"},
+    {axis:"y",value:30,label:"VIX 공포 30",color:"rgba(220,38,38,.22)"},
+    {axis:"y",value:40,label:"VIX 극단적 공포 40",color:"rgba(220,38,38,.3)"},
+    {axis:"y1",value:25,label:"극단적 공포 25",side:"right",color:"rgba(37,99,235,.16)"},
+    {axis:"y1",value:45,label:"공포↔중립 45",side:"right",color:"rgba(37,99,235,.18)"},
+    {axis:"y1",value:55,label:"중립↔탐욕 55",side:"right",color:"rgba(37,99,235,.18)"},
+    {axis:"y1",value:75,label:"극단적 탐욕 75",side:"right",color:"rgba(37,99,235,.24)"}
+  ];
   const sentimentChart=new Chart(container.querySelector(".sentiment-chart"),{type:"line",data:{labels,datasets:[lineDataset("VIX",values(metricMap("market_indices","vix")),"#dc2626"),lineDataset("공포탐욕지수",values(metricMap("fear_greed","score")),"#2563eb",{yAxisID:"y1"})]},options:sentimentOptions});
   renderLatestValues(priceChart,(value,dataset,index)=>fmt(value)+(isPyeong?"만원/평":"억원")+(dataset.tradeCounts?.[index]?" · "+fmt(dataset.tradeCounts[index])+"건":""));
   const economicConfirmedOn=String(economicContext.metadata?.updated_at||"").slice(0,10);

@@ -148,3 +148,21 @@ main{max-width:1280px;margin:auto;padding:30px 22px 56px}.hero{display:flex;alig
 .report-scenarios{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:16px}.report-scenarios article{padding:13px;border:1px solid #e3dfe6;border-radius:10px}.report-scenarios span{display:block;margin-bottom:5px;font-size:9px;font-weight:900}.report-scenarios b{font-size:12px}.report-scenarios p{margin:7px 0 0;color:#69616d;font-size:10px;line-height:1.55}.scenario-0{background:#eef9f3}.scenario-0 span{color:#087a60}.scenario-1{background:#f7f6f8}.scenario-1 span{color:#6d6673}.scenario-2{background:#fff3f2}.scenario-2 span{color:#b42318}
 .report-sources{margin-top:25px;padding-top:22px;border-top:2px solid #ded7e4}.report-sources h3{margin:0;color:#302639;font-size:17px}.report-sources>p{margin:6px 0 12px;color:#817987;font-size:10px}.report-sources a{color:#553b7d;font-weight:700}.report-method{margin-top:16px;padding:13px 15px;border:1px solid #e4dfe7;border-radius:10px;background:#faf9fb;color:#5e5762;font-size:11px}.report-method summary{color:#4d347a;font-weight:900;cursor:pointer}.report-method p{line-height:1.65}.report-method li{margin:4px 0}.report-disclaimer{margin:15px 0 0;color:#9a929f;font-size:9px;line-height:1.5}
 @media(max-width:700px){.editorial-dialog{width:100vw;max-height:100dvh;margin:0;border:0;border-radius:0}.editorial-article{padding:20px 14px 36px}.report-head{padding-right:38px}.report-head h2{font-size:25px}.report-metrics{grid-template-columns:1fr 1fr}.report-metrics>div{min-height:86px}.report-toc ol{grid-template-columns:1fr}.report-summary-grid,.report-chart-grid{grid-template-columns:1fr}.report-flow>div{display:grid;grid-template-columns:1fr}.report-flow>div>em{justify-self:center;transform:rotate(90deg)}.report-donut-layout{grid-template-columns:118px 1fr}.report-donut{width:118px;height:118px}.report-donut>span{width:68px;height:68px}.report-section{padding:23px 0}.report-section>h3{font-size:19px}.report-section>p{font-size:13px}.report-scenarios{grid-template-columns:1fr}.report-bar-row{grid-template-columns:78px 1fr 45px}.report-table table,.report-sources table{min-width:470px}}
+
+/* Compact policy selector: the numbered marker is the selector and the detail stays below. */
+.policy-list{display:flex;flex-wrap:wrap;gap:5px;margin:9px 0 11px}
+.policy-list li{display:block;flex:0 0 31px;width:31px;grid-template-columns:none;gap:0}
+.policy-item{display:grid;width:31px;height:31px;padding:0;border:1px solid #e4d8c0;border-radius:8px;place-items:center}
+.policy-item .policy-number{width:21px;height:21px;font-size:10px}
+.policy-item.active{border-color:#d97706;background:#fff1dc;box-shadow:0 0 0 2px rgba(217,119,6,.14)}
+.policy-item.active .policy-number{background:#b45309;color:#fff}
+.policy-detail{min-height:0}
+.chart-help{min-height:128px;padding-top:8px}
+
+/* Keep the shared timeline values in the gap below the price chart, never outside the card. */
+.timeline-guide-popup{top:var(--timeline-popup-top,9px);width:min(310px,calc(100vw - 46px));max-width:310px;overflow:hidden;padding:8px 10px;display:grid;grid-template-columns:1fr 1fr;gap:2px 10px}
+.timeline-guide-popup>b{grid-column:1/-1}
+.timeline-guide-popup span{display:grid;grid-template-columns:minmax(58px,auto) minmax(0,1fr);gap:6px;min-width:0;white-space:normal}
+.timeline-guide-popup em,.timeline-guide-popup strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.timeline-guide-popup strong{text-align:right}
+@media(max-width:600px){.timeline-guide-popup{width:min(260px,calc(100vw - 32px));grid-template-columns:1fr}.timeline-guide-popup>b{grid-column:1}}
