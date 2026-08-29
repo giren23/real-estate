@@ -18,6 +18,8 @@ def test_news_report_uses_structured_analysis_and_source_links() -> None:
     assert "나무위키" not in script
     assert "https://namu.wiki/Search?q=" in script
     assert "news-keyword" in script
+    assert "관련 통계·비교" in script
+    assert "item.news_charts.map(chartHtml)" in script
 
 
 def test_news_page_does_not_render_duplicate_analysis_blocks() -> None:

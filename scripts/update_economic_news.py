@@ -28,8 +28,17 @@ GLOBAL_FEEDS = (
     ("economy OR markets OR interest rates OR stocks", "en-US", "US", "US:en", "us"),
     ("site:nytimes.com (economy OR markets OR business OR interest rates)", "en-US", "US", "US:en", "us"),
     ("site:fortune.com (economy OR markets OR business OR stocks)", "en-US", "US", "US:en", "us"),
+    ("site:nypost.com (business OR economy OR markets OR stocks OR Federal Reserve)", "en-US", "US", "US:en", "us"),
+    ("(site:cnbc.com OR site:marketwatch.com OR site:barrons.com OR site:cnn.com) (economy OR markets OR rates OR stocks)", "en-US", "US", "US:en", "us"),
     ("(site:reuters.com OR site:ft.com OR site:bbc.com OR site:apnews.com) (economy OR markets OR rates OR stocks OR oil)", "en-GB", "GB", "GB:en", "global"),
-    ("(site:economist.com OR site:asia.nikkei.com OR site:lemonde.fr) (economy OR markets OR rates OR trade)", "en-GB", "GB", "GB:en", "global"),
+    ("(site:economist.com OR site:asia.nikkei.com OR site:lemonde.fr OR site:theguardian.com OR site:dw.com OR site:aljazeera.com) (economy OR markets OR rates OR trade)", "en-GB", "GB", "GB:en", "global"),
+)
+DIRECT_RSS_FEEDS = (
+    ("https://nypost.com/business/feed/", "New York Post", "us"),
+    ("https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "The New York Times", "us"),
+    ("https://feeds.bbci.co.uk/news/business/rss.xml", "BBC", "global"),
+    ("https://www.theguardian.com/business/rss", "The Guardian", "global"),
+    ("https://www.cnbc.com/id/10001147/device/rss/rss.html", "CNBC", "us"),
 )
 TAG_PATTERN = re.compile(r"<[^>]+>")
 SPACE_PATTERN = re.compile(r"\s+")
@@ -64,8 +73,8 @@ MARKET_COMMENTS = {
 }
 
 CORE_MARKET_CATEGORIES = {"증시", "금리·채권", "환율", "원자재"}
-TRUSTED_PUBLISHERS = ("연합뉴스", "한국은행", "기획재정부", "금융위원회", "한국거래소", "KBS", "MBC", "SBS", "로이터", "Reuters", "블룸버그", "Bloomberg", "한경", "매일경제", "서울경제", "이데일리", "The New York Times", "New York Times", "Fortune", "Financial Times", "The Wall Street Journal", "Wall Street Journal", "Associated Press", "AP News", "BBC", "CNBC", "The Economist", "Nikkei Asia", "The Washington Post")
-US_PUBLISHERS = ("New York Times", "Fortune", "Wall Street Journal", "CNBC", "Bloomberg", "Associated Press", "AP News", "Washington Post", "MarketWatch", "Barron's", "CBS", "NBC", "ABC News", "CNN")
+TRUSTED_PUBLISHERS = ("연합뉴스", "한국은행", "기획재정부", "금융위원회", "한국거래소", "KBS", "MBC", "SBS", "로이터", "Reuters", "블룸버그", "Bloomberg", "한경", "매일경제", "서울경제", "이데일리", "The New York Times", "New York Times", "New York Post", "Fortune", "Financial Times", "The Wall Street Journal", "Wall Street Journal", "Associated Press", "AP News", "BBC", "CNBC", "The Guardian", "The Economist", "Nikkei Asia", "The Washington Post")
+US_PUBLISHERS = ("New York Times", "New York Post", "Fortune", "Wall Street Journal", "CNBC", "Bloomberg", "Associated Press", "AP News", "Washington Post", "MarketWatch", "Barron's", "CBS", "NBC", "ABC News", "CNN")
 KOREAN_PUBLISHERS = ("연합뉴스", "한국은행", "기획재정부", "금융위원회", "한국거래소", "KBS", "MBC", "SBS", "한경", "한국경제", "매일경제", "서울경제", "이데일리", "조선일보", "중앙일보", "동아일보", "전자신문")
 IMPACT_KEYWORDS = ("기준금리", "연준", "금리 인상", "금리 인하", "환율", "국채", "물가", "고용", "GDP", "관세", "수출", "실적", "코스피", "코스닥", "나스닥", "유가", "원유", "금값", "반도체", "부동산 정책", "대출 규제", "세제")
 INVESTMENT_RELEVANCE = ("금리", "연준", "환율", "달러", "국채", "채권", "물가", "고용", "GDP", "관세", "무역", "수출", "실적", "코스피", "코스닥", "나스닥", "다우", "주가", "유가", "원유", "금값", "구리", "반도체", "비트코인", "ETF", "주택", "아파트", "대출", "분양", "재건축", "재개발", "공급", "세제", "세금")
@@ -73,6 +82,8 @@ MAX_HIGHLIGHT_TERMS = ("기준금리 인상", "기준금리 인하", "금리 인
 HIGH_HIGHLIGHT_TERMS = ("연방준비제도", "연준", "한국은행", "기준금리", "국채", "환율", "관세", "물가", "고용", "GDP", "코스피", "코스닥", "나스닥", "반도체", "비트코인", "국토교통부", "공공주택", "재생에너지", "RE100")
 NOISE_KEYWORDS = ("화재", "사망", "숨져", "대피", "홍수", "실종", "범죄", "교통사고", "연예", "Weverse", "TXT-LOG", "프라하하하", "[포토]", "시상식", "페스티벌")
 RATE_DECISION_PATTERN = re.compile(r"(?:기준금리|정책금리|연준|한은|한국은행).{0,28}(?:인상|인하|동결|올렸|내렸)|(?:금리).{0,18}(?:인상 결정|인하 결정|동결 결정|올렸다|내렸다)", re.I)
+US_ORIGIN_TERMS = ("미국", "연방준비제도", "연준", "Federal Reserve", "Fed ", "트럼프", "Trump", "백악관", "White House", "월가", "Wall Street", "나스닥", "NASDAQ", "S&P 500", "뉴욕증시")
+GLOBAL_ORIGIN_TERMS = ("중국", "China", "일본", "Japan", "유럽", "European Union", "EU ", "영국", "독일", "프랑스", "러시아", "우크라이나", "중동", "OPEC", "IMF", "세계은행", "World Bank", "글로벌")
 
 
 def clean_text(value: str) -> str:
@@ -103,20 +114,8 @@ def extract_number_facts(sources: list[dict[str, str]]) -> list[dict[str, str]]:
     return facts
 
 
-def expert_analysis(category: str, title: str = "", facts: list[dict[str, str]] | None = None) -> dict[str, object]:
-    paths = {
-        "금리·채권": "정책금리 기대 → 국채금리와 달러 → 은행 조달·대출금리 → 기업 이익과 가계 소비 → 주식·주택 가치평가 순으로 전달됩니다.",
-        "환율": "금리차·위험선호 → 달러 수급과 환율 → 수입물가·수출 환산이익 → 물가와 기업 마진 → 외국인 자금 흐름 순으로 번집니다.",
-        "원자재": "공급·수요 충격 → 현물·선물 가격 → 운송·생산비 → 기업 마진과 소비자물가 → 금리 기대 순으로 전달됩니다.",
-        "증시": "정책·실적 정보 → 이익 전망과 할인율 → 업종별 수급 → 자금조달과 자산효과 → 투자·소비 심리 순으로 이어집니다.",
-        "부동산": "정책·금리·공급 변화 → 대출 가능액과 기대 → 거래량·매물 → 매매·전세 가격 → 착공·입주 순으로 시차를 두고 반영됩니다.",
-        "산업·기업": "수주·실적 변화 → 매출·마진 기대 → 현금흐름과 투자 → 고용·협력사 주문 → 산업생산·수출 순으로 확산됩니다.",
-        "거시경제": "발표 수치 → 금리·성장 기대 → 채권·환율·주식 → 금융여건 → 소비·투자·고용 순으로 전달됩니다.",
-    }
-
-
 def narrative_fields(related: list[dict[str, str]], fallback: str) -> dict[str, object]:
-    """Create one readable evidence flow; a richer model can replace these same fields."""
+    """Create a deterministic 6W1H evidence flow without an LLM."""
     ordered = sorted(related, key=lambda item: item.get("published_time") or item.get("published_at") or "")
     paragraphs: list[str] = []
     seen: set[str] = set()
@@ -127,8 +126,8 @@ def narrative_fields(related: list[dict[str, str]], fallback: str) -> dict[str, 
         if not detail or detail in seen:
             continue
         seen.add(detail)
-        lead = "보도에 따르면" if index == 0 else "같은 사안을 다룬 후속·관련 보도에서는"
-        paragraphs.append(f"{source.get('published_at', '')} {source.get('publisher', '원문')} {lead}, {detail}")
+        lead = "보도에 따르면" if index == 0 else "같은 사안을 다룬 관련 보도에서는"
+        paragraphs.append(f"{source.get('published_at', '')} {source.get('publisher', '원문')} {lead}, {detail.rstrip('.')}.")
     if not paragraphs:
         paragraphs = [fallback]
     full_text = " ".join(paragraphs)
@@ -143,18 +142,62 @@ def narrative_fields(related: list[dict[str, str]], fallback: str) -> dict[str, 
         if value and re.search(r"\d", value):
             keywords.append({"term": value, "importance": "max", "wiki_query": value})
     return {"narrative_paragraphs": paragraphs, "core_summary": fallback, "highlight_keywords": keywords}
-    fact_values = list(dict.fromkeys(fact.get("value", "") for fact in (facts or []) if fact.get("value")))
-    fact_note = f" 공개자료에서 확인된 핵심 수치는 {', '.join(fact_values[:10])}이며, 전체 수치와 문맥은 위 원장을 기준으로 판단해야 합니다." if fact_values else " 공개자료에 구체적 수치가 없어 방향성만으로 단정하면 안 됩니다."
-    return {
-        "assessment": f"'{title}' 보도는 {category} 경로를 통해 투자 판단에 연결됩니다.{fact_note} {paths.get(category, paths['거시경제'])}",
-        "scenarios": [
-            {"label": "기본", "title": "발표 내용이 계획대로 이어질 때", "body": "후속 공식 발표와 실제 집행 수치가 같은 방향인지 확인합니다. 한 번의 기사보다 연속된 확정치가 중요합니다."},
-            {"label": "상방", "title": "성장·이익에 유리한 경로", "body": "물가와 금융비용이 안정되는 가운데 수요·고용·기업 실적이 유지되면 위험자산과 실물경기의 동반 개선 가능성이 커집니다."},
-            {"label": "하방", "title": "충격이 확대되는 경로", "body": "물가 재상승, 장기금리 급등, 달러 강세, 신용스프레드 확대가 겹치면 기업·가계 금융여건이 빠르게 나빠질 수 있습니다."},
-        ],
-        "warnings": ["후속 공식 발표가 기사 속 전망과 반대로 바뀌는지", "금리·환율·주가가 같은 방향으로 급변하는지", "거래량·고용·소비·기업 현금흐름이 가격 움직임을 뒷받침하는지", "발표 수치의 기준기간·단위·계절조정·잠정치 여부가 달라지는지"],
-        "next_checks": ["공식 발표문과 확정 수치", "정책 시행일·적용 대상·예외", "1년·10년·30년 금리와 환율의 후속 반응", "다음 물가·고용·소비·실적 발표"],
-    }
+
+
+def classify_topic_region(text: str, sources: list[dict[str, str]] | None = None) -> str:
+    """Classify by where the event started, not by the language of the article."""
+    lowered = text.lower()
+    if any(term.lower() in lowered for term in US_ORIGIN_TERMS):
+        return "us"
+    if any(term.lower() in lowered for term in GLOBAL_ORIGIN_TERMS):
+        return "global"
+    source_regions = [source.get("region") for source in (sources or []) if source.get("region") in {"us", "global"}]
+    if source_regions:
+        return max(set(source_regions), key=source_regions.count)
+    return "domestic"
+
+
+def numeric_charts(facts: list[dict[str, str]]) -> list[dict[str, object]]:
+    groups: dict[str, list[dict[str, object]]] = {}
+    allowed = {"%", "%p", "bp", "bps", "원", "달러", "엔", "유로", "억원", "억", "조원", "포인트", "배럴", "명", "건", "호"}
+    for fact in facts:
+        raw = str(fact.get("value", "")).replace(",", "").strip()
+        number_match = re.search(r"[-+]?\d+(?:\.\d+)?", raw)
+        unit = re.sub(r"[-+]?\d+(?:\.\d+)?", "", raw).strip()
+        if not number_match or unit not in allowed:
+            continue
+        groups.setdefault(unit, []).append({"label": str(fact.get("context", ""))[:34], "value": float(number_match.group()), "display": fact.get("value", "")})
+    candidates = [(unit, rows) for unit, rows in groups.items() if 2 <= len(rows) <= 10]
+    if not candidates:
+        return []
+    unit, rows = max(candidates, key=lambda pair: len(pair[1]))
+    return [{"type": "bar", "title": "기사에서 확인된 비교 수치", "subtitle": f"동일 단위 · {unit}", "rows": rows, "note": "서로 같은 단위인 공개 수치만 자동 비교했습니다. 기준기간과 대상은 각 문장을 확인하세요."}]
+
+
+def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
+    """Migrate archived cards to the single narrative format without network or GPT."""
+    sources = item.get("sources") or []
+    prepared: list[dict[str, str]] = []
+    for index, source in enumerate(sources):
+        prepared.append({
+            **source,
+            "title": str(source.get("title_ko") or source.get("title") or item.get("title", "")),
+            "description": str(source.get("summary_ko") or source.get("description") or source.get("summary_original") or (item.get("easy_explanation") if index == 0 else "") or ""),
+            "published_at": str(source.get("published_at") or item.get("date", "")),
+            "published_time": str(source.get("published_time") or source.get("published_at") or item.get("date", "")),
+            "publisher": str(source.get("publisher") or item.get("publisher") or "원문"),
+            "region": str(source.get("region") or item.get("region") or "domestic"),
+        })
+    if not prepared:
+        prepared = [{"title": str(item.get("title", "")), "description": str(item.get("easy_explanation") or item.get("summary") or item.get("title", "")), "published_at": str(item.get("date", "")), "published_time": str(item.get("date", "")), "publisher": str(item.get("publisher") or "원문"), "region": str(item.get("region") or "domestic")}]
+    fallback = str(item.get("easy_explanation") or item.get("summary") or item.get("title", ""))
+    facts = extract_number_facts(prepared)
+    item.update(narrative_fields(prepared, fallback))
+    item["news_charts"] = numeric_charts(facts)
+    item["region"] = classify_topic_region(" ".join(f"{row.get('title', '')} {row.get('description', '')}" for row in prepared), prepared)
+    for obsolete in ("sections", "expert_analysis", "timeline", "fact_ledger", "coverage_status", "coverage_note", "causal_path"):
+        item.pop(obsolete, None)
+    return item
 
 
 def classify(text: str) -> str:
@@ -315,6 +358,28 @@ def fetch_feed(query: str, target: date, language: str = "ko", country: str = "K
     return rows
 
 
+def fetch_direct_feed(url: str, publisher: str, region: str, target: date) -> list[dict[str, str]]:
+    """Read publisher RSS directly so related links point to the original article."""
+    request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/rss+xml, application/xml"})
+    with urlopen(request, timeout=40) as response:
+        root = ET.fromstring(response.read())
+    rows: list[dict[str, str]] = []
+    nodes = root.findall("./channel/item")
+    for item in nodes:
+        title = clean_text(item.findtext("title") or "")
+        link = clean_text(item.findtext("link") or "")
+        description = clean_text(item.findtext("description") or "")
+        published = item.findtext("pubDate") or item.findtext("{http://purl.org/dc/elements/1.1/}date") or ""
+        try:
+            published_at = parsedate_to_datetime(published).astimezone(timezone(timedelta(hours=9)))
+            published_date, published_time = published_at.date().isoformat(), published_at.isoformat(timespec="minutes")
+        except (TypeError, ValueError):
+            published_date, published_time = target.isoformat(), target.isoformat()
+        if title and link and published_date == target.isoformat():
+            rows.append({"title": title, "url": link, "publisher": publisher, "description": description, "published_at": published_date, "published_time": published_time, "region": region})
+    return rows
+
+
 def fetch_nyt_most_popular(target: date) -> list[dict[str, object]]:
     key = os.environ.get("NYT_API_KEY", "").strip()
     if not key:
@@ -362,7 +427,7 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
     digest = hashlib.sha1(f"{row['url']}|{row['title']}".encode("utf-8")).hexdigest()[:14]
     description = row["description"]
     if not description or description == row["title"] or len(description) < 25:
-        description = "제목에 담긴 핵심 이슈의 세부 수치와 전제조건은 연결된 원문에서 확인할 수 있습니다."
+        description = row["title"]
     description = description[:4000]
     sources = []
     seen_publishers = set()
@@ -386,8 +451,8 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
         "region": source.get("region", "domestic"),
     } for source in sorted(related, key=lambda item: item.get("published_time") or item.get("published_at") or "")]
     has_public_summaries = sum(bool(source.get("description") and len(source.get("description", "")) >= 25) for source in related)
-    analysis = expert_analysis(category, row["title"], fact_ledger)
     narrative = narrative_fields(related, description)
+    topic_region = classify_topic_region(" ".join(f"{source.get('title', '')} {source.get('description', '')}" for source in related), related)
     return {
         "id": f"news-{row['published_at'].replace('-', '')}-{digest}",
         "date": row["published_at"],
@@ -398,28 +463,15 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
         "tags": [category, row["publisher"][:18]],
         "category": category,
         "publisher": row["publisher"][:40],
-        "region": row.get("region", "domestic"),
+        "region": topic_region,
         "engagement": row.get("engagement", {}),
         "related_reports": len(related),
         "source_count": len(sources),
         "easy_explanation": description,
         "market_comment": MARKET_COMMENTS[category],
-        "coverage_status": "public_summary" if has_public_summaries else "title_only",
-        "coverage_note": f"공개 RSS 제목 {len(related)}건과 공개 요약 {has_public_summaries}건에서 확보한 내용입니다. 원문 전체·유료벽 내부는 추측해 채우지 않으며, 접근하지 못한 내용까지 포함한 완전 요약은 아닙니다.",
-        "timeline": timeline,
-        "fact_ledger": fact_ledger,
-        "expert_analysis": analysis,
         **narrative,
+        "news_charts": numeric_charts(fact_ledger),
         "metrics": metrics,
-        "sections": [
-            {"heading": "한 줄로 이해하기", "paragraphs": [description], "bullets": []},
-            {
-                "heading": "여러 매체에서 확인된 보도",
-                "paragraphs": [f"비슷한 제목의 보도 {len(related)}건을 묶었고, 서로 다른 매체 {len(sources)}곳의 원문을 연결했습니다."],
-                "bullets": [source["title"] for source in sources[:5]],
-            },
-            {"heading": "시장 영향과 확인할 점", "paragraphs": [MARKET_COMMENTS[category]], "bullets": ["발표·전망과 실제 집행·실적을 구분", "기사 속 수치는 원문 기준기간과 단위를 재확인", "같은 기사의 단순 전재는 독립 근거로 계산하지 않음"]},
-        ],
         "sources": sources,
         "disclaimer": "뉴스 제목과 공개 요약을 자동 정리한 정보이며 투자 권유가 아닙니다. 실제 조회수·좋아요는 제공되지 않아 유사 보도 확산과 매체 다양성을 호응도의 대체지표로 사용합니다. 정확한 내용은 원문을 확인하세요.",
     }
@@ -453,6 +505,11 @@ def translate_foreign_sources(items: list[dict[str, object]]) -> None:
             if translated_source and translated_source.get("summary_ko"):
                 event["title_ko"] = translated_source.get("title_ko")
                 event["summary_ko"] = translated_source.get("summary_ko")
+        narrative_sources = []
+        for source in item.get("sources") or []:
+            narrative_sources.append({**source, "title": source.get("title_ko") or source.get("title", ""), "description": source.get("summary_ko") or source.get("description", "")})
+        if narrative_sources:
+            item.update(narrative_fields(narrative_sources, narrative_sources[0].get("description") or narrative_sources[0].get("title", "")))
 
 
 def collect_day(target: date, limit: int) -> list[dict[str, object]]:
@@ -473,6 +530,14 @@ def collect_day(target: date, limit: int) -> list[dict[str, object]]:
         except Exception as error:
             print(f"{target} 해외 뉴스 피드 일부 실패: {error}")
         time.sleep(0.2)
+    for url, publisher, region in DIRECT_RSS_FEEDS:
+        try:
+            for row in fetch_direct_feed(url, publisher, region, target):
+                key = SPACE_PATTERN.sub("", row["title"].lower())
+                unique.setdefault(key, row)
+        except Exception as error:
+            print(f"{target} {publisher} 직접 RSS 일부 실패: {error}")
+        time.sleep(0.15)
     try:
         for row in fetch_nyt_most_popular(target):
             key = SPACE_PATTERN.sub("", str(row["title"]).lower())
@@ -508,7 +573,7 @@ def rebuild_index() -> None:
     latest_archive_items: list[dict[str, object]] = []
     for path in sorted(NEWS_DIR.glob("20??-??-??.json"), reverse=True):
         payload = json.loads(path.read_text(encoding="utf-8"))
-        items = mark_important(payload.get("items", []))
+        items = mark_important([upgrade_existing_item(item) for item in payload.get("items", [])])
         payload["items"] = items
         path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         archives.append({"date": payload.get("date"), "count": len(items), "file": path.name})

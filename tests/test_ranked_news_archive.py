@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.update_economic_news import classify_region, importance_details, item_from_feed, mark_important, representative_score
+from scripts.update_economic_news import DIRECT_RSS_FEEDS, GLOBAL_FEEDS, classify_region, classify_topic_region, importance_details, item_from_feed, mark_important, representative_score
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -116,10 +116,34 @@ def test_feed_item_preserves_every_number_with_context_and_time() -> None:
         "region": "global",
     }]
     item = item_from_feed(rows[0], rows)
-    values = [fact["value"] for fact in item["fact_ledger"]]
+    values = [metric["value"] for metric in item["metrics"] if str(metric["label"]).startswith("기사 수치")]
     assert all(value in values for value in ("0.25%p", "5.50%", "2026년", "8월", "30일", "2.1%", "3.2%"))
-    assert item["timeline"][0]["published_time"] == "2026-08-30T08:30+09:00"
-    assert "원문 전체" in item["coverage_note"]
+    assert "timeline" not in item and "coverage_note" not in item and "sections" not in item
     assert item["narrative_paragraphs"]
     assert item["core_summary"]
     assert any(row["importance"] == "max" for row in item["highlight_keywords"])
+    assert item["news_charts"]
+
+
+def test_topic_origin_overrides_korean_publisher_language() -> None:
+    korean_source = [{"publisher": "연합뉴스", "region": "domestic"}]
+    assert classify_topic_region("미 연준이 기준금리를 인상했다", korean_source) == "us"
+    assert classify_topic_region("중국 인민은행이 위안화 정책을 발표했다", korean_source) == "global"
+    assert classify_topic_region("한국은행이 국내 기준금리를 동결했다", korean_source) == "domestic"
+
+
+def test_major_us_and_global_publishers_are_in_automatic_search() -> None:
+    queries = " ".join(row[0] for row in GLOBAL_FEEDS)
+    direct = " ".join(row[0] for row in DIRECT_RSS_FEEDS)
+    assert "nypost.com" in queries and "nypost.com/business/feed" in direct
+    assert all(domain in queries for domain in ("reuters.com", "bbc.com", "theguardian.com", "asia.nikkei.com"))
+
+
+def test_news_pipeline_is_server_side_and_does_not_require_gpt() -> None:
+    collector = (ROOT / "scripts" / "update_economic_news.py").read_text(encoding="utf-8").lower()
+    server = (ROOT / "src" / "realestate" / "server.py").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "economic-indicators-daily.yml").read_text(encoding="utf-8")
+    assert "openai" not in collector and "chatgpt" not in collector
+    local_loop = "MARKET_REFRESH_HOURS = 4" in server and '("update_economic_news.py", ["--backfill-days", "2", "--limit-per-day", "60"])' in server
+    hosted_loop = workflow.count("- cron:") >= 6 and "python scripts/update_economic_news.py --backfill-days 2 --limit-per-day 60" in workflow
+    assert local_loop or hosted_loop

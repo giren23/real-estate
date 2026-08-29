@@ -116,7 +116,8 @@
     const narrative = newsNarrative(item);
     const body = narrative.paragraphs.map(paragraph=>`<p>${emphasizedText(paragraph,narrative.keywords)}</p>`).join("");
     const sources = narrative.sourceUrl ? (item.sources || []).map((source,index)=>index === 0 ? {...source,url:narrative.sourceUrl} : source) : item.sources;
-    return `<header class="report-head news-report-head"><span>${esc(item.eyebrow)} · ${esc(item.date)} · 약 ${esc(item.read_minutes || 3)}분</span><h2 id="editorialDialogTitle">${esc(item.title)}</h2></header><section class="news-sixw-summary"><h3>기사 요약</h3>${body}</section><section class="news-core-summary"><h3>핵심 요약</h3><p>${emphasizedText(narrative.core,narrative.keywords)}</p></section>${sourceLedgerHtml(sources)}<p class="report-disclaimer">${esc(item.disclaimer || "공개자료를 바탕으로 작성한 정보이며 투자 권유가 아닙니다.")}</p>`;
+    const charts = Array.isArray(item.news_charts) && item.news_charts.length ? `<section class="news-evidence-charts"><h3>관련 통계·비교</h3><div class="report-chart-grid">${item.news_charts.map(chartHtml).join("")}</div></section>` : "";
+    return `<header class="report-head news-report-head"><span>${esc(item.eyebrow)} · ${esc(item.date)} · 약 ${esc(item.read_minutes || 3)}분</span><h2 id="editorialDialogTitle">${esc(item.title)}</h2></header><section class="news-sixw-summary"><h3>기사 요약</h3>${body}</section><section class="news-core-summary"><h3>핵심 요약</h3><p>${emphasizedText(narrative.core,narrative.keywords)}</p></section>${charts}${sourceLedgerHtml(sources)}<p class="report-disclaimer">${esc(item.disclaimer || "공개자료를 바탕으로 작성한 정보이며 투자 권유가 아닙니다.")}</p>`;
   }
 
   function coverageHtml(item) {
