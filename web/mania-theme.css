@@ -1,0 +1,99 @@
+/*
+ * Light MANIA-inspired skin based on the supplied reference screenshots.
+ * All overrides live here so reverting only requires unlinking this file and
+ * mania-theme.js from index.html.
+ */
+:root{
+  color-scheme:light;
+  color:#28252d;
+  background:#ededf0;
+  --mania-bg:#ededf0;
+  --mania-panel:#fff;
+  --mania-panel-2:#fafafa;
+  --mania-line:#e4e2e8;
+  --mania-muted:#8e8a95;
+  --mania-text:#28252d;
+  --mania-accent:#4b3478;
+  --mania-accent-dark:#3e2869;
+  --mania-accent-soft:#f2eff8;
+}
+*{scrollbar-color:#b7afc5 #f2f2f4}
+body{background:var(--mania-bg);color:var(--mania-text)}
+main{max-width:1180px;padding-top:20px}
+.hero{align-items:center;margin-bottom:16px;padding:22px 24px;border:0;border-radius:0;background:var(--mania-accent);box-shadow:0 3px 10px rgba(54,36,89,.16)}
+.hero h1{margin:0 0 4px;color:#fff;font-size:clamp(28px,3vw,39px);font-weight:700;letter-spacing:-.035em}
+.hero-kicker{margin-bottom:4px;color:#f4c96e;font-size:13px}.hero-description{color:#ddd5ea}
+.data-badge{min-width:155px;padding:11px 15px;border:1px solid rgba(255,255,255,.22);border-radius:8px;background:rgba(255,255,255,.1);box-shadow:none}
+.data-badge b{color:#fff;font-size:21px}.data-badge span{color:#ddd5ea}
+
+.search-card,.panel{border:1px solid var(--mania-line);border-radius:11px;background:var(--mania-panel);box-shadow:0 3px 12px rgba(39,31,52,.07)}
+.search-card{padding:15px}.panel{padding:15px}.panel-head{padding-bottom:11px;border-bottom:1px solid #eeedf0}
+.panel-head h2{color:#27242b;font-size:16px}.panel-head>span,.status{color:var(--mania-muted)}
+.step{width:25px;height:25px;border-radius:5px;background:var(--mania-accent);color:#fff}
+.map-state{border-radius:6px;background:#f3f2f5;color:#77717f}.map-state.ready{background:#f1eef8;color:var(--mania-accent)}
+.marker-availability{border-radius:6px}.marker-availability.enabled{background:#f1eef8;color:#594284}.marker-availability.disabled{background:#fff0f0;color:#b94a4a}
+
+.region-breadcrumb{padding:11px 13px;border:1px solid #e6e4e9;border-radius:7px;background:#f8f8f9}
+.region-breadcrumb button{color:#55515d}.region-breadcrumb button.selected{color:var(--mania-accent)}.region-breadcrumb i{color:#b2aeb7}
+.region-options{border-color:#e5e3e8;border-radius:8px;background:#fff}
+.region-options button{border-color:#ebe9ed;background:#fff;color:#38343e}
+.region-options button:hover,.region-options button:focus{background:var(--mania-accent-soft);color:var(--mania-accent)}
+.region-options small{color:#9a96a0}
+.search-bar{gap:8px}.search-bar input{border:1px solid #ddd9e2;border-radius:7px;background:#fff;color:#28252d;padding:12px 14px;font-size:15px}
+.search-bar input::placeholder{color:#aaa6af}.search-bar input:focus{border-color:#735aa0;box-shadow:0 0 0 3px rgba(75,52,120,.12)}
+.search-bar button{border-radius:7px;background:var(--mania-accent);color:#fff}.search-bar button:hover{background:var(--mania-accent-dark)}
+.quick-region{border-color:#e3e0e7!important;background:#fff!important;color:#5b5662!important}.quick-region:hover{border-color:#a99abc!important;background:#f5f2f9!important;color:var(--mania-accent)!important}
+
+#map{border:1px solid #dedbe2;border-radius:8px;background:#f4f4f5}
+.leaflet-control-zoom a{border-color:#dedbe2!important;background:#fff!important;color:#4b3478!important}
+.leaflet-control-attribution{background:rgba(255,255,255,.9)!important;color:#817c87!important}.leaflet-control-attribution a{color:#4b3478!important}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#fff;color:#302c35}.leaflet-popup-content-wrapper{border:1px solid #ded9e5;border-radius:9px;box-shadow:0 8px 26px rgba(42,31,60,.2)}
+.leaflet-container a.leaflet-popup-close-button{color:#8f8997}.map-popup small{color:#7f7a85}.map-popup strong{color:var(--mania-accent)}.map-popup-add{border-radius:6px;background:var(--mania-accent);color:#fff}
+
+.region-complex-panel{border-color:#e7e4ea}.region-complex-head h2{color:#2d2932}.region-complex-head span{color:#756e7d}
+.result{border-color:#e7e5e9!important;background:#fff!important}.result:hover{border-color:#b9accd!important;background:#faf8fc!important}
+.result h3{color:#2b2830}.result p,.result small,.result-actions span{color:#8d8993}.result .price{color:#4b3478}.trade-alias{color:#705994}
+.add-btn{background:var(--mania-accent)!important;color:#fff!important}
+
+.graph-toolbar button{border:1px solid #ddd9e2;border-radius:7px;padding:8px 12px}
+.primary-action,.save-action{background:var(--mania-accent);color:#fff}.primary-action:hover,.save-action:hover{background:var(--mania-accent-dark)}
+.danger-action{background:#fff1f1;color:#b84141}.save-state{color:#8d8993}.save-state.unsaved{color:#765aa5}
+.graph-tab{border-color:#ddd9e2;border-radius:7px;background:#fff;color:#77717f}.graph-tab.active{border-color:var(--mania-accent);background:var(--mania-accent);color:#fff}
+.graph-empty{border-color:#ddd9e2;border-radius:8px;color:#96919b}.graph-empty b{color:#5c5762}
+.graph-board{border-color:#e1dfe4;border-radius:9px;background:#fff}
+.graph-board-head label,.period-control label,.graph-board-head>span{color:#817c87}
+.graph-name,.period-control select,.series-item select,.supply-input{border-color:#ddd9e2;border-radius:6px;background:#fff;color:#302c35}
+.graph-name:focus{border-color:#735aa0;box-shadow:0 0 0 3px rgba(75,52,120,.1)}
+.series-item{border-color:#e6e3e8;border-radius:7px;background:#fafafa}.series-name b{color:#2d2932}.series-name span,.supply-control{color:#8a8590}.supply-control small{color:#765aa5}
+.series-empty{border-color:#dfdce3;border-radius:7px;color:#918c96}.remove-btn{border-radius:6px;background:#fff0f0;color:#b54141}
+.stack-chart{border-color:#e5e3e7;border-radius:8px;background:#fff}.price-section{background:#fff}
+.graph-chart-wrap{border-color:#e8e6ea}.chart-help{color:#8e8994}
+.economic-title b{color:#2d2932}.economic-title span{color:#938e98}
+.economic-sources{color:#8b8691}.economic-sources a{color:#4b3478}
+
+.policy-panel{border-color:#e4e0ea;border-radius:8px;background:#faf9fc}
+.policy-item{border-color:#e5e1ea;border-radius:7px;background:#fff;color:#4e4954}
+.policy-item:hover,.policy-item:focus{border-color:#8b76aa;background:#f5f2f9;outline:1px solid rgba(75,52,120,.16)}
+.policy-number{border-radius:50%;background:#ede8f5;color:#4b3478}.policy-item time{color:#705994}
+.policy-detail{border-color:#e2dfe6;border-radius:7px;background:#fff}.policy-detail time{color:#705994}.policy-detail b{color:#4b3478}.policy-detail p{color:#66616c}.policy-detail a{color:#4b3478}
+.policy-change{border-color:#e5e3e7;border-radius:7px;background:#fafafa}.policy-change.before{border-color:#e4e2e6;background:#f8f8f9}.policy-change.after{border-color:#d7e5d3;background:#f5faf3}
+.policy-change h4,.policy-change li{color:#5e5964}.policy-change.after h4{color:#4c7641}.policy-impact{border-color:#fecaca;border-left-color:#dc2626;border-radius:6px;background:#fff1f2;color:#b42318!important}
+.policy-popup{border-color:#cfc4df;border-radius:9px;background:#fff;box-shadow:0 22px 60px rgba(42,31,60,.24)}
+.policy-popup .policy-detail-head b{color:#4b3478}.policy-popup .policy-summary{color:#625d68}.policy-popup a{color:#4b3478}.policy-popup-close{border-radius:6px;background:#f1eff4;color:#6e6874}
+
+.metric{border-color:#e4e2e6;border-radius:8px;background:#fafafa}.metric span{color:#8b8691}.metric b{color:#2d2932}
+.table-wrap{border:1px solid #e1dfe3;border-radius:8px;background:#fff}th,td{border-color:#ebe9ec}th{background:#f4f2f6;color:#625c69}tbody tr:nth-child(even){background:#fafafa}tbody tr:hover{background:#f3f0f7}
+
+@media(max-width:600px){
+  main{padding-top:10px}.hero{padding:16px;border-radius:0}.hero h1{font-size:27px}
+  .search-card,.panel{border-radius:8px}.region-options button{min-height:50px}
+}
+
+.editorial-hub{border-color:var(--mania-line);border-radius:11px;background:#f7f6f9;box-shadow:0 3px 12px rgba(39,31,52,.07)}
+.editorial-kicker,.editorial-card-meta{color:var(--mania-accent)}
+.editorial-updated,.editorial-section,.editorial-card{border-color:var(--mania-line);background:#fff}
+.editorial-section-title h3,.editorial-card-body strong,.editorial-article-head h2{color:var(--mania-text)}
+.editorial-card:hover,.editorial-card:focus{background:var(--mania-accent-soft);outline-color:#8b76aa}
+.editorial-date{border-color:#e2dfe6;background:#fafafa;color:var(--mania-accent)}
+.editorial-card-tags span{background:var(--mania-accent-soft);color:var(--mania-accent)}
+.editorial-dialog{border-color:#cfc4df;border-radius:10px}.editorial-easy{border-left-color:var(--mania-accent);background:var(--mania-accent-soft)}

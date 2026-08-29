@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="전국 아파트를 검색하고 최대 10개 그래프 작업공간에서 평형별 장기 실거래가를 비교하고 저장합니다.">
+<title>Korean real estate prices</title>
+<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<!-- 시험용 MANIA 스타일: 원복하려면 아래 CSS와 mania-theme.js 연결만 제거하세요. -->
+<link rel="stylesheet" href="mania-theme.css?v=5">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="mania-theme.js?v=2"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+<body>
+<div id="minorVersionBadge" class="minor-version-badge" role="status" hidden>마이너 버전</div>
+<main>
+<header class="hero">
+  <div>
+    <h1>Korean real estate prices</h1>
+    <p class="hero-kicker">아파트 실거래가 탐색기 · 찾고, 고르고, 한눈에 비교하세요</p>
+    <p class="hero-description">지역이나 아파트 단지를 검색하고, 이름을 붙인 그래프에 원하는 평형을 담아 장기 실거래가를 비교하고 저장하세요.</p>
+  </div>
+  <div class="hero-data-actions">
+    <div class="data-badge"><b id="dataCount">—</b><span>수집된 실거래</span></div>
+    <a class="market-snapshot-link" href="market.html">📊 시장 한 컷 보기</a>
+  </div>
+</header>
+
+<section class="search-card">
+  <div class="region-picker" aria-label="지역 선택">
+    <nav id="regionBreadcrumb" class="region-breadcrumb" aria-label="선택한 지역"></nav>
+    <div id="regionOptions" class="region-options"></div>
+  </div>
+  <form id="searchForm" class="search-bar">
+    <label class="sr-only" for="searchInput">지역 또는 아파트 단지 검색</label>
+    <input id="searchInput" autocomplete="off" placeholder="예: 해운대, 우동, 반도보라빌" />
+    <button type="submit">검색</button>
+  </form>
+  <div class="quick-search" id="quickSearch" hidden></div>
+  <p class="status" id="status" role="status">데이터를 불러오는 중입니다…</p>
+  <section id="regionComplexPanel" class="region-complex-panel" hidden>
+    <div class="region-complex-head">
+      <h2 id="regionComplexTitle">선택 지역 단지</h2>
+      <span id="regionComplexCount">0개</span>
+    </div>
+    <div id="regionComplexList" class="region-complex-list"></div>
+  </section>
+</section>
+
+<section class="explore-grid">
+  <article class="panel map-panel">
+    <div class="panel-head">
+      <div><span class="step">1</span><h2>지도에서 단지 찾기</h2><span id="markerAvailability" class="marker-availability disabled">마커 생성 안 함</span></div>
+      <span id="mapState" class="map-state">무료 지도 준비 중</span>
+    </div>
+    <div id="map">
+      <div class="map-fallback">
+        <b>OpenStreetMap을 불러오는 중입니다</b>
+        <span>별도 가입이나 인증키 없이 무료로 이용할 수 있습니다.</span>
+      </div>
+    </div>
+  </article>
+
+  <div class="sr-only" aria-hidden="true"><span id="resultCount">0개</span><div id="results"></div></div>
+</section>
+
+<section class="panel compare-panel">
+  <div class="panel-head graph-title-row">
+    <div><span class="step">2</span><h2>장기 실거래 그래프</h2></div>
+    <span id="graphCount">0 / 10</span>
+  </div>
+  <div class="graph-toolbar" aria-label="그래프 관리">
+    <button id="addGraphBtn" class="primary-action" type="button">그래프 추가</button>
+    <button id="removeGraphBtn" class="danger-action" type="button" disabled>선택 그래프 제거</button>
+    <button id="saveGraphsBtn" class="save-action" type="button" disabled>저장</button>
+    <span id="saveState" class="save-state">저장된 그래프가 없습니다.</span>
+  </div>
+  <div id="graphTabs" class="graph-tabs" role="tablist" aria-label="그래프 목록"></div>
+  <div id="graphBoards" class="graph-boards">
+    <div class="graph-empty"><b>아직 만든 그래프가 없습니다.</b><span>‘그래프 추가’를 눌러 첫 번째 그래프를 만들어 보세요.</span></div>
+  </div>
+</section>
+
+<section class="panel details-panel">
+  <div class="panel-head"><div><span class="step">3</span><h2>선택 단지 최근 실거래 상세</h2></div></div>
+  <div id="metrics" class="metrics"></div>
+  <div class="table-wrap"><table id="trades"></table></div>
+</section>
+
+</main>
+<script src="app.js?v=44"></script>
+</body>
+</html>

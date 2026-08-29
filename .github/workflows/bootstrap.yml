@@ -1,0 +1,52 @@
+name: Bootstrap real-estate data
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Restore and save complete trade history
+        uses: actions/cache@v4
+        with:
+          path: data/raw/trades
+          key: trade-history-${{ github.run_id }}
+          restore-keys: |
+            trade-history-
+      - run: pip install -r requirements.txt
+      - name: Collect nationwide apartment directory
+        env:
+          MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
+          APT_LIST_SERVICE_KEY: ${{ secrets.APT_LIST_SERVICE_KEY }}
+          PYTHONPATH: src
+        run: python -m realestate.cli.main collect-complexes
+      - name: Collect all available trade history
+        env:
+          MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
+          PYTHONPATH: src
+        run: python -m realestate.cli.main collect --all-history
+      - name: Publish
+        env:
+          PYTHONPATH: src
+        run: python -m realestate.cli.main publish
+      - name: Test
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+      - name: Commit generated data
+        run: |
+          git config user.name "real-estate-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/public data/raw/trades data/raw/complexes.csv
+          git commit -m "Bootstrap nationwide apartments and full history" || exit 0
+          git push

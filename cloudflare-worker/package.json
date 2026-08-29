@@ -1,0 +1,10 @@
+{
+  "name": "korean-real-estate-gateway",
+  "private": true,
+  "devDependencies": {
+    "wrangler": "^4.68.0"
+  },
+  "scripts": {
+    "deploy": "wrangler deploy"
+  }
+}

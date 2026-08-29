@@ -1,0 +1,111 @@
+name: Daily real-estate update
+
+on:
+  schedule:
+    # 매일 한국시간 오전 6시 10분(UTC 전날 21시 10분)
+    - cron: "10 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: real-estate-daily
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Restore and save complete trade history
+        uses: actions/cache@v4
+        with:
+          path: data/raw/trades
+          key: trade-history-${{ github.run_id }}
+          restore-keys: |
+            trade-history-
+
+      - run: pip install -r requirements.txt
+
+      - name: Refresh nationwide apartment directory
+        id: directory
+        continue-on-error: true
+        env:
+          MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
+          APT_LIST_SERVICE_KEY: ${{ secrets.APT_LIST_SERVICE_KEY }}
+          PYTHONPATH: src
+        run: python -m realestate.cli.main collect-complexes
+
+      - name: Collect two latest months for all priority districts
+        id: collect
+        continue-on-error: true
+        env:
+          MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
+          PYTHONPATH: src
+        run: >
+          python -m realestate.cli.main collect
+          --months 2
+          --priority-coverage
+          --failure-report data/reports/trade_collection_failures.json
+
+      - name: Publish successful and cached data
+        env:
+          PYTHONPATH: src
+        run: python -m realestate.cli.main publish
+
+      - name: Refresh economic indicators
+        continue-on-error: true
+        env:
+          BOK_ECOS_API_KEY: ${{ secrets.BOK_ECOS_API_KEY }}
+        run: python scripts/update_economic_context.py
+
+      - name: Build daily market snapshot
+        continue-on-error: true
+        run: python scripts/update_market_snapshot.py
+
+      - name: Refresh economic news archive
+        continue-on-error: true
+        run: python scripts/update_economic_news.py --backfill-days 2 --limit-per-day 60
+
+      - name: Build major company and deep-dive analysis
+        continue-on-error: true
+        run: python scripts/update_editorial_analysis.py --lookback-days 45 --company-limit 20 --analysis-limit 20
+
+      - name: Test
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+
+      - name: Upload collection result report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trade-collection-report-${{ github.run_number }}
+          path: data/reports/trade_collection_failures.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Commit successful regional updates
+        run: |
+          git config user.name "real-estate-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/public data/raw/trades data/raw/complexes.csv web/content/news web/content/analysis
+          git commit -m "Daily update" || exit 0
+          git pull --rebase origin main
+          git push
+
+      - name: Mark incomplete refresh as failed after saving successes
+        if: steps.directory.outcome == 'failure' || steps.collect.outcome == 'failure'
+        run: |
+          echo "::error::일부 지역 또는 단지 목록 갱신에 실패했습니다. 성공한 데이터는 이미 게시했고, 아래와 아티팩트에 실패 목록을 남깁니다."
+          if [ -f data/reports/trade_collection_failures.json ]; then
+            cat data/reports/trade_collection_failures.json
+          fi
+          exit 1
