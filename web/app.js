@@ -1293,7 +1293,7 @@ function renderGraphBoards(){
       '<div class="tax-property-picker">'+
         '<label>아파트·단지 검색<small>단지와 평형을 고르면 PC의 공식 자료에서 대표 공시가격을 자동으로 불러옵니다.</small><input class="tax-property-search" type="search" placeholder="아파트명 또는 지역 입력" autocomplete="off"></label>'+
         '<div class="tax-property-results" hidden></div>'+
-        '<div class="tax-property-selected" hidden><div><b class="tax-selected-name"></b><small class="tax-selected-address"></small></div><label>평형 선택<select class="tax-area-select"></select></label><label>동<input class="tax-building" type="text" inputmode="numeric" placeholder="예: 101"></label><label>호<input class="tax-unit" type="text" inputmode="numeric" placeholder="예: 1203"></label><a class="tax-official-link" href="https://www.realtyprice.kr/notice/m/gss/search.do" target="_blank" rel="noopener">공식 공시가격 조회 ↗</a><p class="tax-property-note"></p></div>'+
+        '<div class="tax-property-selected" hidden><div><b class="tax-selected-name"></b><small class="tax-selected-address"></small></div><label>평형 선택<select class="tax-area-select"></select></label><label>동<input class="tax-building" type="text" inputmode="numeric" placeholder="예: 101"></label><label>호<input class="tax-unit" type="text" inputmode="numeric" placeholder="예: 1203"></label><a class="tax-official-link" href="https://www.realtyprice.kr/notice/m/town/searchChoice.do" target="_blank" rel="noopener">공식 공시가격 조회 ↗</a><p class="tax-property-note"></p></div>'+
       '</div>'+
       '<div class="tax-form">'+
         '<label>주택 취득가액<small>취득세 계산 기준</small><span><input class="tax-purchase-price" type="number" min="0" max="10000" step="0.1" value="10"><em>억원</em></span></label>'+
