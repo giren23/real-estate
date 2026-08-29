@@ -3,17 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="글로벌 증시·환율·원자재·금리의 일일 변화와 13개월 추세를 한눈에 확인합니다.">
-<title>시장 한 컷 | Korean real estate prices</title>
+<meta name="description" content="글로벌 증시·환율·원자재·금리와 주식 아침 브리핑을 한 페이지에서 확인합니다.">
+<title>주식 시장 한 컷 브리핑 | Korean real estate prices</title>
 <link rel="stylesheet" href="style.css?v=19">
-<link rel="stylesheet" href="market.css?v=3">
+<link rel="stylesheet" href="market.css?v=4">
+<link rel="stylesheet" href="market-unified.css?v=1">
+<link rel="stylesheet" href="market-brief.css?v=1">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
-<header class="market-topbar"><a href="./">← 실거래가로 돌아가기</a><span>MARKET SNAPSHOT</span></header>
+<header class="market-topbar"><a href="./">← 실거래가로 돌아가기</a><span>MARKET SNAPSHOT &amp; MORNING BRIEF</span></header>
 <main class="market-page">
   <header class="market-hero">
-    <div><span>DAILY MARKET BRIEF</span><h1>📊 시장 한 컷</h1><p>주요 시장의 전일·1주·1개월·3개월 변화와 13개월 흐름을 한 화면에 모았습니다.</p></div>
+    <div><span>DAILY MARKET BRIEF</span><h1>📈 주식 시장 한 컷 브리핑</h1><p>기존 시장 한 컷과 주식 아침 브리핑의 정보를 한 페이지에 모았습니다.</p></div>
     <div class="market-date"><b id="marketDate">—</b><span>최근 종가 기준</span><small id="updatedAt">업데이트 확인 중</small></div>
   </header>
   <nav id="marketNav" class="market-nav" aria-label="시장 구분"></nav>
@@ -24,6 +26,15 @@
     <div id="trendCharts" class="trend-grid"></div>
   </section>
   <section id="domesticNotice" class="domestic-notice"></section>
+  <section class="legacy-briefing" aria-labelledby="morningBriefTitle">
+    <header class="legacy-briefing-head"><span>MORNING CHECKLIST</span><h2 id="morningBriefTitle">주식 아침 브리핑 · 기존 항목 보존</h2><p>시장 요약·주요 경제 이슈·로컬 전용 관심종목 기능을 카테고리별로 이어서 확인합니다.</p><time><b id="briefingDate">—</b><span id="briefingUpdatedAt">업데이트 확인 중</span></time></header>
+    <section id="connection" class="connection-card"></section>
+    <section class="stock-section"><header><span>01</span><div><h2>시장·환율·원자재 핵심 요약</h2><p>위 상세표와 별도로 기존 아침 시장판을 빠른 확인용으로 유지했습니다.</p></div></header><div id="marketGrid" class="market-grid"></div></section>
+    <section class="stock-section"><header><span>02</span><div><h2>관심종목 현황</h2><p>계좌·주문 기능이 없는 공개 페이지이며, 관심종목 기능은 PC 로컬판에만 보존됩니다.</p></div></header><div id="watchlist" class="watchlist"><p class="empty">관심종목과 모의투자 설정은 공개 저장소와 분리된 PC 로컬 전용 기능입니다.</p></div></section>
+    <section class="stock-section"><header><span>03</span><div><h2>주요 경제·시장 이슈</h2><p>주식·금리·환율·원자재 관련 최신 뉴스를 묶었습니다.</p></div></header><div id="newsList" class="news-list"></div></section>
+    <section class="stock-section"><header><span>04</span><div><h2>공개 페이지 보안 상태</h2><p>공개 저장소에는 계좌 연결·주문 실행·전략 코드가 포함되지 않습니다.</p></div></header><ul id="safetyList" class="safety-list"></ul></section>
+    <p id="disclaimer" class="briefing-disclaimer">시장 정보 확인용이며 투자 권유 자료가 아닙니다.</p>
+  </section>
   <section id="editorialHub" class="editorial-hub" aria-labelledby="editorialTitle">
     <div class="editorial-hub-head">
       <div>
@@ -47,7 +58,8 @@
   <button type="button" class="editorial-dialog-close" aria-label="분석 닫기">×</button>
   <article id="editorialArticle" class="editorial-article"></article>
 </dialog>
-<script src="market.js?v=3"></script>
+<script src="market.js?v=4"></script>
+<script src="market-brief.js?v=1"></script>
 <script src="report.js?v=2"></script>
 <script src="editorial.js?v=4"></script>
 </body>

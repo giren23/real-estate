@@ -159,6 +159,24 @@ POLICIES = [
         "summary": "수도권·규제지역 고가주택의 주택담보대출 한도를 강화하고 투기수요 억제, 시장질서 확립과 공급 확대를 병행했습니다.",
         "url": "https://www.molit.go.kr/USR/NEWS/dtl.jsp?id=95091308",
     },
+    {
+        "date": "2026-01-23",
+        "title": "2026년 부동산 세제·금융 제도 변경",
+        "summary": "월세 세액공제 대상을 무주택 세대주의 배우자까지 넓히고, 주택청약종합저축 세제혜택을 2028년까지 연장했으며 지방 준공 후 미분양 주택의 취득·보유·양도 단계 세 부담 완화를 2026년 말까지 적용합니다.",
+        "url": "https://www.korea.kr/multi/visualNewsView.do?newsId=148958477",
+    },
+    {
+        "date": "2026-08-11",
+        "title": "2026 세제개편안: 주택 보유·거주 과세 개편",
+        "summary": "정부 개편안은 양도세 장기보유특별공제를 거주 중심으로 단계 전환하고 종부세 기본공제를 거주용 1주택 14억원, 비거주 1주택 9억원 등으로 조정하며 다주택자 양도세 중과를 2027~2028년 한시 완화하는 내용을 담았습니다. 국회 입법 전 개편안입니다.",
+        "url": "https://www.korea.kr/multi/visualNewsView.do?newsId=148969827",
+    },
+    {
+        "date": "2026-08-26",
+        "title": "2026 지방세제 개편안: 취득세·재산세 지원",
+        "summary": "생애최초 취득세 감면을 일정 요건의 주거용 오피스텔까지 확대하고 40세 미만 청년 감면 한도를 300만원으로 높이며, 공시가격 9억원 이하 1주택 재산세 특례를 2029년까지 연장하는 내용입니다. 국회 입법 전 개편안입니다.",
+        "url": "https://www.korea.kr/news/policyNewsView.do?newsId=148970644",
+    },
 ]
 
 
@@ -502,7 +520,7 @@ def main() -> None:
             },
             "metadata": {
                 "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-                "refresh_frequency": "daily",
+                "refresh_frequency": "multiple-times-daily",
                 "observation_frequency": "지표별 일·월·정책변경 시점",
                 "current_month_overlay": "환율·금속·원유·미국채·시장지수는 일일 공개시세의 당월 최신값을 포함하며 월이 끝나기 전에는 잠정치입니다.",
                 "bond_notes": {
