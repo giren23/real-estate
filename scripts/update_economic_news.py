@@ -26,9 +26,10 @@ FEED_QUERIES = (
 )
 GLOBAL_FEEDS = (
     ("economy OR markets OR interest rates OR stocks", "en-US", "US", "US:en", "us"),
-    ("site:nytimes.com economy OR markets OR business", "en-US", "US", "US:en", "us"),
-    ("site:fortune.com economy OR markets OR business", "en-US", "US", "US:en", "us"),
-    ("(Reuters OR Bloomberg OR Financial Times OR BBC OR AP OR CNBC OR Economist OR Nikkei) economy markets", "en-US", "US", "US:en", "global"),
+    ("site:nytimes.com (economy OR markets OR business OR interest rates)", "en-US", "US", "US:en", "us"),
+    ("site:fortune.com (economy OR markets OR business OR stocks)", "en-US", "US", "US:en", "us"),
+    ("(site:reuters.com OR site:ft.com OR site:bbc.com OR site:apnews.com) (economy OR markets OR rates OR stocks OR oil)", "en-GB", "GB", "GB:en", "global"),
+    ("(site:economist.com OR site:asia.nikkei.com OR site:lemonde.fr) (economy OR markets OR rates OR trade)", "en-GB", "GB", "GB:en", "global"),
 )
 TAG_PATTERN = re.compile(r"<[^>]+>")
 SPACE_PATTERN = re.compile(r"\s+")
@@ -177,7 +178,7 @@ def mark_important(items: list[dict[str, object]], limit: int = 8) -> list[dict[
     category_counts: dict[str, int] = {}
     selected = 0
     for region in ("domestic", "us", "global"):
-        candidate = next((row for row in ranked if row.get("region") == region and row["importance"].get("investment_relevant") and (int(row.get("importance_score", 0)) >= 28 or row["importance"].get("rate_decision"))), None)
+        candidate = next((row for row in ranked if row.get("region") == region and row["importance"].get("investment_relevant")), None)
         if candidate and selected < limit:
             candidate["important"] = True
             category = str(candidate.get("category", "거시경제"))
@@ -376,7 +377,16 @@ def collect_day(target: date, limit: int) -> list[dict[str, object]]:
         print(f"{target} NYT 인기기사 API 실패: {error}")
     clusters = cluster_rows(list(unique.values()))
     clusters.sort(key=lambda cluster: (len({row["publisher"] for row in cluster}), len(cluster), len(NUMBER_PATTERN.findall(" ".join(row["title"] for row in cluster)))), reverse=True)
-    items = [item_from_feed(cluster[0], cluster) for cluster in clusters[:limit]]
+    candidates = [item_from_feed(cluster[0], cluster) for cluster in clusters]
+    candidates = [item for item in candidates if item.get("category") != "거시경제" or any(keyword.lower() in f"{item.get('title', '')} {item.get('summary', '')}".lower() for keyword in INVESTMENT_RELEVANCE)]
+    quotas = {"domestic": max(1, round(limit * 0.55)), "us": max(1, round(limit * 0.25))}
+    quotas["global"] = max(1, limit - quotas["domestic"] - quotas["us"])
+    items = []
+    for region in ("domestic", "us", "global"):
+        items.extend([item for item in candidates if item.get("region") == region][:quotas[region]])
+    if len(items) < limit:
+        selected_ids = {str(item.get("id")) for item in items}
+        items.extend(item for item in candidates if str(item.get("id")) not in selected_ids and len(items) < limit)
     translate_foreign_sources(items)
     mark_important(items)
     return sorted(items, key=lambda row: int(row.get("importance_score", 0)), reverse=True)
