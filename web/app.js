@@ -1091,7 +1091,7 @@ function addGraphBoard(){
 }
 
 function newGraphBoard(){
-  return {id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),periodYears:20,priceMode:"trade",series:[]};
+  return {id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),periodYears:20,priceMode:"trade",chartWidth:100,chartHeight:0,series:[]};
 }
 
 function ensureInitialGraphBoard(){
@@ -1145,6 +1145,8 @@ function restoreGraphBoards(){
       name:String(board.name||"그래프 "+(index+1)).slice(0,30),
       periodYears:[1,3,5,10,20,0].includes(Number(board.periodYears))?Number(board.periodYears):20,
       priceMode:board.priceMode==="pyeong"?"pyeong":"trade",
+      chartWidth:Math.min(200,Math.max(100,Number(board.chartWidth)||100)),
+      chartHeight:Number(board.chartHeight)>=260&&Number(board.chartHeight)<=720?Number(board.chartHeight):0,
       series:Array.isArray(board.series)?board.series.slice(0,10).filter(series=>apartmentGroups.some(g=>g.key===series.key)).map((series,seriesIndex)=>({
         id:String(series.id||makeId("series")),
         key:String(series.key),
@@ -1211,6 +1213,11 @@ function renderGraphBoards(){
     .map(([value,label])=>'<option value="'+value+'" '+(board.priceMode===value?"selected":"")+'>'+label+'</option>').join("");
   const chartHeading=board.priceMode==="pyeong"?"아파트 공급평당가":"아파트 실거래가";
   const chartSubtitle=board.priceMode==="pyeong"?"입력한 공급면적 기준 · 만원/평":"선택 평형의 월별 중앙값 · 억원";
+  board.chartWidth=Math.min(200,Math.max(100,Number(board.chartWidth)||100));
+  board.chartHeight=Number(board.chartHeight)>=260&&Number(board.chartHeight)<=720?Number(board.chartHeight):0;
+  const defaultChartHeight=window.matchMedia("(max-width:600px)").matches?320:390;
+  const shownChartHeight=board.chartHeight||defaultChartHeight;
+  const chartSizeStyle='width:'+board.chartWidth+'%;'+(board.chartHeight?'height:'+board.chartHeight+'px;':'');
   byId("graphBoards").innerHTML='<article class="graph-board" data-board-id="'+esc(board.id)+'">'+
     '<div class="graph-board-head"><div class="graph-head-fields"><div><label for="graphName">그래프 이름</label><input id="graphName" class="graph-name" maxlength="30" value="'+esc(board.name)+'"></div>'+
     '<div class="period-control"><label for="graphPeriod">그래프 표시 기간</label><select id="graphPeriod">'+periodOptions+'</select></div>'+
@@ -1218,7 +1225,12 @@ function renderGraphBoards(){
     '<span>'+board.series.length+' / 10개 단지</span></div>'+
     '<div class="series-list">'+(board.series.length?board.series.map(series=>seriesControl(board,series)).join(""):'<div class="series-empty">검색한 단지의 ‘추가’ 버튼을 누르면 추가 순서에 맞는 색상으로 표시됩니다.</div>')+'</div>'+
     '<div class="timeline-guide" hidden aria-hidden="true"><span class="timeline-guide-date"></span><div class="timeline-guide-popup"></div></div>'+
-    '<section class="stack-chart price-section"><div class="economic-title"><b>'+chartHeading+'</b><span>'+chartSubtitle+'</span></div><div class="chart-wrap graph-chart-wrap"><canvas class="price-chart" aria-label="'+esc(board.name)+' '+chartHeading+' 그래프"></canvas></div></section>'+
+    '<section class="stack-chart price-section"><div class="economic-title"><b>'+chartHeading+'</b><span>'+chartSubtitle+'</span></div>'+
+    '<div class="graph-size-controls" aria-label="실거래 그래프 크기 조절">'+
+      '<label>가로 <input id="graphWidth" type="range" min="100" max="200" step="10" value="'+board.chartWidth+'"><output id="graphWidthValue">'+board.chartWidth+'%</output></label>'+
+      '<label>높이 <input id="graphHeight" type="range" min="260" max="720" step="20" value="'+shownChartHeight+'"><output id="graphHeightValue">'+shownChartHeight+'px</output></label>'+
+      '<button id="resetGraphSize" type="button">기본 크기</button></div>'+
+    '<div class="price-chart-scroll"><div class="chart-wrap graph-chart-wrap" style="'+chartSizeStyle+'"><canvas class="price-chart" aria-label="'+esc(board.name)+' '+chartHeading+' 그래프"></canvas></div></div></section>'+
     '<p class="chart-help">그래프 위를 움직이거나 누르면 모든 지표의 같은 연월을 잇는 세로선이 표시됩니다. 숫자 세로선은 아래 주요 정책 발표 시점입니다.</p>'+
     '<div class="economic-stack stacked">'+
       '<section class="stack-chart economic-indicator"><div class="economic-title"><b>원·달러 환율</b><span>월평균 · 원/USD</span></div><div class="economic-chart"><canvas class="exchange-chart" aria-label="원달러 환율 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> 1달러를 사는 데 필요한 원화입니다.</p><p><b>해석</b> 상승하면 원화 약세로 수입물가 부담이 커질 수 있고, 하락하면 원화 강세로 외국인 자금과 수입비용에 유리할 수 있습니다.</p></div></section>'+
@@ -1252,6 +1264,21 @@ function renderGraphBoards(){
     board.priceMode=e.target.value==="pyeong"?"pyeong":"trade";
     renderGraphBoards();
     markUnsaved(board.priceMode==="pyeong"?"공급평당가 그래프로 전환했습니다. 공급면적을 확인해 주세요.":"실거래가 그래프로 전환했습니다.");
+  });
+  const graphWidthInput=byId("graphWidth"),graphHeightInput=byId("graphHeight"),graphChartWrap=byId("graphBoards").querySelector(".graph-chart-wrap");
+  const resizePriceChart=()=>requestAnimationFrame(()=>charts.get(board.id+"-price")?.resize());
+  graphWidthInput.addEventListener("input",e=>{
+    board.chartWidth=Math.min(200,Math.max(100,Number(e.target.value)||100));
+    graphChartWrap.style.width=board.chartWidth+"%";byId("graphWidthValue").textContent=board.chartWidth+"%";resizePriceChart();
+  });
+  graphWidthInput.addEventListener("change",()=>markUnsaved("실거래 그래프의 가로 크기를 변경했습니다."));
+  graphHeightInput.addEventListener("input",e=>{
+    board.chartHeight=Math.min(720,Math.max(260,Number(e.target.value)||defaultChartHeight));
+    graphChartWrap.style.height=board.chartHeight+"px";byId("graphHeightValue").textContent=board.chartHeight+"px";resizePriceChart();
+  });
+  graphHeightInput.addEventListener("change",()=>markUnsaved("실거래 그래프의 높이를 변경했습니다."));
+  byId("resetGraphSize").addEventListener("click",()=>{
+    board.chartWidth=100;board.chartHeight=0;renderGraphBoards();markUnsaved("실거래 그래프 크기를 기본값으로 되돌렸습니다.");
   });
   byId("graphBoards").querySelectorAll(".series-item").forEach(card=>{
     const series=board.series.find(item=>item.id===card.dataset.seriesId);
