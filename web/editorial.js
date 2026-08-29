@@ -5,6 +5,7 @@
   const updated = document.getElementById("editorialUpdated");
   const dialog = document.getElementById("editorialDialog");
   const article = document.getElementById("editorialArticle");
+  const importantList = document.getElementById("newsList");
   if (!hub || !updated || !dialog || !article) return;
 
   const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, character => ({
@@ -31,12 +32,22 @@
       <time class="editorial-date" datetime="${escapeHtml(item.date)}">${escapeHtml(String(item.date || "").slice(5).replace("-", "."))}</time>
       <span class="editorial-card-body">
         <span class="editorial-card-meta">${escapeHtml(item.eyebrow)} · 약 ${escapeHtml(item.read_minutes)}분</span>
-        <strong>${escapeHtml(item.title)}</strong>
+        <strong>${item.important ? '<span class="important-prefix">[중요]</span> ' : ''}${escapeHtml(item.title)}</strong>
         <span class="editorial-card-summary">${escapeHtml(item.summary)}</span>
         <span class="editorial-card-tags">${tags}</span>
       </span>
       <span class="editorial-arrow" aria-hidden="true">›</span>
     </button>`;
+  }
+
+  function importantHtml(items) {
+    if (!importantList) return;
+    const order = ["증시", "금리·채권", "환율", "원자재", "산업·기업", "거시경제", "부동산", "가상자산"];
+    const groups = order.map(category => ({ category, items: items.filter(item => (item.category || item.tags?.[0]) === category) })).filter(group => group.items.length);
+    importantList.innerHTML = groups.length ? groups.map(group => `<section class="important-news-group">
+      <header><a href="news.html?category=${encodeURIComponent(group.category)}">${escapeHtml(group.category)}</a><small>${group.items.length}건</small></header>
+      <div>${group.items.map(cardHtml).join("")}</div>
+    </section>`).join("") : '<p class="editorial-loading">오늘의 중요 경제·시장 뉴스를 준비 중입니다.</p>';
   }
 
   function sectionHtml(section) {
@@ -124,6 +135,7 @@
         newsSection.items = news.latest_items.slice(0, 6);
         newsSection.more_url = "news.html";
       }
+      if (news && Array.isArray(news.important_items)) importantHtml(news.important_items);
       const mergeSection = (id, generated, label, moreUrl) => {
         const section = sections.find(row => row.id === id);
         if (!section || !Array.isArray(generated)) return;
@@ -136,10 +148,12 @@
         mergeSection("company", automatic.company_items, "기업분석", "analysis.html?type=company");
         mergeSection("analysis", automatic.analysis_items, "심층분석", "analysis.html?type=analysis");
       }
-      contentById = new Map(sections.flatMap(section => section.items || []).map(item => [item.id, item]));
+      const importantItems = news?.important_items || [];
+      contentById = new Map([...sections.flatMap(section => section.items || []), ...importantItems].map(item => [item.id, item]));
       hub.innerHTML = sections.map(sectionHtml).join("");
       updated.textContent = `기준 ${formatDate(data.as_of)} · 원문 링크 포함`;
       hub.querySelectorAll("[data-editorial-id]").forEach(button => button.addEventListener("click", () => openArticle(button.dataset.editorialId)));
+      importantList?.querySelectorAll("[data-editorial-id]").forEach(button => button.addEventListener("click", () => openArticle(button.dataset.editorialId)));
     })
     .catch(error => {
       hub.innerHTML = `<p class="editorial-loading editorial-error">${escapeHtml(error.message)}</p>`;

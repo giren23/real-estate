@@ -1774,7 +1774,7 @@ function renderBoardChart(board,container){
     const lineStyle=graphLineStyle(item.series.lineStyle);
     return {label:item.group.apt_name+" · "+(item.series.area?areaComparisonLabel(item.series.area,item.series.supplyPyeong):"평형 없음"),data:labels.map(month=>values.has(month)?values.get(month):null),tradeCounts:labels.map(month=>counts.get(month)||0),observationDates:labels.map(month=>observationDates.get(month)||""),borderColor:item.series.color,backgroundColor:item.series.color,pointRadius:1.15,pointHoverRadius:4,borderWidth:lineStyle.width,borderDash:lineStyle.dash,tension:.16,spanGaps:true};
   });
-  const policies=(economicContext.policies||[]).map(policyRecord).filter(item=>item.date&&item.date.slice(0,7)>=bounds.start&&item.date.slice(0,7)<=bounds.end);
+  const policies=(economicContext.policies||[]).map(policyRecord).filter(item=>item.date&&item.date.slice(0,7)>=bounds.start&&item.date.slice(0,7)<=bounds.end).sort((a,b)=>b.date.localeCompare(a.date));
   container.querySelector(".policy-list").innerHTML=policyHtml(policies);
   const selectPolicy=(button,item)=>{
     container.querySelectorAll(".policy-item").forEach(node=>node.classList.toggle("active",node===button));

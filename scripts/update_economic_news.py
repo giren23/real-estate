@@ -35,6 +35,7 @@ CATEGORY_RULES = (
     ("금리·채권", ("금리", "국채", "채권", "연준", "한국은행", "기준금리")),
     ("가상자산", ("비트코인", "가상자산", "암호화폐", "이더리움")),
     ("원자재", ("유가", "원유", "금값", "은값", "구리", "원자재")),
+    ("환율", ("환율", "달러", "원화", "엔화", "위안화", "외환")),
     ("산업·기업", ("반도체", "기업", "실적", "수출", "자동차", "배터리", "조선")),
     ("증시", ("코스피", "코스닥", "나스닥", "다우", "S&P", "증시", "주가")),
 )
@@ -45,10 +46,17 @@ MARKET_COMMENTS = {
     "금리·채권": "단기금리는 대출비용과 유동성에, 장기금리는 주택·주식의 할인율과 경기 기대에 영향을 줍니다. 한 번의 금리 움직임보다 1년·10년·30년 금리곡선의 방향을 함께 보는 것이 중요합니다.",
     "가상자산": "비트코인은 유동성과 위험선호에 민감하지만 주식·부동산과 항상 같은 방향으로 움직이지는 않습니다. 변동성이 커 단기 가격을 경제 전체의 방향으로 해석하면 안 됩니다.",
     "원자재": "유가 상승은 물가와 운송·생산비의 상방 요인이고, 구리는 산업수요의 보조지표입니다. 금·은은 실질금리와 안전자산 수요의 영향을 함께 받으므로 원인에 따라 해석이 달라집니다.",
+    "환율": "환율은 외국인 자금 흐름, 수입물가, 수출기업의 원화 환산 실적에 영향을 줍니다. 하루 움직임보다 금리차와 무역수지, 위험선호가 같은 방향인지 함께 확인해야 합니다.",
     "산업·기업": "기업 실적과 수주는 고용·수출·설비투자에 연결됩니다. 발표 수치가 일회성인지, 실제 현금흐름과 다음 분기 실적으로 이어지는지를 확인해야 합니다.",
     "증시": "주가지수는 경기 기대와 유동성을 빠르게 반영하지만 실물경제보다 먼저 움직일 수 있습니다. 국내외 지수, 반도체지수, VIX를 함께 비교해야 위험선호 변화를 구분할 수 있습니다.",
     "거시경제": "한 개의 지표보다 금리·환율·물가·고용·소비가 같은 방향인지 확인해야 합니다. 발표치와 시장 기대의 차이가 단기 가격변동을 크게 만들 수 있습니다.",
 }
+
+CORE_MARKET_CATEGORIES = {"증시", "금리·채권", "환율", "원자재"}
+TRUSTED_PUBLISHERS = ("연합뉴스", "한국은행", "기획재정부", "금융위원회", "한국거래소", "KBS", "MBC", "SBS", "로이터", "Reuters", "블룸버그", "Bloomberg", "한경", "매일경제", "서울경제", "이데일리")
+IMPACT_KEYWORDS = ("기준금리", "연준", "금리 인상", "금리 인하", "환율", "국채", "물가", "고용", "GDP", "관세", "수출", "실적", "코스피", "코스닥", "나스닥", "유가", "원유", "금값", "반도체", "부동산 정책", "대출 규제", "세제")
+INVESTMENT_RELEVANCE = ("금리", "연준", "환율", "달러", "국채", "채권", "물가", "고용", "GDP", "관세", "무역", "수출", "실적", "코스피", "코스닥", "나스닥", "다우", "주가", "유가", "원유", "금값", "구리", "반도체", "비트코인", "ETF", "주택", "아파트", "대출", "분양", "재건축", "재개발", "공급", "세제", "세금")
+NOISE_KEYWORDS = ("화재", "사망", "숨져", "대피", "홍수", "실종", "범죄", "교통사고", "연예", "Weverse", "TXT-LOG", "프라하하하", "[포토]", "시상식", "페스티벌")
 
 
 def clean_text(value: str) -> str:
@@ -60,6 +68,62 @@ def classify(text: str) -> str:
         if any(keyword.lower() in text.lower() for keyword in keywords):
             return category
     return "거시경제"
+
+
+def importance_details(item: dict[str, object]) -> dict[str, object]:
+    title = str(item.get("title", ""))
+    category = str(item.get("category") or ((item.get("tags") or ["거시경제"])[0]))
+    metrics = item.get("metrics") or []
+    related = int(item.get("related_reports") or 0)
+    sources = int(item.get("source_count") or 0)
+    if not related and metrics:
+        match = re.search(r"\d+", str(metrics[0].get("value", "")))
+        related = int(match.group()) if match else 1
+    if not sources and len(metrics) > 1:
+        match = re.search(r"\d+", str(metrics[1].get("value", "")))
+        sources = int(match.group()) if match else 1
+    related, sources = max(1, related), max(1, sources)
+    publishers = " ".join(str(source.get("publisher", "")) for source in (item.get("sources") or []))
+    coverage = min(32, related * 6 + sources * 5)
+    market = 14 if category in CORE_MARKET_CATEGORIES else 10 if category in {"산업·기업", "거시경제", "부동산"} else 6
+    impact = min(18, sum(3 for keyword in IMPACT_KEYWORDS if keyword.lower() in title.lower()))
+    authority = 8 if any(name.lower() in publishers.lower() for name in TRUSTED_PUBLISHERS) else 0
+    numeric = 3 if NUMBER_PATTERN.search(title) else 0
+    noise = 32 if any(keyword in title for keyword in NOISE_KEYWORDS) else 0
+    relevant = category in CORE_MARKET_CATEGORIES or any(keyword.lower() in title.lower() for keyword in INVESTMENT_RELEVANCE)
+    score = max(0, min(100, coverage + market + impact + authority + numeric - noise))
+    return {
+        "score": score,
+        "coverage_score": coverage,
+        "market_impact_score": market + impact,
+        "source_score": authority,
+        "noise_penalty": noise,
+        "attention_basis": f"유사 보도 {related}건 · 확인 매체 {sources}곳",
+        "views_available": False,
+        "investment_relevant": relevant and noise == 0,
+    }
+
+
+def mark_important(items: list[dict[str, object]], limit: int = 8) -> list[dict[str, object]]:
+    for item in items:
+        item["category"] = str(item.get("category") or ((item.get("tags") or ["거시경제"])[0]))
+        item["publisher"] = str(item.get("publisher") or (((item.get("sources") or [{}])[0]).get("publisher", "원문")))
+        item["importance"] = importance_details(item)
+        item["importance_score"] = item["importance"]["score"]
+        item["important"] = False
+    ranked = sorted(items, key=lambda row: (int(row.get("importance_score", 0)), str(row.get("date", ""))), reverse=True)
+    category_counts: dict[str, int] = {}
+    selected = 0
+    for item in ranked:
+        if int(item.get("importance_score", 0)) < 28 or not item["importance"].get("investment_relevant") or selected >= limit:
+            continue
+        category = str(item.get("category", "거시경제"))
+        if category_counts.get(category, 0) >= 3:
+            continue
+        item["important"] = True
+        category_counts[category] = category_counts.get(category, 0) + 1
+        selected += 1
+    return items
 
 
 def feed_url(query: str, target: date) -> str:
@@ -146,6 +210,10 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
         "title": row["title"][:78],
         "summary": description[:160],
         "tags": [category, row["publisher"][:18]],
+        "category": category,
+        "publisher": row["publisher"][:40],
+        "related_reports": len(related),
+        "source_count": len(sources),
         "easy_explanation": description,
         "market_comment": MARKET_COMMENTS[category],
         "metrics": metrics,
@@ -175,7 +243,9 @@ def collect_day(target: date, limit: int) -> list[dict[str, object]]:
         time.sleep(0.2)
     clusters = cluster_rows(list(unique.values()))
     clusters.sort(key=lambda cluster: (len({row["publisher"] for row in cluster}), len(cluster), len(NUMBER_PATTERN.findall(" ".join(row["title"] for row in cluster)))), reverse=True)
-    return [item_from_feed(cluster[0], cluster) for cluster in clusters[:limit]]
+    items = [item_from_feed(cluster[0], cluster) for cluster in clusters[:limit]]
+    mark_important(items)
+    return sorted(items, key=lambda row: int(row.get("importance_score", 0)), reverse=True)
 
 
 def write_day(target: date, items: list[dict[str, object]]) -> None:
@@ -187,17 +257,29 @@ def write_day(target: date, items: list[dict[str, object]]) -> None:
 def rebuild_index() -> None:
     archives: list[dict[str, object]] = []
     all_items: list[dict[str, object]] = []
+    latest_archive_items: list[dict[str, object]] = []
     for path in sorted(NEWS_DIR.glob("20??-??-??.json"), reverse=True):
         payload = json.loads(path.read_text(encoding="utf-8"))
-        items = payload.get("items", [])
+        items = mark_important(payload.get("items", []))
+        payload["items"] = items
+        path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         archives.append({"date": payload.get("date"), "count": len(items), "file": path.name})
+        if not latest_archive_items:
+            latest_archive_items = items
         all_items.extend(items)
+    important_items = sorted(
+        [item for item in latest_archive_items if item.get("important")],
+        key=lambda row: int(row.get("importance_score", 0)),
+        reverse=True,
+    )[:8]
     index = {
         "schema_version": 1,
         "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "archive_days": len(archives),
         "total_articles": len(all_items),
         "latest_items": all_items[:12],
+        "important_items": important_items,
+        "importance_method": "실제 조회수 미제공 · 유사 보도 확산, 매체 다양성, 출처 신뢰도, 시장 영향도, 최신성으로 산정",
         # Keep the first load light on mobile. Older days load on demand.
         "items": all_items[:600],
         "archives": archives,

@@ -5,17 +5,22 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="경제·금융·증시·산업·부동산 통합 뉴스 아카이브">
 <title>경제 통합 뉴스 · Korean real estate prices</title>
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=28">
 <link rel="stylesheet" href="mania-theme.css?v=5">
 </head>
 <body>
 <main class="news-page">
   <header class="news-page-head"><div><a class="news-back" href="index.html">← 실거래가로 돌아가기</a><h1>경제 통합 뉴스</h1><p>경제·금융·증시·산업·부동산 뉴스를 날짜별로 모아 원문과 함께 제공합니다.</p></div><b id="newsUpdated">불러오는 중</b></header>
-  <div class="news-controls"><input id="newsSearch" type="search" placeholder="기사 제목·매체·분야 검색"><select id="newsDate" aria-label="날짜 선택"><option value="">전체 날짜</option></select></div>
-  <p id="newsCount" class="news-count"></p><div id="newsGrid" class="news-grid"></div><button id="newsMore" class="news-more" type="button" hidden>기사 더 불러오기</button>
+  <nav id="newsPaginationTop" class="news-pagination" aria-label="뉴스 상단 페이지"></nav>
+  <div class="news-controls"><input id="newsSearch" type="search" placeholder="기사 제목·매체·분야 검색"><button id="newsReset" type="button">필터 초기화</button></div>
+  <div id="newsCategories" class="news-filter-chips" aria-label="뉴스 카테고리"></div>
+  <p id="newsActiveFilter" class="news-active-filter"></p>
+  <p id="newsCount" class="news-count"></p><div id="newsGrid" class="news-grid news-archive-grid"></div>
+  <nav id="newsPaginationBottom" class="news-pagination" aria-label="뉴스 하단 페이지"></nav>
+  <p class="news-ranking-note">[중요] 표시는 실제 조회수가 제공되지 않아 유사 보도 확산, 매체 다양성, 출처 신뢰도, 시장 영향 키워드를 조합해 선정합니다.</p>
 </main>
 <dialog id="editorialDialog" class="editorial-dialog" aria-labelledby="editorialDialogTitle"><button type="button" class="editorial-dialog-close" aria-label="기사 닫기">×</button><article id="editorialArticle" class="editorial-article"></article></dialog>
 <script src="report.js?v=2"></script>
-<script src="news.js?v=3"></script>
+<script src="news.js?v=4"></script>
 </body>
 </html>
