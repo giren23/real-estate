@@ -44,14 +44,18 @@ jobs:
         continue-on-error: true
         run: python scripts/update_editorial_analysis.py --lookback-days 45 --company-limit 20 --analysis-limit 20
 
+      - name: Build the archived morning investment briefing
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '15 22 * * *'
+        run: python scripts/update_investment_briefing.py
+
       - name: Verify generated data and chart freshness wiring
-        run: python -m pytest -q tests/test_economic_context.py tests/test_market_snapshot.py tests/test_latest_chart_values.py
+        run: python -m pytest -q tests/test_economic_context.py tests/test_market_snapshot.py tests/test_latest_chart_values.py tests/test_investment_briefing.py
 
       - name: Commit refreshed indicators
         run: |
           git config user.name "economic-indicator-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/public/economic_context.json data/public/market_snapshot.json web/content/news web/content/analysis
+          git add data/public/economic_context.json data/public/market_snapshot.json web/content/news web/content/analysis web/content/investment-briefing
           git commit -m "Frequent economic information update" || exit 0
           git pull --rebase origin main
           git push
