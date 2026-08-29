@@ -60,24 +60,6 @@ jobs:
           PYTHONPATH: src
         run: python -m realestate.cli.main publish
 
-      - name: Refresh economic indicators
-        continue-on-error: true
-        env:
-          BOK_ECOS_API_KEY: ${{ secrets.BOK_ECOS_API_KEY }}
-        run: python scripts/update_economic_context.py
-
-      - name: Build daily market snapshot
-        continue-on-error: true
-        run: python scripts/update_market_snapshot.py
-
-      - name: Refresh economic news archive
-        continue-on-error: true
-        run: python scripts/update_economic_news.py --backfill-days 2 --limit-per-day 60
-
-      - name: Build major company and deep-dive analysis
-        continue-on-error: true
-        run: python scripts/update_editorial_analysis.py --lookback-days 45 --company-limit 20 --analysis-limit 20
-
       - name: Test
         env:
           PYTHONPATH: src
