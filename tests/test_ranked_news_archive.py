@@ -46,6 +46,10 @@ def test_news_archive_has_two_paginations_and_clickable_filters() -> None:
 
     assert 'id="newsPaginationTop"' in html
     assert 'id="newsPaginationBottom"' in html
+    assert "Math.min(5,total)" in script
+    assert 'class="news-page-ellipsis"' in script
+    assert 'class="news-page-jump"' in script
+    assert 'aria-label="이동할 페이지 번호"' in script
     assert "data-filter-category" in script
     assert "data-source" in script
     assert "[중요]" in script
