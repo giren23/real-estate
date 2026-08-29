@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.update_economic_news import importance_details, mark_important
+from scripts.update_economic_news import importance_details, mark_important, representative_score
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +38,22 @@ def test_important_news_is_diversified_by_category() -> None:
     assert {row["category"] for row in selected} >= {"증시", "원자재"}
 
 
+def test_rate_decision_is_always_ranked_as_important_market_news() -> None:
+    rows = [sample(f"경제 일반 기사 {index}", "거시경제", 5, 4) for index in range(8)]
+    decision = sample("한국은행 기준금리 0.25%p 인상 결정", "금리·채권", 1, 1)
+    marked = mark_important([*rows, decision])
+
+    selected = next(row for row in marked if row["title"] == decision["title"])
+    assert selected["important"] is True
+    assert selected["importance"]["rate_decision"] is True
+
+
+def test_representative_article_prefers_trusted_source_and_complete_context() -> None:
+    trusted = {"publisher": "연합뉴스", "title": "기준금리 0.25%p 인상", "description": "한국은행 금융통화위원회 결정과 배경을 설명한 기사입니다."}
+    unknown = {"publisher": "개인블로그", "title": "금리 올랐다", "description": "짧은 설명"}
+    assert representative_score(trusted) > representative_score(unknown)
+
+
 def test_news_archive_has_two_paginations_and_clickable_filters() -> None:
     html = (ROOT / "web" / "news.html").read_text(encoding="utf-8")
     script = (ROOT / "web" / "news.js").read_text(encoding="utf-8")
@@ -53,6 +69,7 @@ def test_news_archive_has_two_paginations_and_clickable_filters() -> None:
     assert "data-filter-category" in script
     assert "data-source" in script
     assert "[중요]" in script
+    assert "isRateDecision" in script
     assert "important_items" in editorial
     assert index["important_items"]
     assert index["importance_method"]

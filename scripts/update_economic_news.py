@@ -57,6 +57,7 @@ TRUSTED_PUBLISHERS = ("연합뉴스", "한국은행", "기획재정부", "금융
 IMPACT_KEYWORDS = ("기준금리", "연준", "금리 인상", "금리 인하", "환율", "국채", "물가", "고용", "GDP", "관세", "수출", "실적", "코스피", "코스닥", "나스닥", "유가", "원유", "금값", "반도체", "부동산 정책", "대출 규제", "세제")
 INVESTMENT_RELEVANCE = ("금리", "연준", "환율", "달러", "국채", "채권", "물가", "고용", "GDP", "관세", "무역", "수출", "실적", "코스피", "코스닥", "나스닥", "다우", "주가", "유가", "원유", "금값", "구리", "반도체", "비트코인", "ETF", "주택", "아파트", "대출", "분양", "재건축", "재개발", "공급", "세제", "세금")
 NOISE_KEYWORDS = ("화재", "사망", "숨져", "대피", "홍수", "실종", "범죄", "교통사고", "연예", "Weverse", "TXT-LOG", "프라하하하", "[포토]", "시상식", "페스티벌")
+RATE_DECISION_PATTERN = re.compile(r"(?:기준금리|정책금리|연준|한은|한국은행).{0,28}(?:인상|인하|동결|올렸|내렸)|(?:금리).{0,18}(?:인상 결정|인하 결정|동결 결정|올렸다|내렸다)", re.I)
 
 
 def clean_text(value: str) -> str:
@@ -68,6 +69,18 @@ def classify(text: str) -> str:
         if any(keyword.lower() in text.lower() for keyword in keywords):
             return category
     return "거시경제"
+
+
+def is_rate_decision(text: str) -> bool:
+    return bool(RATE_DECISION_PATTERN.search(text or ""))
+
+
+def representative_score(source: dict[str, str]) -> tuple[int, int, int, int]:
+    publisher = source.get("publisher", "")
+    title = source.get("title", "")
+    description = source.get("description", "")
+    authority = 1 if any(name.lower() in publisher.lower() for name in TRUSTED_PUBLISHERS) else 0
+    return authority, 1 if NUMBER_PATTERN.search(f"{title} {description}") else 0, min(len(description), 300), min(len(title), 100)
 
 
 def importance_details(item: dict[str, object]) -> dict[str, object]:
@@ -89,9 +102,11 @@ def importance_details(item: dict[str, object]) -> dict[str, object]:
     impact = min(18, sum(3 for keyword in IMPACT_KEYWORDS if keyword.lower() in title.lower()))
     authority = 8 if any(name.lower() in publishers.lower() for name in TRUSTED_PUBLISHERS) else 0
     numeric = 3 if NUMBER_PATTERN.search(title) else 0
+    rate_decision = is_rate_decision(title)
+    decision_bonus = 30 if rate_decision else 0
     noise = 32 if any(keyword in title for keyword in NOISE_KEYWORDS) else 0
     relevant = category in CORE_MARKET_CATEGORIES or any(keyword.lower() in title.lower() for keyword in INVESTMENT_RELEVANCE)
-    score = max(0, min(100, coverage + market + impact + authority + numeric - noise))
+    score = max(0, min(100, coverage + market + impact + authority + numeric + decision_bonus - noise))
     return {
         "score": score,
         "coverage_score": coverage,
@@ -100,6 +115,8 @@ def importance_details(item: dict[str, object]) -> dict[str, object]:
         "noise_penalty": noise,
         "attention_basis": f"유사 보도 {related}건 · 확인 매체 {sources}곳",
         "views_available": False,
+        "rate_decision": rate_decision,
+        "response_proxy": "조회·좋아요 미제공 · 유사 보도 확산과 매체 다양성으로 대체",
         "investment_relevant": relevant and noise == 0,
     }
 
@@ -111,11 +128,11 @@ def mark_important(items: list[dict[str, object]], limit: int = 8) -> list[dict[
         item["importance"] = importance_details(item)
         item["importance_score"] = item["importance"]["score"]
         item["important"] = False
-    ranked = sorted(items, key=lambda row: (int(row.get("importance_score", 0)), str(row.get("date", ""))), reverse=True)
+    ranked = sorted(items, key=lambda row: (bool(row["importance"].get("rate_decision")), int(row.get("importance_score", 0)), str(row.get("date", ""))), reverse=True)
     category_counts: dict[str, int] = {}
     selected = 0
     for item in ranked:
-        if int(item.get("importance_score", 0)) < 28 or not item["importance"].get("investment_relevant") or selected >= limit:
+        if (int(item.get("importance_score", 0)) < 28 and not item["importance"].get("rate_decision")) or not item["importance"].get("investment_relevant") or selected >= limit:
             continue
         category = str(item.get("category", "거시경제"))
         if category_counts.get(category, 0) >= 3:
@@ -181,6 +198,8 @@ def cluster_rows(rows: list[dict[str, str]]) -> list[list[dict[str, str]]]:
 
 def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = None) -> dict[str, object]:
     related = related or [row]
+    related = sorted(related, key=representative_score, reverse=True)
+    row = related[0]
     category = classify(f"{row['title']} {row['description']}")
     digest = hashlib.sha1(f"{row['url']}|{row['title']}".encode("utf-8")).hexdigest()[:14]
     description = row["description"]
@@ -227,7 +246,7 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
             {"heading": "시장 영향과 확인할 점", "paragraphs": [MARKET_COMMENTS[category]], "bullets": ["발표·전망과 실제 집행·실적을 구분", "기사 속 수치는 원문 기준기간과 단위를 재확인", "같은 기사의 단순 전재는 독립 근거로 계산하지 않음"]},
         ],
         "sources": sources,
-        "disclaimer": "뉴스 제목과 공개 요약을 자동 정리한 정보이며 투자 권유가 아닙니다. 정확한 내용은 원문을 확인하세요.",
+        "disclaimer": "뉴스 제목과 공개 요약을 자동 정리한 정보이며 투자 권유가 아닙니다. 실제 조회수·좋아요는 제공되지 않아 유사 보도 확산과 매체 다양성을 호응도의 대체지표로 사용합니다. 정확한 내용은 원문을 확인하세요.",
     }
 
 
@@ -279,7 +298,7 @@ def rebuild_index() -> None:
         "total_articles": len(all_items),
         "latest_items": all_items[:12],
         "important_items": important_items,
-        "importance_method": "실제 조회수 미제공 · 유사 보도 확산, 매체 다양성, 출처 신뢰도, 시장 영향도, 최신성으로 산정",
+        "importance_method": "실제 조회수·좋아요 미제공 · 유사 보도 확산, 매체 다양성, 대표 기사 품질, 출처 신뢰도, 금리 결정 등 시장 영향도로 산정",
         # Keep the first load light on mobile. Older days load on demand.
         "items": all_items[:600],
         "archives": archives,

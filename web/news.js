@@ -5,7 +5,8 @@
   const dialog=$("editorialDialog"), article=$("editorialArticle"); let items=[],archives=[],currentPage=1,activeCategory="",activeSource="";
   const categories=["전체","증시","금리·채권","환율","원자재","산업·기업","거시경제","부동산","가상자산"];
   const fallbackScore=item=>{const text=`${item.title||""} ${(item.tags||[]).join(" ")}`.toLowerCase(),core=["증시","금리·채권","환율","원자재"].includes(item.category||item.tags?.[0]),keywords=["기준금리","연준","환율","국채","물가","고용","gdp","관세","수출","실적","코스피","코스닥","나스닥","유가","원유","반도체","대출 규제","세제"],noise=["화재","사망","숨져","대피","홍수","실종","범죄"];return 11+(core?14:8)+Math.min(18,keywords.filter(k=>text.includes(k)).length*3)+(noise.some(k=>text.includes(k))?-32:0);};
-  const isImportant=item=>item.important===true||(item.important===undefined&&Number(item.importance_score||fallbackScore(item))>=28);
+  const isRateDecision=item=>/(?:기준금리|정책금리|연준|한은|한국은행).{0,28}(?:인상|인하|동결|올렸|내렸)|금리.{0,18}(?:인상 결정|인하 결정|동결 결정|올렸다|내렸다)/i.test(item.title||"");
+  const isImportant=item=>isRateDecision(item)||item.important===true||(item.important===undefined&&Number(item.importance_score||fallbackScore(item))>=28);
   const categoryOf=item=>item.category||(item.tags||[])[0]||"거시경제";
   const sourceOf=item=>item.publisher||item.sources?.[0]?.publisher||(item.tags||[])[1]||"원문";
   const card = item => `<article class="news-archive-card"><time datetime="${esc(item.date)}">${esc(String(item.date||"").slice(5).replace("-","."))}</time><div class="news-archive-body"><div class="news-card-taxonomy"><button type="button" data-category="${esc(categoryOf(item))}">#${esc(categoryOf(item))}</button><button type="button" data-source="${esc(sourceOf(item))}">${esc(sourceOf(item))}</button></div><button type="button" class="news-title-button" data-id="${esc(item.id)}"><strong>${isImportant(item)?'<span class="important-prefix">[중요]</span> ':''}${esc(item.title)}</strong><span>${esc(item.summary)}</span></button></div></article>`;

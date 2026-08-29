@@ -25,6 +25,7 @@
   };
 
   let contentById = new Map();
+  const isRateDecision = item => /(?:기준금리|정책금리|연준|한은|한국은행).{0,28}(?:인상|인하|동결|올렸|내렸)|금리.{0,18}(?:인상 결정|인하 결정|동결 결정|올렸다|내렸다)/i.test(item.title || "");
 
   function cardHtml(item) {
     const tags = (item.tags || []).slice(0, 3).map(tag => `<span>${escapeHtml(tag)}</span>`).join("");
@@ -135,7 +136,8 @@
         newsSection.items = news.latest_items.slice(0, 6);
         newsSection.more_url = "news.html";
       }
-      if (news && Array.isArray(news.important_items)) importantHtml(news.important_items);
+      const importantItems = news ? [...(news.latest_items || []).filter(isRateDecision), ...(news.important_items || [])].filter((item, index, rows) => rows.findIndex(row => row.id === item.id) === index).slice(0, 10).map(item => ({...item, important:true})) : [];
+      importantHtml(importantItems);
       const mergeSection = (id, generated, label, moreUrl) => {
         const section = sections.find(row => row.id === id);
         if (!section || !Array.isArray(generated)) return;
@@ -148,7 +150,6 @@
         mergeSection("company", automatic.company_items, "기업분석", "analysis.html?type=company");
         mergeSection("analysis", automatic.analysis_items, "심층분석", "analysis.html?type=analysis");
       }
-      const importantItems = news?.important_items || [];
       contentById = new Map([...sections.flatMap(section => section.items || []), ...importantItems].map(item => [item.id, item]));
       hub.innerHTML = sections.map(sectionHtml).join("");
       updated.textContent = `기준 ${formatDate(data.as_of)} · 원문 링크 포함`;
