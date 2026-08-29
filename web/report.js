@@ -69,6 +69,51 @@
     return `<section class="report-sources"><h3>주요 경제·시장 뉴스 원문</h3><p>비슷한 보도를 매체별로 확인할 수 있습니다. 해외 기사는 정식 번역 API로 생성된 한국어 요약만 표시합니다.</p><ol class="report-source-links">${sources.map((source, index) => `<li><a href="${safe(source.url)}" target="_blank" rel="noopener noreferrer"><span>${index === 0 ? "대표 기사 · " : ""}${esc(labels[source.region]||"국내")} · ${esc(source.publisher || "원문")} · ${esc(source.published_at || "-")}</span><b>${esc(source.title_ko || source.title || "원문 보기")}</b><em>원문 보기 ↗</em></a>${source.summary_ko?`<p class="source-translation"><b>한국어 번역 요약</b>${esc(source.summary_ko)}</p>`:source.region&&source.region!=="domestic"?'<p class="source-translation pending">번역 API가 연결되면 검증된 한국어 요약이 이 위치에 자동 표시됩니다.</p>':""}</li>`).join("")}</ol></section>`;
   }
 
+  function coverageHtml(item) {
+    const note = item.coverage_note || "과거 수집본의 공개 기사 제목·RSS 요약 범위입니다. 원문 전체·유료벽 내부는 추측해 채우지 않았으므로 원문 링크에서 세부 내용을 재확인해야 합니다.";
+    return `<aside class="report-coverage ${item.coverage_status === "title_only" || !item.coverage_status ? "limited" : ""}"><b>요약의 확보 범위</b><p>${esc(note)}</p></aside>`;
+  }
+
+  function timelineHtml(rows) {
+    if (!Array.isArray(rows) || !rows.length) return "";
+    const labels={domestic:"국내",us:"미국",global:"글로벌"};
+    return `<section class="report-section report-timeline"><span class="report-section-number">FACT FLOW</span><h3>시간순 사실·발언 전체 기록</h3><p>확보된 공개 원문 범위 안에서 발표·발언·반응을 시간순으로 배열했습니다. 서로 다른 매체가 같은 사실을 반복한 경우도 출처별 확인이 가능하도록 남겼습니다.</p><ol>${rows.map((row,index)=>`<li><time>${esc(row.published_time || "시간 미제공")}</time><div><b>${index+1}. ${esc(row.publisher || "원문")} · ${esc(labels[row.region] || "국내")}</b><strong>${esc(row.title_ko || row.title || "")}</strong><p>${esc(row.summary_ko || row.summary || "공개 요약이 제공되지 않았습니다.")}</p>${row.summary_ko ? `<small>번역 원문 제목: ${esc(row.title || "")}</small>` : ""}</div></li>`).join("")}</ol></section>`;
+  }
+
+  function factLedgerHtml(rows) {
+    if (!Array.isArray(rows) || !rows.length) return `<section class="report-section report-facts"><span class="report-section-number">NUMBER LEDGER</span><h3>수치·발언 원장</h3><p>공개 제목·요약에서 확인된 구체적 수치가 없습니다. 원문 전체를 확보하지 않은 상태에서 숫자를 추측하지 않습니다.</p></section>`;
+    return `<section class="report-section report-facts"><span class="report-section-number">NUMBER LEDGER</span><h3>수치·발언 원장</h3><p>수치의 단위와 문맥을 잃지 않도록 발견된 값을 모두 원문 문장과 함께 표시합니다.</p><div><table><thead><tr><th>시간</th><th>수치</th><th>발언·문맥</th><th>출처</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${esc(row.published_time || "-")}</td><td><b>${esc(row.value)}</b></td><td>${esc(row.context)}</td><td>${esc(row.publisher || "원문")}</td></tr>`).join("")}</tbody></table></div></section>`;
+  }
+
+  function expertHtml(analysis) {
+    if (!analysis) return "";
+    const scenarios = Array.isArray(analysis.scenarios) ? analysis.scenarios : [];
+    return `<section class="report-section report-expert"><span class="report-section-number">EXPERT VIEW</span><h3>세계 경제·투자 전문가 총평</h3><p>${esc(analysis.assessment || "후속 공식자료와 시장 반응을 함께 확인해야 합니다.")}</p>${scenarios.length ? `<div class="report-scenarios">${scenarios.map((row,index)=>`<article class="scenario-${index}"><span>${esc(row.label)}</span><b>${esc(row.title)}</b><p>${esc(row.body)}</p></article>`).join("")}</div>` : ""}<div class="report-warning-grid"><article><b>즉시 경고 조건</b><ul>${(analysis.warnings || []).map(value=>`<li>${esc(value)}</li>`).join("")}</ul></article><article><b>다음 확인 일정·값</b><ul>${(analysis.next_checks || []).map(value=>`<li>${esc(value)}</li>`).join("")}</ul></article></div></section>`;
+  }
+
+  function legacyNewsTimeline(item) {
+    if (Array.isArray(item.timeline) && item.timeline.length) return item.timeline;
+    return (item.sources || []).map((source,index)=>({
+      published_time:source.published_time || source.published_at || item.date,
+      publisher:source.publisher,
+      title:source.title,
+      title_ko:source.title_ko,
+      summary_ko:source.summary_ko,
+      summary:source.summary_original || (index === 0 ? item.easy_explanation || item.summary : "이 과거 수집본에는 공개 요약이 저장되지 않아 제목과 원문 링크만 제공합니다."),
+      region:source.region || item.region
+    }));
+  }
+
+  function legacyFactLedger(item) {
+    if (Array.isArray(item.fact_ledger)) return item.fact_ledger;
+    return (item.metrics || []).filter(row=>String(row.label || "").startsWith("기사 수치")).map(row=>({value:row.value,context:item.summary || "과거 수집본에 저장된 기사 수치",publisher:item.publisher,published_time:item.date}));
+  }
+
+  function legacyExpert(item) {
+    if (item.expert_analysis) return item.expert_analysis;
+    return {assessment:item.market_comment || "후속 공식 발표와 금융시장·실물경제의 반응을 순서대로 확인해야 합니다.",scenarios:[{label:"기본",title:"기사의 전제가 유지될 때",body:"후속 확정치가 같은 방향인지 확인합니다."},{label:"상방",title:"성장·이익 개선",body:"금융여건 안정과 수요 회복이 함께 확인될 때 가능성이 커집니다."},{label:"하방",title:"충격 확대",body:"금리·달러·신용위험이 동시에 상승하면 경계해야 합니다."}],warnings:["공식 확정치가 기사 전망과 반대로 바뀌는지","금리·환율·주가가 동시에 급변하는지","실물 지표가 가격 반응을 뒷받침하는지"],next_checks:["공식 발표문","다음 물가·고용·실적 발표","금리·환율의 후속 반응"]};
+  }
+
   function sectionHtml(section, index) {
     const charts = Array.isArray(section.charts) ? section.charts.map(chartHtml).join("") : "";
     const tables = Array.isArray(section.tables) ? section.tables.map(tableHtml).join("") : "";
@@ -97,10 +142,9 @@
     const template = templates[category] || templates["거시경제"];
     const coverage = item.importance?.attention_basis || `${item.related_reports || 1}건 보도 · ${item.source_count || item.sources?.length || 1}개 매체 확인`;
     return [
-      { heading:"핵심 요약", paragraphs:[item.summary || item.easy_explanation || "기사의 핵심 내용을 원문과 함께 확인해야 합니다."], bullets:[`분류: ${category}`, `확인 범위: ${coverage}`, item.important ? "시장 영향과 보도 확산을 함께 반영해 중요 뉴스로 분류" : "후속 공식자료와 시장 반응을 추가 확인할 뉴스"] },
-      { heading:"단계별 사고 흐름", paragraphs:["기사의 결론을 바로 받아들이지 않고 다음 전달 경로가 실제로 이어지는지 순서대로 봅니다."], bullets:template.path.map((step,index)=>`${index+1}단계 · ${step}`) },
-      { heading:"예상되는 효과", paragraphs:[item.market_comment || "시장가격과 실물경제에 전달되는 시차와 반대 조건을 함께 확인합니다."], bullets:template.effects },
-      { heading:"다음 확인값", paragraphs:["아래 값이 후속 발표에서 같은 방향으로 움직여야 최초 해석의 신뢰도가 높아집니다."], bullets:["공식 발표문과 확정 수치", "금리·환율·채권·주가의 1차 반응", "거래량·대출·소비·고용 등 실물 지표", "정책 시행일과 적용 대상, 예외 조건"] }
+      { heading:"투자자가 먼저 볼 결론", paragraphs:[item.summary || item.easy_explanation || "기사의 핵심 내용을 원문과 함께 확인해야 합니다."], bullets:[`분류: ${category}`, `확인 범위: ${coverage}`, item.important ? "시장 파급력·공개 반응·보도 확산을 반영한 중요 뉴스" : "후속 공식자료와 시장 반응을 추가 확인할 뉴스"] },
+      { heading:"시장 전달 경로", paragraphs:["기사의 결론을 바로 받아들이지 않고 실제 전달 경로가 이어지는지 순서대로 봅니다."], bullets:template.path.map((step,index)=>`${index+1}단계 · ${step}`) },
+      { heading:"예상 효과와 반대 조건", paragraphs:[item.market_comment || "시장가격과 실물경제에 전달되는 시차와 반대 조건을 함께 확인합니다."], bullets:template.effects }
     ];
   }
 
@@ -115,7 +159,8 @@
     const toc = sections.length ? `<nav class="report-toc"><b>이번 리포트 차례</b><ol>${sections.map((section, index) => `<li><a href="#report-section-${index + 1}">${esc(section.heading)}</a></li>`).join("")}</ol></nav>` : "";
     const methodology = item.methodology || "수집된 기사 제목·공개요약을 주제별로 묶고, 중복 매체를 제거한 뒤 수치·발표·공시 확인항목을 분리했습니다. 전망은 사실이 아니라 조건별 시나리오로 표시합니다.";
     const references = item.metrics?.length ? `<aside class="report-reference"><b>참고 수집정보</b>${metricsHtml(item.metrics)}</aside>` : "";
-    return `<header class="report-head"><span>${esc(item.eyebrow)} · ${esc(item.date)} · 약 ${esc(item.read_minutes || 3)}분</span><h2 id="editorialDialogTitle">${esc(item.title)}</h2><p>${esc(item.summary)}</p></header>${toc}${flowHtml(flow)}${sections.map(sectionHtml).join("")}${charts.length ? `<section class="report-chart-grid">${charts.map(chartHtml).join("")}</section>` : ""}${sourceLedgerHtml(item.sources)}${references}<details class="report-method"><summary>수집·가공 방법</summary><p>${esc(methodology)}</p><ul><li>같은 사건의 단순 전재는 독립 근거로 과대 계산하지 않습니다.</li><li>기사 속 전망과 실제 공시·집행·실적을 구분합니다.</li><li>수치에는 기준일·단위·연결/별도 여부가 필요합니다.</li></ul></details><p class="report-disclaimer">${esc(item.disclaimer || "공개자료를 바탕으로 작성한 정보이며 투자 권유가 아닙니다.")}</p>`;
+    const deepNews = options.kind === "news" ? `${coverageHtml(item)}${timelineHtml(legacyNewsTimeline(item))}${factLedgerHtml(legacyFactLedger(item))}${expertHtml(legacyExpert(item))}` : "";
+    return `<header class="report-head"><span>${esc(item.eyebrow)} · ${esc(item.date)} · 약 ${esc(item.read_minutes || 3)}분</span><h2 id="editorialDialogTitle">${esc(item.title)}</h2><p>${esc(item.summary)}</p></header>${deepNews}${toc}${flowHtml(flow)}${sections.map(sectionHtml).join("")}${charts.length ? `<section class="report-chart-grid">${charts.map(chartHtml).join("")}</section>` : ""}${sourceLedgerHtml(item.sources)}${references}<details class="report-method"><summary>수집·가공 방법</summary><p>${esc(methodology)}</p><ul><li>같은 사건의 단순 전재는 독립 근거로 과대 계산하지 않습니다.</li><li>기사 속 전망과 실제 공시·집행·실적을 구분합니다.</li><li>수치에는 기준일·단위·연결/별도 여부가 필요합니다.</li></ul></details><p class="report-disclaimer">${esc(item.disclaimer || "공개자료를 바탕으로 작성한 정보이며 투자 권유가 아닙니다.")}</p>`;
   }
 
   window.EditorialReport = { render };

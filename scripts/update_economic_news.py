@@ -35,7 +35,10 @@ TAG_PATTERN = re.compile(r"<[^>]+>")
 SPACE_PATTERN = re.compile(r"\s+")
 TOKEN_PATTERN = re.compile(r"[가-힣A-Za-z0-9]+")
 STOPWORDS = {"관련", "대한", "이번", "오늘", "내일", "정부", "시장", "뉴스", "전망", "발표", "한국", "미국"}
-NUMBER_PATTERN = re.compile(r"(?<!\d)(\d[\d,.]*(?:\.\d+)?\s*(?:조원|억원|억|만원|만명|만호|%|bp|건|척|호|명|대))", re.I)
+NUMBER_PATTERN = re.compile(
+    r"(?<![\w.])(?:[$€£¥]\s*)?\d[\d,.]*(?:\.\d+)?\s*(?:%p|%|bp|bps|basis\s+points?|조원|억원|억|만원|원|달러|엔|유로|trillion|billion|million|조|만|건|척|호|명|대|배럴|포인트|년|개월|월|분기|일)?",
+    re.I,
+)
 
 
 CATEGORY_RULES = (
@@ -72,6 +75,52 @@ RATE_DECISION_PATTERN = re.compile(r"(?:기준금리|정책금리|연준|한은|
 
 def clean_text(value: str) -> str:
     return SPACE_PATTERN.sub(" ", html.unescape(TAG_PATTERN.sub(" ", value or ""))).strip()
+
+
+def extract_number_facts(sources: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Keep every distinct numeric statement available in public feed text, with context."""
+    facts: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for source in sorted(sources, key=lambda item: item.get("published_time") or item.get("published_at") or ""):
+        text = clean_text(f"{source.get('title', '')}. {source.get('description', '')}")
+        sentences = [part.strip() for part in re.split(r"(?<=[.!?。])\s+", text) if part.strip()]
+        for sentence in sentences:
+            values = [SPACE_PATTERN.sub(" ", match.group(0)).strip() for match in NUMBER_PATTERN.finditer(sentence)]
+            values = [value for value in values if re.search(r"\d", value)]
+            for value in values:
+                key = (value.lower(), sentence)
+                if key in seen:
+                    continue
+                seen.add(key)
+                facts.append({
+                    "value": value,
+                    "context": sentence[:1000],
+                    "publisher": source.get("publisher", "원문"),
+                    "published_time": source.get("published_time") or source.get("published_at", ""),
+                })
+    return facts
+
+
+def expert_analysis(category: str) -> dict[str, object]:
+    paths = {
+        "금리·채권": "정책금리 기대 → 국채금리와 달러 → 은행 조달·대출금리 → 기업 이익과 가계 소비 → 주식·주택 가치평가 순으로 전달됩니다.",
+        "환율": "금리차·위험선호 → 달러 수급과 환율 → 수입물가·수출 환산이익 → 물가와 기업 마진 → 외국인 자금 흐름 순으로 번집니다.",
+        "원자재": "공급·수요 충격 → 현물·선물 가격 → 운송·생산비 → 기업 마진과 소비자물가 → 금리 기대 순으로 전달됩니다.",
+        "증시": "정책·실적 정보 → 이익 전망과 할인율 → 업종별 수급 → 자금조달과 자산효과 → 투자·소비 심리 순으로 이어집니다.",
+        "부동산": "정책·금리·공급 변화 → 대출 가능액과 기대 → 거래량·매물 → 매매·전세 가격 → 착공·입주 순으로 시차를 두고 반영됩니다.",
+        "산업·기업": "수주·실적 변화 → 매출·마진 기대 → 현금흐름과 투자 → 고용·협력사 주문 → 산업생산·수출 순으로 확산됩니다.",
+        "거시경제": "발표 수치 → 금리·성장 기대 → 채권·환율·주식 → 금융여건 → 소비·투자·고용 순으로 전달됩니다.",
+    }
+    return {
+        "assessment": paths.get(category, paths["거시경제"]),
+        "scenarios": [
+            {"label": "기본", "title": "발표 내용이 계획대로 이어질 때", "body": "후속 공식 발표와 실제 집행 수치가 같은 방향인지 확인합니다. 한 번의 기사보다 연속된 확정치가 중요합니다."},
+            {"label": "상방", "title": "성장·이익에 유리한 경로", "body": "물가와 금융비용이 안정되는 가운데 수요·고용·기업 실적이 유지되면 위험자산과 실물경기의 동반 개선 가능성이 커집니다."},
+            {"label": "하방", "title": "충격이 확대되는 경로", "body": "물가 재상승, 장기금리 급등, 달러 강세, 신용스프레드 확대가 겹치면 기업·가계 금융여건이 빠르게 나빠질 수 있습니다."},
+        ],
+        "warnings": ["후속 공식 발표가 기사 속 전망과 반대로 바뀌는지", "금리·환율·주가가 같은 방향으로 급변하는지", "거래량·고용·소비·기업 현금흐름이 가격 움직임을 뒷받침하는지", "발표 수치의 기준기간·단위·계절조정·잠정치 여부가 달라지는지"],
+        "next_checks": ["공식 발표문과 확정 수치", "정책 시행일·적용 대상·예외", "1년·10년·30년 금리와 환율의 후속 반응", "다음 물가·고용·소비·실적 발표"],
+    }
 
 
 def classify(text: str) -> str:
@@ -224,9 +273,11 @@ def fetch_feed(query: str, target: date, language: str = "ko", country: str = "K
         try:
             published_at = parsedate_to_datetime(published).astimezone(timezone(timedelta(hours=9)))
             published_date = published_at.date().isoformat()
+            published_time = published_at.isoformat(timespec="minutes")
         except (TypeError, ValueError):
             published_date = target.isoformat()
-        rows.append({"title": title, "url": link, "publisher": publisher or "뉴스 원문", "description": description, "published_at": published_date, "region": classify_region(publisher, region)})
+            published_time = published_date
+        rows.append({"title": title, "url": link, "publisher": publisher or "뉴스 원문", "description": description, "published_at": published_date, "published_time": published_time, "region": classify_region(publisher, region)})
     return rows
 
 
@@ -244,7 +295,7 @@ def fetch_nyt_most_popular(target: date) -> list[dict[str, object]]:
             continue
         title, description, link = clean_text(item.get("title", "")), clean_text(item.get("abstract", "")), clean_text(item.get("url", ""))
         if title and link:
-            rows.append({"title": title, "url": link, "publisher": "The New York Times", "description": description, "published_at": published, "region": "us", "engagement": {"rank": rank, "metric": "NYT most viewed"}})
+            rows.append({"title": title, "url": link, "publisher": "The New York Times", "description": description, "published_at": published, "published_time": published, "region": "us", "engagement": {"rank": rank, "metric": "NYT most viewed"}})
     return rows
 
 
@@ -278,32 +329,37 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
     description = row["description"]
     if not description or description == row["title"] or len(description) < 25:
         description = "제목에 담긴 핵심 이슈의 세부 수치와 전제조건은 연결된 원문에서 확인할 수 있습니다."
-    description = description[:500]
+    description = description[:4000]
     sources = []
     seen_publishers = set()
     for source in related:
         if source["publisher"] in seen_publishers:
             continue
         seen_publishers.add(source["publisher"])
-        source_entry = {"publisher": source["publisher"], "title": source["title"], "url": source["url"], "published_at": source["published_at"], "region": source.get("region", "domestic")}
+        source_entry = {"publisher": source["publisher"], "title": source["title"], "url": source["url"], "published_at": source["published_at"], "published_time": source.get("published_time", source["published_at"]), "description": source.get("description", "")[:4000], "region": source.get("region", "domestic")}
         if source.get("region") in {"us", "global"}:
-            source_entry.update({"summary_original": source["description"][:500], "translation_status": "translation_api_key_required"})
+            source_entry.update({"summary_original": source["description"][:4000], "translation_status": "translation_api_key_required"})
         sources.append(source_entry)
-    numbers = []
-    for source in related:
-        for value in NUMBER_PATTERN.findall(f"{source['title']} {source['description']}"):
-            value = SPACE_PATTERN.sub("", value)
-            if value not in numbers:
-                numbers.append(value)
+    fact_ledger = extract_number_facts(related)
+    numbers = list(dict.fromkeys(fact["value"] for fact in fact_ledger))
     metrics = [{"label": "관련 보도", "value": f"{len(related)}건", "note": "유사 제목 묶음"}, {"label": "확인 매체", "value": f"{len(sources)}곳", "note": "중복 매체 제외"}]
-    metrics.extend({"label": f"기사 수치 {index}", "value": value, "note": "원문 제목·공개요약"} for index, value in enumerate(numbers[:2], 1))
+    metrics.extend({"label": f"기사 수치 {index}", "value": value, "note": "원문 제목·공개요약"} for index, value in enumerate(numbers, 1))
+    timeline = [{
+        "published_time": source.get("published_time", source.get("published_at", "")),
+        "publisher": source.get("publisher", "원문"),
+        "title": source.get("title", ""),
+        "summary": source.get("description", "") or "공개 피드에는 제목 외 요약이 제공되지 않았습니다.",
+        "region": source.get("region", "domestic"),
+    } for source in sorted(related, key=lambda item: item.get("published_time") or item.get("published_at") or "")]
+    has_public_summaries = sum(bool(source.get("description") and len(source.get("description", "")) >= 25) for source in related)
+    analysis = expert_analysis(category)
     return {
         "id": f"news-{row['published_at'].replace('-', '')}-{digest}",
         "date": row["published_at"],
         "eyebrow": f"ECONOMY NEWS · {category}",
-        "read_minutes": 2,
+        "read_minutes": max(3, min(15, 2 + len(timeline) + len(fact_ledger) // 4)),
         "title": row["title"][:78],
-        "summary": description[:160],
+        "summary": description[:500],
         "tags": [category, row["publisher"][:18]],
         "category": category,
         "publisher": row["publisher"][:40],
@@ -313,6 +369,11 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
         "source_count": len(sources),
         "easy_explanation": description,
         "market_comment": MARKET_COMMENTS[category],
+        "coverage_status": "public_summary" if has_public_summaries else "title_only",
+        "coverage_note": f"공개 RSS 제목 {len(related)}건과 공개 요약 {has_public_summaries}건에서 확보한 내용입니다. 원문 전체·유료벽 내부는 추측해 채우지 않으며, 접근하지 못한 내용까지 포함한 완전 요약은 아닙니다.",
+        "timeline": timeline,
+        "fact_ledger": fact_ledger,
+        "expert_analysis": analysis,
         "metrics": metrics,
         "sections": [
             {"heading": "한 줄로 이해하기", "paragraphs": [description], "bullets": []},
@@ -349,6 +410,13 @@ def translate_foreign_sources(items: list[dict[str, object]]) -> None:
         return
     for index, (source, _title, _summary) in enumerate(pending):
         source.update({"title_ko": translated[index * 2], "summary_ko": translated[index * 2 + 1], "translation_status": "translated", "translation_provider": "DeepL"})
+    for item in items:
+        translated_by_title = {str(source.get("title")): source for source in item.get("sources") or []}
+        for event in item.get("timeline") or []:
+            translated_source = translated_by_title.get(str(event.get("title")))
+            if translated_source and translated_source.get("summary_ko"):
+                event["title_ko"] = translated_source.get("title_ko")
+                event["summary_ko"] = translated_source.get("summary_ko")
 
 
 def collect_day(target: date, limit: int) -> list[dict[str, object]]:

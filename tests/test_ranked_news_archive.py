@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.update_economic_news import classify_region, importance_details, mark_important, representative_score
+from scripts.update_economic_news import classify_region, importance_details, item_from_feed, mark_important, representative_score
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -98,3 +98,25 @@ def test_news_ui_groups_regions_and_shows_verified_translation_below_link() -> N
     assert all(label in editorial for label in ("국내 뉴스", "미국 뉴스", "기타 글로벌 뉴스"))
     assert "summary_ko" in report and "한국어 번역 요약" in report
     assert "NYT_API_KEY" in workflow and "DEEPL_API_KEY" in workflow
+
+
+def test_international_important_news_is_rendered_before_domestic() -> None:
+    editorial = (ROOT / "web" / "editorial.js").read_text(encoding="utf-8")
+    assert '["us","global","domestic"]' in editorial
+
+
+def test_feed_item_preserves_every_number_with_context_and_time() -> None:
+    rows = [{
+        "title": "연준이 금리를 0.25%p 올려 5.50%로 결정",
+        "description": "2026년 8월 30일 결정이다. 기관은 성장률 2.1%와 물가 3.2%를 제시했다.",
+        "publisher": "Reuters",
+        "url": "https://example.com/a",
+        "published_at": "2026-08-30",
+        "published_time": "2026-08-30T08:30+09:00",
+        "region": "global",
+    }]
+    item = item_from_feed(rows[0], rows)
+    values = [fact["value"] for fact in item["fact_ledger"]]
+    assert all(value in values for value in ("0.25%p", "5.50%", "2026년", "8월", "30일", "2.1%", "3.2%"))
+    assert item["timeline"][0]["published_time"] == "2026-08-30T08:30+09:00"
+    assert "원문 전체" in item["coverage_note"]

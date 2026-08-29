@@ -45,7 +45,7 @@
     if (!importantList) return;
     const labels = {domestic:"국내 뉴스",us:"미국 뉴스",global:"기타 글로벌 뉴스"};
     const regionOf = item => item.region || ((item.publisher || "").match(/New York Times|Fortune|Wall Street Journal|CNBC|Bloomberg|Washington Post/i)?"us":((item.publisher || "").match(/Reuters|Financial Times|BBC|Economist|Nikkei|AP News/i)?"global":"domestic"));
-    const groups = ["domestic","us","global"].map(region => ({ region, items: items.filter(item => regionOf(item) === region) }));
+    const groups = ["us","global","domestic"].map(region => ({ region, items: items.filter(item => regionOf(item) === region) }));
     importantList.innerHTML = groups.length ? groups.map(group => `<section class="important-news-group important-region-${group.region}">
       <header><a href="news.html?region=${encodeURIComponent(group.region)}">${labels[group.region]}</a><small>${group.items.length}건 · 파급력·공개 반응·보도 확산 반영</small></header>
       <div>${group.items.length?group.items.map(cardHtml).join(""):'<p class="important-region-empty">이 권역에서 기준을 충족한 중요 뉴스가 아직 없습니다.</p>'}</div>
@@ -83,7 +83,7 @@
   }
 
   function detailHtml(item) {
-    if (window.EditorialReport) return window.EditorialReport.render(item);
+    if (window.EditorialReport) return window.EditorialReport.render(item,{kind:String(item.id || "").startsWith("news-") ? "news" : "editorial"});
     const toc = item.longform && item.sections?.length ? `<nav class="editorial-toc"><b>이번 글 차례</b><ol>${item.sections.map(section => `<li>${escapeHtml(section.heading)}</li>`).join("")}</ol></nav>` : "";
     return `<header class="editorial-article-head">
       <span>${escapeHtml(item.eyebrow)} · ${escapeHtml(formatDate(item.date))} · 약 ${escapeHtml(item.read_minutes)}분</span>
