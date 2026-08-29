@@ -376,7 +376,11 @@ def collect(
 ) -> dict:
     store = LocalStore(root)
     store.initialize()
-    regions = target_regions(root / "data" / "raw" / "complexes.csv")
+    complex_csv = root / "data" / "raw" / "complexes.csv"
+    # Re-import on each run so newly enabled provinces are immediately present
+    # in search/map catalogs before their transaction history finishes.
+    store.import_complexes(complex_csv)
+    regions = target_regions(complex_csv)
     if codes:
         regions = [region for region in regions if region.lawd_cd in codes]
     requested_years = years or list(range(2006, date.today().year + 1))

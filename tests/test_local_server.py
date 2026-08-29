@@ -8,7 +8,7 @@ import pytest
 from fastapi import HTTPException
 
 from realestate.local_collect import DailyQuotaError, OfficialCsvCollector, Region, _year_batches, parse_rtms_csv, region_priority
-from realestate.local_store import LocalStore, name_score
+from realestate.local_store import LocalStore, is_target_lawd, name_score
 from realestate.official_prices import OfficialPriceStore, normalize
 from realestate import server
 
@@ -99,6 +99,7 @@ def test_nationwide_province_order_starts_with_requested_five() -> None:
 
     assert COLLECTION_PROVINCE_ORDER[:5] == ("11", "41", "43", "48", "26")
     assert set(COLLECTION_PROVINCE_ORDER) == set(TARGET_CODE_PREFIXES)
+    assert all(is_target_lawd(f"{prefix}110") for prefix in COLLECTION_PROVINCE_ORDER)
 
 
 def test_store_keeps_all_areas_and_dynamic_history(tmp_path: Path) -> None:
