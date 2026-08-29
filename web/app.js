@@ -1259,7 +1259,7 @@ function latestDatasetPoint(labels,dataset){
   }
   return null;
 }
-function renderLatestValues(chart,valueFormatter){
+function renderLatestValues(chart,valueFormatter,confirmedOn=""){
   const section=chart?.canvas?.closest?.(".stack-chart");
   if(!section)return;
   let row=section.querySelector(":scope > .latest-values");
@@ -1276,8 +1276,10 @@ function renderLatestValues(chart,valueFormatter){
     if(!point)return "";
     const color=Array.isArray(dataset.borderColor)?dataset.borderColor.at(-1):dataset.borderColor;
     const formatted=valueFormatter(point.value,dataset,point.index);
+    const exactDate=String(dataset.observationDates?.[point.index]||confirmedOn||"").slice(0,10);
+    const dateText="기준 "+point.date+(exactDate?" · 확인 "+exactDate:"");
     return '<span class="latest-value-chip" style="--latest-color:'+esc(String(color||"#475467"))+'">'+
-      '<i aria-hidden="true"></i><b>'+esc(dataset.label||"지표")+'</b><strong>'+esc(formatted)+'</strong><small>'+esc(point.date)+'</small></span>';
+      '<i aria-hidden="true"></i><b>'+esc(dataset.label||"지표")+'</b><strong>'+esc(formatted)+'</strong><small>'+esc(dateText)+'</small></span>';
   }).filter(Boolean);
   row.innerHTML='<span class="latest-values-label">최신값</span>'+(chips.length?chips.join(""):'<span class="latest-values-empty">표시할 최신 자료가 없습니다.</span>');
 }
@@ -1480,8 +1482,13 @@ function renderBoardChart(board,container){
   const datasets=seriesRows.map(item=>{
     const values=new Map(item.points.map(point=>[point.month,isPyeong?point.pyeongPrice:point.price]));
     const counts=new Map(item.points.map(point=>[point.month,point.count]));
+    const observationDates=new Map();
+    item.group.trades.filter(row=>Number(row.area_m2)===Number(item.series.area)).forEach(row=>{
+      const date=String(row.trade_date||"").slice(0,10),month=date.slice(0,7);
+      if(date&&(!observationDates.has(month)||date>observationDates.get(month)))observationDates.set(month,date);
+    });
     const lineStyle=graphLineStyle(item.series.lineStyle);
-    return {label:item.group.apt_name+" · "+(item.series.area?areaComparisonLabel(item.series.area,item.series.supplyPyeong):"평형 없음"),data:labels.map(month=>values.has(month)?values.get(month):null),tradeCounts:labels.map(month=>counts.get(month)||0),borderColor:item.series.color,backgroundColor:item.series.color,pointRadius:1.15,pointHoverRadius:4,borderWidth:lineStyle.width,borderDash:lineStyle.dash,tension:.16,spanGaps:true};
+    return {label:item.group.apt_name+" · "+(item.series.area?areaComparisonLabel(item.series.area,item.series.supplyPyeong):"평형 없음"),data:labels.map(month=>values.has(month)?values.get(month):null),tradeCounts:labels.map(month=>counts.get(month)||0),observationDates:labels.map(month=>observationDates.get(month)||""),borderColor:item.series.color,backgroundColor:item.series.color,pointRadius:1.15,pointHoverRadius:4,borderWidth:lineStyle.width,borderDash:lineStyle.dash,tension:.16,spanGaps:true};
   });
   const policies=(economicContext.policies||[]).map(policyRecord).filter(item=>item.date&&item.date.slice(0,7)>=bounds.start&&item.date.slice(0,7)<=bounds.end);
   container.querySelector(".policy-list").innerHTML=policyHtml(policies);
@@ -1529,17 +1536,18 @@ function renderBoardChart(board,container){
   sentimentOptions.scales.y1={position:"right",min:0,max:100,title:{display:true,text:"공포탐욕 0~100"},grid:{drawOnChartArea:false}};
   const sentimentChart=new Chart(container.querySelector(".sentiment-chart"),{type:"line",data:{labels,datasets:[lineDataset("VIX",values(metricMap("market_indices","vix")),"#dc2626"),lineDataset("공포탐욕지수",values(metricMap("fear_greed","score")),"#2563eb",{yAxisID:"y1"})]},options:sentimentOptions});
   renderLatestValues(priceChart,(value,dataset,index)=>fmt(value)+(isPyeong?"만원/평":"억원")+(dataset.tradeCounts?.[index]?" · "+fmt(dataset.tradeCounts[index])+"건":""));
-  renderLatestValues(exchangeChart,value=>fmt(value)+"원/USD");
-  renderLatestValues(rateChart,value=>fmt(value)+"%");
-  renderLatestValues(moneyChart,value=>fmt(value)+"조원");
-  renderLatestValues(metalChart,value=>fmt(value)+" (시작=100)");
-  renderLatestValues(oilChart,value=>fmt(value)+" USD/배럴");
-  renderLatestValues(krBondChart,value=>fmt(value)+"%");
-  renderLatestValues(usBondChart,value=>fmt(value)+"%");
-  renderLatestValues(jpBondChart,value=>fmt(value)+"%");
-  renderLatestValues(marketChart,value=>fmt(value)+" (시작=100)");
-  renderLatestValues(bitcoinChart,value=>"$"+fmt(value));
-  renderLatestValues(sentimentChart,value=>fmt(value));
+  const economicConfirmedOn=String(economicContext.metadata?.updated_at||"").slice(0,10);
+  renderLatestValues(exchangeChart,value=>fmt(value)+"원/USD",economicConfirmedOn);
+  renderLatestValues(rateChart,value=>fmt(value)+"%",economicConfirmedOn);
+  renderLatestValues(moneyChart,value=>fmt(value)+"조원",economicConfirmedOn);
+  renderLatestValues(metalChart,value=>fmt(value)+" (시작=100)",economicConfirmedOn);
+  renderLatestValues(oilChart,value=>fmt(value)+" USD/배럴",economicConfirmedOn);
+  renderLatestValues(krBondChart,value=>fmt(value)+"%",economicConfirmedOn);
+  renderLatestValues(usBondChart,value=>fmt(value)+"%",economicConfirmedOn);
+  renderLatestValues(jpBondChart,value=>fmt(value)+"%",economicConfirmedOn);
+  renderLatestValues(marketChart,value=>fmt(value)+" (시작=100)",economicConfirmedOn);
+  renderLatestValues(bitcoinChart,value=>"$"+fmt(value),economicConfirmedOn);
+  renderLatestValues(sentimentChart,value=>fmt(value),economicConfirmedOn);
   const timelineCharts=[priceChart,exchangeChart,rateChart,moneyChart,metalChart,oilChart,krBondChart,usBondChart,jpBondChart,marketChart,bitcoinChart,sentimentChart];
   bindTimelineGuide(container,timelineCharts,labels);
 

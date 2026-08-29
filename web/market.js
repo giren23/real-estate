@@ -42,7 +42,7 @@ async function init(){
     if(!response.ok)throw new Error(`HTTP ${response.status}`);
     const data=await response.json();
     $('#marketDate').textContent=data.market_date||'—';
-    $('#updatedAt').textContent=`업데이트 ${new Date(data.updated_at).toLocaleString('ko-KR')}`;
+    $('#updatedAt').textContent=`확인 ${new Date(data.updated_at).toLocaleString('ko-KR')}`;
     $('#marketNav').innerHTML=data.categories.map(item=>`<a href="#${item.id}">${item.title}</a>`).join('');
     $('#marketSections').innerHTML=data.categories.map(section).join('');
     $('#trendCharts').innerHTML=data.charts.map(trend).join('');

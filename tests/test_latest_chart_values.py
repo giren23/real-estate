@@ -10,6 +10,8 @@ def test_main_chart_latest_values_are_always_rendered() -> None:
 
     assert "function latestDatasetPoint" in script
     assert 'if(raw===null||raw===undefined||raw==="")continue' in script
+    assert '" · 확인 "+exactDate' in script
+    assert "observationDates" in script
     for group in ("metal_prices", "market_indices", "fear_greed"):
         assert f"economicContext.{group}" in script
     assert "function renderLatestValues" in script
