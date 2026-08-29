@@ -101,7 +101,7 @@ def extract_number_facts(sources: list[dict[str, str]]) -> list[dict[str, str]]:
     return facts
 
 
-def expert_analysis(category: str) -> dict[str, object]:
+def expert_analysis(category: str, title: str = "", facts: list[dict[str, str]] | None = None) -> dict[str, object]:
     paths = {
         "금리·채권": "정책금리 기대 → 국채금리와 달러 → 은행 조달·대출금리 → 기업 이익과 가계 소비 → 주식·주택 가치평가 순으로 전달됩니다.",
         "환율": "금리차·위험선호 → 달러 수급과 환율 → 수입물가·수출 환산이익 → 물가와 기업 마진 → 외국인 자금 흐름 순으로 번집니다.",
@@ -111,8 +111,10 @@ def expert_analysis(category: str) -> dict[str, object]:
         "산업·기업": "수주·실적 변화 → 매출·마진 기대 → 현금흐름과 투자 → 고용·협력사 주문 → 산업생산·수출 순으로 확산됩니다.",
         "거시경제": "발표 수치 → 금리·성장 기대 → 채권·환율·주식 → 금융여건 → 소비·투자·고용 순으로 전달됩니다.",
     }
+    fact_values = list(dict.fromkeys(fact.get("value", "") for fact in (facts or []) if fact.get("value")))
+    fact_note = f" 공개자료에서 확인된 핵심 수치는 {', '.join(fact_values[:10])}이며, 전체 수치와 문맥은 위 원장을 기준으로 판단해야 합니다." if fact_values else " 공개자료에 구체적 수치가 없어 방향성만으로 단정하면 안 됩니다."
     return {
-        "assessment": paths.get(category, paths["거시경제"]),
+        "assessment": f"'{title}' 보도는 {category} 경로를 통해 투자 판단에 연결됩니다.{fact_note} {paths.get(category, paths['거시경제'])}",
         "scenarios": [
             {"label": "기본", "title": "발표 내용이 계획대로 이어질 때", "body": "후속 공식 발표와 실제 집행 수치가 같은 방향인지 확인합니다. 한 번의 기사보다 연속된 확정치가 중요합니다."},
             {"label": "상방", "title": "성장·이익에 유리한 경로", "body": "물가와 금융비용이 안정되는 가운데 수요·고용·기업 실적이 유지되면 위험자산과 실물경기의 동반 개선 가능성이 커집니다."},
@@ -352,7 +354,7 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
         "region": source.get("region", "domestic"),
     } for source in sorted(related, key=lambda item: item.get("published_time") or item.get("published_at") or "")]
     has_public_summaries = sum(bool(source.get("description") and len(source.get("description", "")) >= 25) for source in related)
-    analysis = expert_analysis(category)
+    analysis = expert_analysis(category, row["title"], fact_ledger)
     return {
         "id": f"news-{row['published_at'].replace('-', '')}-{digest}",
         "date": row["published_at"],
