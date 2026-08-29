@@ -3,7 +3,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.update_economic_news import DIRECT_RSS_FEEDS, GLOBAL_FEEDS, classify_region, classify_topic_region, importance_details, item_from_feed, mark_important, representative_score
+from scripts.update_economic_news import (
+    DIRECT_RSS_FEEDS,
+    GLOBAL_FEEDS,
+    classify_region,
+    classify_topic_region,
+    enrich_video_news,
+    importance_details,
+    item_from_feed,
+    mark_important,
+    representative_score,
+    select_caption_excerpts,
+    youtube_video_id,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -147,3 +159,25 @@ def test_news_pipeline_is_server_side_and_does_not_require_gpt() -> None:
     local_loop = "MARKET_REFRESH_HOURS = 4" in server and '("update_economic_news.py", ["--backfill-days", "2", "--limit-per-day", "60"])' in server
     hosted_loop = workflow.count("- cron:") >= 6 and "python scripts/update_economic_news.py --backfill-days 2 --limit-per-day 60" in workflow
     assert local_loop or hosted_loop
+
+
+def test_video_caption_helpers_limit_and_preserve_chronology() -> None:
+    assert youtube_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+    assert youtube_video_id("https://youtu.be/dQw4w9WgXcQ?t=10") == "dQw4w9WgXcQ"
+    assert youtube_video_id("https://www.youtube.com/shorts/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+    events = [
+        {"start_seconds": 30, "text": "The Federal Reserve raised rates by 25 basis points today."},
+        {"start_seconds": 10, "text": "Markets opened lower after the inflation report was published."},
+        {"start_seconds": 50, "text": "Investors are now watching jobs and bond yields closely."},
+    ]
+    excerpts = select_caption_excerpts(events, limit=3, word_limit=30)
+    assert [row["start_seconds"] for row in excerpts] == sorted(row["start_seconds"] for row in excerpts)
+    assert sum(len(str(row["original"]).split()) for row in excerpts) <= 30
+
+
+def test_video_news_enrichment_never_invents_missing_dialogue(monkeypatch) -> None:
+    item = {"title": "[영상] 시장 브리핑", "sources": [{"url": "https://example.com/video"}]}
+    monkeypatch.setattr("scripts.update_economic_news.discover_youtube_url", lambda _url: "")
+    enrich_video_news([item])
+    assert item["video_transcript"]["status"] == "captions_unavailable"
+    assert "excerpts" not in item["video_transcript"]

@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import parse_qs, quote_plus, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -227,6 +227,149 @@ def translate_to_korean(texts: list[str]) -> list[str] | None:
         rows = json.loads(response.read().decode("utf-8")).get("translations", [])
     translated = [clean_text(row.get("text", "")) for row in rows]
     return translated if len(translated) == len(texts) and all(translated) else None
+
+
+VIDEO_TITLE_PATTERN = re.compile(r"(?:\[영상\]|\[동영상\]|\bvideo\b|\bwatch\b)", re.I)
+YOUTUBE_EMBED_PATTERN = re.compile(r"(?:youtube(?:-nocookie)?\.com/(?:watch\?(?:[^\"'<> ]*&)?v=|embed/|shorts/)|youtu\.be/)([A-Za-z0-9_-]{11})", re.I)
+CAPTION_SIGNAL_PATTERN = re.compile(r"\b(?:fed|federal reserve|rate|inflation|economy|market|stock|bond|yield|dollar|oil|gold|trade|tariff|earnings|recession|growth|jobs?|unemployment|housing|mortgage|bitcoin)\b|\d", re.I)
+
+
+def youtube_video_id(url: str) -> str:
+    """Return a validated YouTube id from common public URL forms."""
+    try:
+        parsed = urlparse(html.unescape(url or ""))
+    except ValueError:
+        return ""
+    host = parsed.netloc.lower().split(":", 1)[0]
+    if host.endswith("youtu.be"):
+        candidate = parsed.path.strip("/").split("/", 1)[0]
+    elif host.endswith("youtube.com") or host.endswith("youtube-nocookie.com"):
+        if parsed.path == "/watch":
+            candidate = parse_qs(parsed.query).get("v", [""])[0]
+        elif parsed.path.startswith(("/embed/", "/shorts/", "/live/")):
+            candidate = parsed.path.strip("/").split("/", 1)[1].split("/", 1)[0]
+        else:
+            candidate = ""
+    else:
+        candidate = ""
+    return candidate if re.fullmatch(r"[A-Za-z0-9_-]{11}", candidate or "") else ""
+
+
+def discover_youtube_url(source_url: str) -> str:
+    """Find an embedded YouTube video on a public article page without executing scripts."""
+    direct_id = youtube_video_id(source_url)
+    if direct_id:
+        return f"https://www.youtube.com/watch?v={direct_id}"
+    parsed = urlparse(source_url or "")
+    if parsed.scheme not in {"http", "https"} or "news.google.com" in parsed.netloc.lower():
+        return ""
+    request = Request(source_url, headers={"User-Agent": USER_AGENT, "Accept": "text/html"})
+    with urlopen(request, timeout=25) as response:
+        page = response.read(2_000_000).decode(response.headers.get_content_charset() or "utf-8", errors="replace")
+    match = YOUTUBE_EMBED_PATTERN.search(html.unescape(page).replace("\\/", "/"))
+    return f"https://www.youtube.com/watch?v={match.group(1)}" if match else ""
+
+
+def select_caption_excerpts(events: list[dict[str, object]], limit: int = 8, word_limit: int = 150) -> list[dict[str, object]]:
+    """Select short, investment-relevant caption passages and keep their chronology."""
+    candidates: list[tuple[int, int, dict[str, object]]] = []
+    for index, event in enumerate(events):
+        text = clean_text(str(event.get("text", ""))).replace("♪", "").strip()
+        words = text.split()
+        if len(words) < 4 or text.startswith("["):
+            continue
+        score = min(6, len(CAPTION_SIGNAL_PATTERN.findall(text))) + (2 if index < 8 else 0)
+        candidates.append((score, index, {"start_seconds": round(float(event.get("start_seconds") or 0), 1), "original": text}))
+    selected = sorted(candidates, key=lambda row: (row[0], -row[1]), reverse=True)[: limit * 2]
+    selected.sort(key=lambda row: float(row[2].get("start_seconds") or 0))
+    output: list[dict[str, object]] = []
+    used_words = 0
+    for _score, _index, row in selected:
+        words = str(row["original"]).split()
+        remaining = word_limit - used_words
+        if remaining < 4:
+            break
+        if len(words) > remaining:
+            words = words[:remaining]
+            row["original"] = " ".join(words) + "…"
+        seconds = int(float(row["start_seconds"]))
+        row["time"] = f"{seconds // 60:02d}:{seconds % 60:02d}"
+        output.append(row)
+        used_words += len(words)
+        if len(output) >= limit:
+            break
+    return output
+
+
+def fetch_youtube_captions(video_url: str) -> dict[str, object]:
+    """Fetch key excerpts from YouTube's publicly exposed English caption track."""
+    video_id = youtube_video_id(video_url)
+    if not video_id:
+        raise ValueError("지원하지 않는 유튜브 주소")
+    watch_url = f"https://www.youtube.com/watch?v={video_id}"
+    request = Request(watch_url, headers={"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9"})
+    with urlopen(request, timeout=30) as response:
+        page = response.read(4_000_000).decode("utf-8", errors="replace")
+    marker = '\"captionTracks\":'
+    start = page.find(marker)
+    if start < 0:
+        raise LookupError("공개 자막 없음")
+    tracks, _ = json.JSONDecoder().raw_decode(page, start + len(marker))
+    english = [track for track in tracks if str(track.get("languageCode", "")).lower().startswith("en")]
+    if not english:
+        raise LookupError("공개 영어 자막 없음")
+    track = sorted(english, key=lambda row: row.get("kind") == "asr")[0]
+    caption_url = html.unescape(str(track.get("baseUrl", "")))
+    request = Request(caption_url + ("&" if "?" in caption_url else "?") + "fmt=json3", headers={"User-Agent": USER_AGENT})
+    with urlopen(request, timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    events = []
+    for event in payload.get("events", []):
+        text = "".join(str(segment.get("utf8", "")) for segment in event.get("segs", []))
+        if clean_text(text):
+            events.append({"start_seconds": float(event.get("tStartMs", 0)) / 1000, "text": text})
+    excerpts = select_caption_excerpts(events)
+    if not excerpts:
+        raise LookupError("표시할 수 있는 공개 영어 자막 없음")
+    originals = [str(row["original"]) for row in excerpts]
+    translated = translate_to_korean(originals)
+    for index, row in enumerate(excerpts):
+        row["translation"] = translated[index] if translated else ""
+    return {
+        "video_id": video_id, "source_url": watch_url, "language": "en",
+        "caption_kind": "auto" if track.get("kind") == "asr" else "manual",
+        "summary": " ".join((translated or originals)[:3])[:900],
+        "translation_status": "translated" if translated else "translation_api_key_required",
+        "excerpts": excerpts,
+        "excerpt_policy": "투자 판단 관련 주요 구간만 시간순으로 발췌",
+    }
+
+
+def enrich_video_news(items: list[dict[str, object]], page_budget: int = 6) -> None:
+    """Attach captions to selected video news; never infer dialogue when captions are absent."""
+    inspected = 0
+    for item in items:
+        sources = item.get("sources") or []
+        direct = next((str(source.get("url", "")) for source in sources if youtube_video_id(str(source.get("url", "")))), "")
+        if not direct and not VIDEO_TITLE_PATTERN.search(str(item.get("title", ""))):
+            continue
+        video_url = direct
+        if not video_url and inspected < page_budget:
+            inspected += 1
+            for source in sources[:2]:
+                try:
+                    video_url = discover_youtube_url(str(source.get("url", "")))
+                except Exception:
+                    video_url = ""
+                if video_url:
+                    break
+        if not video_url:
+            item["video_transcript"] = {"status": "captions_unavailable", "message": "기사에서 공개 영어 자막이 있는 영상 주소를 확인하지 못했습니다."}
+            continue
+        try:
+            item["video_transcript"] = {"status": "available", **fetch_youtube_captions(video_url)}
+        except Exception as error:
+            item["video_transcript"] = {"status": "captions_unavailable", "source_url": video_url, "message": str(error)[:180]}
 
 
 def is_rate_decision(text: str) -> bool:
@@ -557,6 +700,7 @@ def collect_day(target: date, limit: int) -> list[dict[str, object]]:
         selected_ids = {str(item.get("id")) for item in items}
         items.extend(item for item in candidates if str(item.get("id")) not in selected_ids and len(items) < limit)
     translate_foreign_sources(items)
+    enrich_video_news(items)
     mark_important(items)
     return sorted(items, key=lambda row: int(row.get("importance_score", 0)), reverse=True)
 

@@ -117,7 +117,15 @@
     const body = narrative.paragraphs.map(paragraph=>`<p>${emphasizedText(paragraph,narrative.keywords)}</p>`).join("");
     const sources = narrative.sourceUrl ? (item.sources || []).map((source,index)=>index === 0 ? {...source,url:narrative.sourceUrl} : source) : item.sources;
     const charts = Array.isArray(item.news_charts) && item.news_charts.length ? `<section class="news-evidence-charts"><h3>관련 통계·비교</h3><div class="report-chart-grid">${item.news_charts.map(chartHtml).join("")}</div></section>` : "";
-    return `<header class="report-head news-report-head"><span>${esc(item.eyebrow)} · ${esc(item.date)} · 약 ${esc(item.read_minutes || 3)}분</span><h2 id="editorialDialogTitle">${esc(item.title)}</h2></header><section class="news-sixw-summary"><h3>기사 요약</h3>${body}</section><section class="news-core-summary"><h3>핵심 요약</h3><p>${emphasizedText(narrative.core,narrative.keywords)}</p></section>${charts}${sourceLedgerHtml(sources)}<p class="report-disclaimer">${esc(item.disclaimer || "공개자료를 바탕으로 작성한 정보이며 투자 권유가 아닙니다.")}</p>`;
+    return `<header class="report-head news-report-head"><span>${esc(item.eyebrow)} · ${esc(item.date)} · 약 ${esc(item.read_minutes || 3)}분</span><h2 id="editorialDialogTitle">${esc(item.title)}</h2></header><section class="news-sixw-summary"><h3>기사 요약</h3>${body}</section><section class="news-core-summary"><h3>핵심 요약</h3><p>${emphasizedText(narrative.core,narrative.keywords)}</p></section>${videoTranscriptHtml(item.video_transcript)}${charts}${sourceLedgerHtml(sources)}<p class="report-disclaimer">${esc(item.disclaimer || "공개자료를 바탕으로 작성한 정보이며 투자 권유가 아닙니다.")}</p>`;
+  }
+
+  function videoTranscriptHtml(video) {
+    if (!video) return "";
+    if (video.status !== "available") return `<section class="news-video-transcript unavailable"><h3>동영상 대화</h3><p>${esc(video.message || "공개 영어 자막이 없어 대화를 추측해 표시하지 않습니다.")}</p>${video.source_url ? `<a href="${esc(video.source_url)}" target="_blank" rel="noopener noreferrer">영상 원문 보기 ↗</a>` : ""}</section>`;
+    const translated = video.translation_status === "translated";
+    const rows = (video.excerpts || []).map(row=>`<li><time>${esc(row.time || "--:--")}</time><div><b>영문</b><p lang="en">${esc(row.original || "")}</p><b>한국어 번역</b><p class="video-translation ${translated ? "" : "pending"}">${translated ? esc(row.translation || "") : "번역 API가 연결되지 않아 번역문을 표시하지 않습니다."}</p></div></li>`).join("");
+    return `<section class="news-video-transcript"><h3>동영상 내용 요약</h3><p class="video-summary">${esc(video.summary || "공개 자막의 주요 대화를 확인했습니다.")}</p><h4>주요 영문 대화와 번역</h4><p class="video-caption-note">공개 영어 자막 중 투자 판단과 관련된 주요 구간만 시간순으로 발췌했습니다. 자동 자막은 발음을 잘못 인식할 수 있습니다.</p><ol>${rows}</ol><a href="${esc(video.source_url)}" target="_blank" rel="noopener noreferrer">영상 원문 보기 ↗</a></section>`;
   }
 
   function coverageHtml(item) {

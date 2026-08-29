@@ -20,6 +20,10 @@ def test_news_report_uses_structured_analysis_and_source_links() -> None:
     assert "news-keyword" in script
     assert "관련 통계·비교" in script
     assert "item.news_charts.map(chartHtml)" in script
+    assert "function videoTranscriptHtml" in script
+    assert all(label in script for label in ("동영상 내용 요약", "주요 영문 대화와 번역", "영문", "한국어 번역"))
+    rendered = script[script.index("function newsReportHtml"):script.index("function videoTranscriptHtml")]
+    assert rendered.index("기사 요약") < rendered.index("videoTranscriptHtml")
 
 
 def test_news_page_does_not_render_duplicate_analysis_blocks() -> None:
