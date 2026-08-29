@@ -26,7 +26,10 @@ def test_manual_paper_portfolio_is_local_and_requires_confirmation() -> None:
     assert "localStorage" in script
     assert "window.confirm" in script
     assert 'id="paperSubmit"' in html and "disabled" in html
-    assert "fetch(" not in script
+    assert "/api/paper-quotes" in script
+    assert "slice(0, 10)" in script
+    assert "setInterval(refreshQuotes, 15000)" in script
+    assert "최대 10종목" in html
 
 
 def test_market_issues_live_inside_editorial_hub_and_dates_are_quiet() -> None:

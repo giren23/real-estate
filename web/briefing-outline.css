@@ -1,0 +1,27 @@
+.briefing-outline {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.brief-outline-card {
+  min-height: 170px;
+}
+
+.brief-placeholder {
+  display: grid;
+  min-height: 90px;
+  border: 1px dashed #d6cfdd;
+  border-radius: 9px;
+  place-items: center;
+  background: #faf9fb;
+  color: #9b949f;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+@media (max-width: 760px) {
+  .briefing-outline {
+    grid-template-columns: 1fr;
+  }
+}

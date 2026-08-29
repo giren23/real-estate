@@ -13,12 +13,16 @@ def test_investment_briefing_page_has_top_and_bottom_pagination() -> None:
     html = (ROOT / "web" / "briefing.html").read_text(encoding="utf-8")
     script = (ROOT / "web" / "briefing.js").read_text(encoding="utf-8")
     market = (ROOT / "web" / "market.html").read_text(encoding="utf-8")
+    index = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
 
     assert 'id="briefingPaginationTop"' in html
     assert 'id="briefingPaginationBottom"' in html
     assert "?page=${index + 1}" in script
-    assert 'href="briefing.html"' in market
-    assert "오늘의 투자 브리핑" in market
+    assert 'href="briefing.html"' in index
+    assert "오늘의 투자 브리핑" in index
+    assert 'href="briefing.html"' not in market
+    assert index.index('href="market.html"') < index.index('href="briefing.html"')
+    assert "briefing-outline" in script and "개발 중" in script
 
 
 def test_daily_generator_archives_by_date_and_reorders_pages() -> None:
@@ -28,7 +32,10 @@ def test_daily_generator_archives_by_date_and_reorders_pages() -> None:
     index = json.loads((output_dir / "index.json").read_text(encoding="utf-8"))
 
     assert payload["date"] == "2026-08-29"
-    assert len(payload["core_metrics"]) >= 6
+    assert payload["schema_version"] == 2
+    assert payload["title"] == "2026년 8월 29일 토요일 아침 — 전수 스캔 투자 브리핑"
+    assert [section["id"] for section in payload["sections"]] == ["world", "us", "kr"]
+    assert all(section["summary"] == "" for section in payload["sections"])
     assert index["pages"][0]["date"] == "2026-08-29"
     assert index["pages"][0]["file"] == "2026-08-29.json"
 

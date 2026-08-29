@@ -117,47 +117,21 @@ def select_investment_news(rows: list[dict], limit: int = 6) -> list[dict]:
 
 
 def build_payload(day: str) -> dict:
-    market = json.loads(MARKET_PATH.read_text(encoding="utf-8"))
-    news = json.loads(NEWS_PATH.read_text(encoding="utf-8")) if NEWS_PATH.exists() else {}
-    items = item_map(market)
-    regime, stance, checks = interpretation(items)
-    core_keys = ["kospi", "kosdaq", "sp500", "nasdaq", "krw_usd", "us10y", "wti", "gold"]
-    core = [metric(items.get(key)) for key in core_keys]
-    scenarios = [
-        {"name": "상방 확인", "condition": "주요 지수 동반 상승 + 금리·달러 안정", "response": "한 번에 비중을 늘리지 않고 계획한 가격대에서 분할 진입 여부를 검토합니다."},
-        {"name": "중립 유지", "condition": "지수 혼조 + 환율·금리 방향 불명확", "response": "관심종목 실적과 거래량이 확인될 때까지 현금 비중과 기존 계획을 유지합니다."},
-        {"name": "하방 경계", "condition": "지수 동반 하락 + VIX·금리·달러 상승", "response": "신규 진입을 늦추고 손실 한도, 과도한 종목 비중, 이벤트 일정을 먼저 점검합니다."},
-    ]
-    briefing_news = []
-    for row in select_investment_news(news.get("latest_items") or []):
-        source = (row.get("sources") or [{}])[0]
-        briefing_news.append({
-            "date": row.get("date", day),
-            "title": row.get("title", ""),
-            "summary": row.get("market_comment") or row.get("summary", ""),
-            "tags": (row.get("tags") or [])[:3],
-            "url": source.get("url", ""),
-            "publisher": source.get("publisher", "원문"),
-        })
+    observed = datetime.strptime(day, "%Y-%m-%d")
+    weekdays = ("월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일")
+    title = f"{observed.year}년 {observed.month}월 {observed.day}일 {weekdays[observed.weekday()]} 아침 — 전수 스캔 투자 브리핑"
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "date": day,
         "generated_at": datetime.now(SEOUL).isoformat(timespec="seconds"),
-        "market_date": market.get("market_date"),
-        "title": regime,
-        "stance": stance,
-        "core_metrics": core,
-        "morning_checks": checks,
-        "decision_checklist": [
-            "오늘 발표되는 실적·경제지표·정책 일정과 보유 종목의 이벤트를 확인합니다.",
-            "매수 전 진입가·수량·최대 손실액을 숫자로 정하고, 충족되지 않으면 주문하지 않습니다.",
-            "단일 종목 쏠림과 급등 추격을 피하고, 기존 보유 이유가 훼손됐는지 먼저 확인합니다.",
-            "뉴스 제목만으로 판단하지 않고 원문·공시·실제 수치와 기준일을 확인합니다.",
+        "title": title,
+        "format": "short-development",
+        "sections": [
+            {"id": "world", "title": "세계 정세 약식 총평", "subtitle": "세계 정세", "summary": ""},
+            {"id": "us", "title": "미국장", "subtitle": "미국장 주요 핵심 총평", "summary": ""},
+            {"id": "kr", "title": "한국장", "subtitle": "한국장 주요 핵심 총평", "summary": ""},
         ],
-        "scenarios": scenarios,
-        "news": briefing_news,
-        "sources": market.get("sources", []),
-        "disclaimer": "공개 시장자료를 정리한 읽기 전용 브리핑이며 특정 종목의 매수·매도 권유가 아닙니다. 실제 판단과 가상 주문은 사용자가 직접 결정해야 합니다.",
+        "disclaimer": "현재 화면 구조를 개발 중이며, 완성 전까지 투자 판단에 사용할 내용을 제공하지 않습니다.",
     }
 
 

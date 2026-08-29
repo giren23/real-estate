@@ -3,23 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="글로벌 증시·환율·원자재·금리와 주식 아침 브리핑을 한 페이지에서 확인합니다.">
+<meta name="description" content="글로벌 증시·환율·원자재·금리와 아침 주식 브리핑을 한 페이지에서 확인합니다.">
 <title>주식 시장 한 컷 브리핑 | Korean real estate prices</title>
 <link rel="stylesheet" href="style.css?v=28">
 <link rel="stylesheet" href="market.css?v=4">
 <link rel="stylesheet" href="market-unified.css?v=1">
 <link rel="stylesheet" href="market-brief.css?v=1">
-<link rel="stylesheet" href="paper.css?v=1">
+<link rel="stylesheet" href="paper.css?v=2">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <header class="market-topbar"><a href="./">← 실거래가로 돌아가기</a><span>MARKET SNAPSHOT &amp; MORNING BRIEF</span></header>
 <main class="market-page">
   <header class="market-hero">
-    <div><span>DAILY MARKET BRIEF</span><h1>📈 주식 시장 한 컷 브리핑</h1><p>기존 시장 한 컷과 주식 아침 브리핑의 정보를 한 페이지에 모았습니다.</p></div>
+    <div><span>DAILY MARKET BRIEF</span><h1>📈 주식 시장 한 컷 브리핑</h1><p>기존 시장 한 컷과 주식 아침 브리핑의 모든 항목을 한 페이지에 모았습니다.</p></div>
     <div class="market-date"><b id="marketDate">—</b><span>최근 종가 기준</span><small id="updatedAt">업데이트 확인 중</small></div>
   </header>
-  <a class="daily-briefing-entry" href="briefing.html"><span><b>오늘의 투자 브리핑</b><small>매일 오전 7시 15분 · 날짜별 페이지 보관</small></span><strong>오늘 브리핑 보기 →</strong></a>
   <nav id="marketNav" class="market-nav" aria-label="시장 구분"></nav>
   <div id="marketStatus" class="market-status">시장 자료를 불러오는 중입니다…</div>
   <section id="marketSections" class="market-sections" aria-live="polite"></section>
@@ -29,12 +28,26 @@
   </section>
   <section id="paperTrading" class="paper-trading" aria-labelledby="paperTradingTitle">
     <header class="paper-head"><div><span>LOCAL PAPER PORTFOLIO</span><h2 id="paperTradingTitle">모의 투자</h2><p>실제 계좌·증권사 API와 연결되지 않는 브라우저 전용 가상계좌입니다.</p></div><strong>🔒 직접 확인 후에만 가상 체결</strong></header>
+    <section class="paper-quotes" aria-labelledby="paperQuotesTitle"><header><div><h3 id="paperQuotesTitle">주요 종목 현재가</h3><p>최대 10종목 · 조회 전용 · 장중 15초 자동 갱신</p></div><span id="paperQuoteStatus">시세 연결 확인 중</span></header><div class="paper-quote-controls"><input id="paperQuoteSymbols" type="text" aria-label="조회할 종목코드" value="005930,000660,005380,035420,035720,373220,207940,068270,105560,005490"><button id="paperQuoteApply" type="button">목록 적용</button></div><div id="paperQuoteGrid" class="paper-quote-grid"><p>현재가를 불러오는 중입니다.</p></div></section>
     <div class="paper-capital"><label>초기 가상자금 <span><input id="paperInitialCash" type="number" min="100000" step="100000" value="100000000"><em>원</em></span></label><button id="paperApplyCapital" type="button">초기자금 적용</button><small>거래가 없을 때만 변경됩니다.</small></div>
     <div id="paperMetrics" class="paper-metrics"></div>
-    <form id="paperOrderForm" class="paper-order-form"><div class="paper-order-title"><b>가상 주문 입력</b><span>가격과 수량을 직접 확인하세요.</span></div><label>종목코드<input id="paperSymbol" maxlength="16" placeholder="예: 005930" required></label><label>종목명<input id="paperName" maxlength="30" placeholder="예: 삼성전자" required></label><label>주문구분<select id="paperSide"><option value="BUY">매수</option><option value="SELL">매도</option></select></label><label>주문가격<input id="paperPrice" type="number" min="0.01" step="0.01" placeholder="현재가" required></label><label>수량<input id="paperQuantity" type="number" min="1" step="1" value="1" required></label><label>수수료율<input id="paperFeeRate" type="number" min="0" max="10" step="0.001" value="0"><span class="paper-unit">%</span></label><label>매도 제비용률<input id="paperSellTaxRate" type="number" min="0" max="10" step="0.001" value="0"><span class="paper-unit">%</span></label><div id="paperOrderPreview" class="paper-order-preview">종목·가격·수량을 입력하면 예상 금액이 표시됩니다.</div><label class="paper-confirm"><input id="paperConfirm" type="checkbox"><span>위 가상 주문 내용을 직접 확인했습니다.</span></label><button id="paperSubmit" class="paper-submit" type="submit" disabled>가상 주문 체결</button></form>
+    <form id="paperOrderForm" class="paper-order-form">
+      <div class="paper-order-title"><b>가상 주문 입력</b><span>가격과 수량을 직접 확인하세요.</span></div>
+      <label>종목코드<input id="paperSymbol" maxlength="16" placeholder="예: 005930" required></label>
+      <label>종목명<input id="paperName" maxlength="30" placeholder="예: 삼성전자" required></label>
+      <label>주문구분<select id="paperSide"><option value="BUY">매수</option><option value="SELL">매도</option></select></label>
+      <label>주문가격<input id="paperPrice" type="number" min="0.01" step="0.01" placeholder="현재가" required></label>
+      <label>수량<input id="paperQuantity" type="number" min="1" step="1" value="1" required></label>
+      <label>수수료율<input id="paperFeeRate" type="number" min="0" max="10" step="0.001" value="0"><span class="paper-unit">%</span></label>
+      <label>매도 제비용률<input id="paperSellTaxRate" type="number" min="0" max="10" step="0.001" value="0"><span class="paper-unit">%</span></label>
+      <div id="paperOrderPreview" class="paper-order-preview">종목·가격·수량을 입력하면 예상 금액이 표시됩니다.</div>
+      <label class="paper-confirm"><input id="paperConfirm" type="checkbox"><span>위 가상 주문 내용을 직접 확인했습니다.</span></label>
+      <button id="paperSubmit" class="paper-submit" type="submit" disabled>가상 주문 체결</button>
+    </form>
     <div class="paper-ledger-head"><div><h3>보유 종목</h3><p>현재가를 직접 수정하면 평가손익이 즉시 갱신됩니다.</p></div><span><button id="paperExport" type="button">JSON 백업</button><button id="paperReset" type="button" class="danger">가상계좌 초기화</button></span></div>
     <div class="paper-table-scroll"><table class="paper-table"><thead><tr><th>종목</th><th>수량</th><th>평균단가</th><th>현재가</th><th>평가금액</th><th>평가손익</th></tr></thead><tbody id="paperPositions"></tbody></table></div>
-    <details class="paper-history"><summary>가상 거래내역 <b id="paperOrderCount">0건</b></summary><div class="paper-table-scroll"><table class="paper-table"><thead><tr><th>시각</th><th>구분</th><th>종목</th><th>가격</th><th>수량</th><th>비용</th><th>현금잔액</th></tr></thead><tbody id="paperOrders"></tbody></table></div></details><p id="paperMessage" class="paper-message" aria-live="polite">실제 주문은 발생하지 않습니다. 입력값은 이 브라우저에만 저장됩니다.</p>
+    <details class="paper-history"><summary>가상 거래내역 <b id="paperOrderCount">0건</b></summary><div class="paper-table-scroll"><table class="paper-table"><thead><tr><th>시각</th><th>구분</th><th>종목</th><th>가격</th><th>수량</th><th>비용</th><th>현금잔액</th></tr></thead><tbody id="paperOrders"></tbody></table></div></details>
+    <p id="paperMessage" class="paper-message" aria-live="polite">실제 주문은 발생하지 않습니다. 입력값은 이 브라우저에만 저장됩니다.</p>
   </section>
   <section id="domesticNotice" class="domestic-notice"></section>
   <section class="legacy-briefing" aria-labelledby="morningBriefTitle">
@@ -70,7 +83,7 @@
   <article id="editorialArticle" class="editorial-article"></article>
 </dialog>
 <script src="market.js?v=4"></script>
-<script src="paper.js?v=1"></script>
+<script src="paper.js?v=2"></script>
 <script src="market-brief.js?v=1"></script>
 <script src="report.js?v=2"></script>
 <script src="editorial.js?v=6"></script>

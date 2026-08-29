@@ -1,6 +1,7 @@
 (() => {
   "use strict";
   const KEY = "manualPaperPortfolioV1";
+  const QUOTE_KEY = "paperQuoteSymbolsV1";
   const $ = selector => document.querySelector(selector);
   const money = value => `${new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(Math.round(Number(value) || 0))}원`;
   const clean = value => String(value || "").trim();
@@ -8,6 +9,8 @@
   let state;
   try { state = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (_error) { state = null; }
   if (!state || state.version !== 1) state = emptyState(100000000);
+  const quoteNames = {"005930":"삼성전자","000660":"SK하이닉스","005380":"현대차","035420":"NAVER","035720":"카카오","373220":"LG에너지솔루션","207940":"삼성바이오로직스","068270":"셀트리온","105560":"KB금융","005490":"POSCO홀딩스"};
+  let quoteSymbols = (localStorage.getItem(QUOTE_KEY) || $("#paperQuoteSymbols")?.value || "").split(",").map(clean).filter(Boolean).slice(0, 10), quoteLoading = false;
 
   const save = () => localStorage.setItem(KEY, JSON.stringify(state));
   const positionValue = position => position.quantity * position.currentPrice;
@@ -58,6 +61,33 @@
     $("#paperConfirm").checked = false; $("#paperSubmit").disabled = true;
   }
 
+  const renderQuotes = items => {
+    $("#paperQuoteGrid").innerHTML = items.length ? items.map(item => item.error ? `<article><span>${quoteNames[item.symbol] || item.symbol}</span><b>조회 실패</b><small>${item.symbol}</small></article>` : `<article><span>${quoteNames[item.symbol] || item.symbol}</span><b>${money(item.price)}</b><small class="${item.change_pct >= 0 ? "paper-positive" : "paper-negative"}">${item.change_pct >= 0 ? "+" : ""}${Number(item.change_pct).toFixed(2)}% · ${item.symbol}</small></article>`).join("") : "<p>표시할 현재가가 없습니다.</p>";
+  };
+  async function refreshQuotes() {
+    if (quoteLoading || !quoteSymbols.length || document.hidden) return;
+    quoteLoading = true;
+    try {
+      const response = await fetch(`/api/paper-quotes?symbols=${encodeURIComponent(quoteSymbols.join(","))}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      $("#paperQuoteStatus").textContent = payload.available ? `자동 갱신 · ${new Date().toLocaleTimeString("ko-KR")}` : "실시간 연결 대기";
+      if (!payload.available) { $("#paperQuoteGrid").innerHTML = `<p>${payload.message || "PC의 읽기 전용 시세 연결을 확인해 주세요."}</p>`; return; }
+      renderQuotes(payload.items || []);
+      (payload.items || []).forEach(item => { if (!item.error && state.positions[item.symbol]) state.positions[item.symbol].currentPrice = item.price; });
+      save(); render();
+    } catch (_error) {
+      $("#paperQuoteStatus").textContent = "시세 서버 연결 대기";
+      $("#paperQuoteGrid").innerHTML = "<p>PC 서버가 켜지고 시세 연결이 준비되면 자동으로 표시됩니다.</p>";
+    } finally { quoteLoading = false; }
+  }
+  $("#paperQuoteApply")?.addEventListener("click", () => {
+    const values = $("#paperQuoteSymbols").value.split(",").map(clean).filter(Boolean);
+    if (values.length > 10) return message("현재가 목록은 최대 10종목입니다.", "error");
+    if (!values.length || values.some(value => !/^\d{6}$/.test(value))) return message("숫자 6자리 종목코드를 쉼표로 구분해 입력해 주세요.", "error");
+    quoteSymbols = [...new Set(values)]; localStorage.setItem(QUOTE_KEY, quoteSymbols.join(",")); refreshQuotes();
+  });
+
   $("#paperOrderForm")?.addEventListener("input", event => { if (event.target.id !== "paperConfirm") orderPreview(); });
   $("#paperConfirm")?.addEventListener("change", event => { $("#paperSubmit").disabled = !event.target.checked; });
   $("#paperOrderForm")?.addEventListener("submit", event => {
@@ -99,5 +129,6 @@
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }), link = document.createElement("a");
     link.href = URL.createObjectURL(blob); link.download = `paper-portfolio-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href);
   });
-  render(); orderPreview();
+  $("#paperQuoteSymbols").value = quoteSymbols.join(",");
+  render(); orderPreview(); refreshQuotes(); setInterval(refreshQuotes, 15000);
 })();
