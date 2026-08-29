@@ -120,3 +120,6 @@ def test_feed_item_preserves_every_number_with_context_and_time() -> None:
     assert all(value in values for value in ("0.25%p", "5.50%", "2026년", "8월", "30일", "2.1%", "3.2%"))
     assert item["timeline"][0]["published_time"] == "2026-08-30T08:30+09:00"
     assert "원문 전체" in item["coverage_note"]
+    assert item["narrative_paragraphs"]
+    assert item["core_summary"]
+    assert any(row["importance"] == "max" for row in item["highlight_keywords"])

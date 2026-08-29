@@ -69,6 +69,8 @@ US_PUBLISHERS = ("New York Times", "Fortune", "Wall Street Journal", "CNBC", "Bl
 KOREAN_PUBLISHERS = ("연합뉴스", "한국은행", "기획재정부", "금융위원회", "한국거래소", "KBS", "MBC", "SBS", "한경", "한국경제", "매일경제", "서울경제", "이데일리", "조선일보", "중앙일보", "동아일보", "전자신문")
 IMPACT_KEYWORDS = ("기준금리", "연준", "금리 인상", "금리 인하", "환율", "국채", "물가", "고용", "GDP", "관세", "수출", "실적", "코스피", "코스닥", "나스닥", "유가", "원유", "금값", "반도체", "부동산 정책", "대출 규제", "세제")
 INVESTMENT_RELEVANCE = ("금리", "연준", "환율", "달러", "국채", "채권", "물가", "고용", "GDP", "관세", "무역", "수출", "실적", "코스피", "코스닥", "나스닥", "다우", "주가", "유가", "원유", "금값", "구리", "반도체", "비트코인", "ETF", "주택", "아파트", "대출", "분양", "재건축", "재개발", "공급", "세제", "세금")
+MAX_HIGHLIGHT_TERMS = ("기준금리 인상", "기준금리 인하", "금리 인상", "금리 인하", "공급 중단", "대규모 감원", "법정관리", "부도", "디폴트")
+HIGH_HIGHLIGHT_TERMS = ("연방준비제도", "연준", "한국은행", "기준금리", "국채", "환율", "관세", "물가", "고용", "GDP", "코스피", "코스닥", "나스닥", "반도체", "비트코인", "국토교통부", "공공주택", "재생에너지", "RE100")
 NOISE_KEYWORDS = ("화재", "사망", "숨져", "대피", "홍수", "실종", "범죄", "교통사고", "연예", "Weverse", "TXT-LOG", "프라하하하", "[포토]", "시상식", "페스티벌")
 RATE_DECISION_PATTERN = re.compile(r"(?:기준금리|정책금리|연준|한은|한국은행).{0,28}(?:인상|인하|동결|올렸|내렸)|(?:금리).{0,18}(?:인상 결정|인하 결정|동결 결정|올렸다|내렸다)", re.I)
 
@@ -111,6 +113,36 @@ def expert_analysis(category: str, title: str = "", facts: list[dict[str, str]] 
         "산업·기업": "수주·실적 변화 → 매출·마진 기대 → 현금흐름과 투자 → 고용·협력사 주문 → 산업생산·수출 순으로 확산됩니다.",
         "거시경제": "발표 수치 → 금리·성장 기대 → 채권·환율·주식 → 금융여건 → 소비·투자·고용 순으로 전달됩니다.",
     }
+
+
+def narrative_fields(related: list[dict[str, str]], fallback: str) -> dict[str, object]:
+    """Create one readable evidence flow; a richer model can replace these same fields."""
+    ordered = sorted(related, key=lambda item: item.get("published_time") or item.get("published_at") or "")
+    paragraphs: list[str] = []
+    seen: set[str] = set()
+    for index, source in enumerate(ordered):
+        detail = clean_text(source.get("description", ""))
+        if not detail or detail == source.get("title") or len(detail) < 25:
+            detail = clean_text(source.get("title", ""))
+        if not detail or detail in seen:
+            continue
+        seen.add(detail)
+        lead = "보도에 따르면" if index == 0 else "같은 사안을 다룬 후속·관련 보도에서는"
+        paragraphs.append(f"{source.get('published_at', '')} {source.get('publisher', '원문')} {lead}, {detail}")
+    if not paragraphs:
+        paragraphs = [fallback]
+    full_text = " ".join(paragraphs)
+    keywords: list[dict[str, str]] = []
+    for term in MAX_HIGHLIGHT_TERMS:
+        if term.lower() in full_text.lower():
+            keywords.append({"term": term, "importance": "max", "wiki_query": term})
+    for term in HIGH_HIGHLIGHT_TERMS:
+        if term.lower() in full_text.lower() and not any(row["term"] == term for row in keywords):
+            keywords.append({"term": term, "importance": "high", "wiki_query": term})
+    for value in dict.fromkeys(match.group(0).strip() for match in NUMBER_PATTERN.finditer(full_text)):
+        if value and re.search(r"\d", value):
+            keywords.append({"term": value, "importance": "max", "wiki_query": value})
+    return {"narrative_paragraphs": paragraphs, "core_summary": fallback, "highlight_keywords": keywords}
     fact_values = list(dict.fromkeys(fact.get("value", "") for fact in (facts or []) if fact.get("value")))
     fact_note = f" 공개자료에서 확인된 핵심 수치는 {', '.join(fact_values[:10])}이며, 전체 수치와 문맥은 위 원장을 기준으로 판단해야 합니다." if fact_values else " 공개자료에 구체적 수치가 없어 방향성만으로 단정하면 안 됩니다."
     return {
@@ -355,6 +387,7 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
     } for source in sorted(related, key=lambda item: item.get("published_time") or item.get("published_at") or "")]
     has_public_summaries = sum(bool(source.get("description") and len(source.get("description", "")) >= 25) for source in related)
     analysis = expert_analysis(category, row["title"], fact_ledger)
+    narrative = narrative_fields(related, description)
     return {
         "id": f"news-{row['published_at'].replace('-', '')}-{digest}",
         "date": row["published_at"],
@@ -376,6 +409,7 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
         "timeline": timeline,
         "fact_ledger": fact_ledger,
         "expert_analysis": analysis,
+        **narrative,
         "metrics": metrics,
         "sections": [
             {"heading": "한 줄로 이해하기", "paragraphs": [description], "bullets": []},

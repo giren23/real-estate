@@ -69,6 +69,56 @@
     return `<section class="report-sources"><h3>주요 경제·시장 뉴스 원문</h3><p>비슷한 보도를 매체별로 확인할 수 있습니다. 해외 기사는 정식 번역 API로 생성된 한국어 요약만 표시합니다.</p><ol class="report-source-links">${sources.map((source, index) => `<li><a href="${safe(source.url)}" target="_blank" rel="noopener noreferrer"><span>${index === 0 ? "대표 기사 · " : ""}${esc(labels[source.region]||"국내")} · ${esc(source.publisher || "원문")} · ${esc(source.published_at || "-")}</span><b>${esc(source.title_ko || source.title || "원문 보기")}</b><em>원문 보기 ↗</em></a>${source.summary_ko?`<p class="source-translation"><b>한국어 번역 요약</b>${esc(source.summary_ko)}</p>`:source.region&&source.region!=="domestic"?'<p class="source-translation pending">번역 API가 연결되면 검증된 한국어 요약이 이 위치에 자동 표시됩니다.</p>':""}</li>`).join("")}</ol></section>`;
   }
 
+  const WIKI_SEARCH = "https://namu.wiki/Search?q=";
+  const CURATED_HWASEONG = {
+    sourceUrl:"https://www.newscj.com/news/articleView.html?idxno=3428672",
+    paragraphs:[
+      "정명근 화성특례시장이 지난 27일 전국 시·군·구청장이 참석한 국정설명회에서(정부서울청사·청와대 영빈관) 시민협치 모델인 ‘화성동행기구’를 소개하고, ‘1만호 공공주택 프로젝트’와 ‘수도권 재생에너지 공급 거점 조성’을 정부에 건의함.",
+      "‘화성동행기구’는 행정이 정책을 일방적으로 결정하는 기존 방식에서 벗어나 환경·도시개발·교통 분야 시민단체와 청년·어르신·노동자·기업인 등이 지역 의제 발굴 → 숙의 → 정책 설계 → 실행 → 점검까지 전 과정에 참여하는 협치 체계임. 단순히 시민 의견을 수렴하는 수준을 넘어 시민의 목소리가 실제 정책으로 연결되고 결정과 책임까지 함께하는 지방자치 모델을 만들겠다는 취지임.",
+      "이와 함께 ‘화성 1만호 공공주택 프로젝트’를 정부에 건의함. 새로운 택지를 처음부터 개발하는 대신 기존 택지개발지구 내 유보지와 도시 여건 변화로 당초 용도에 맞지 않게 된 화성시·LH 소유 토지를 주택용지로 전환해 공공주택을 신속하게 공급한다는 계획임. 국토교통부 협의와 지구단위계획 변경 등의 행정절차가 원활하게 진행되면 빠르면 1년, 늦어도 2년 안에 1만 세대 이상 공급 가능하다는 게 화성시 판단임.",
+      "또한 화옹지구 등을 ‘수도권 재생에너지 공급 거점’으로 조성하는 방안도 제시함. 재생에너지 전력공급 기반을 확대해 기업의 RE100 대응을 지원하는 동시에, 발전사업에 주민이 참여하고 발생한 수익을 지역사회와 나누는 주민참여형 발전수익 공유 모델을 도입할 계획임. 이를 경기도 최초의 주민참여형 발전수익 공유 사례로 추진해 기업의 친환경 전환과 지역주민의 실질적인 경제적 혜택을 동시에 달성한다는 구상임.",
+      "결국 화성시는 시민이 정책 결정에 직접 참여하는 협치체계를 구축하고, 기존 공공부지를 활용해 주택공급 속도를 높이는 동시에, 재생에너지 산업의 성과를 기업과 지역주민이 함께 누리는 지역상생 모델을 만들겠다는 방향임."
+    ],
+    core:"정명근 화성시장이 정부에 ① 시민이 정책 전 과정에 참여하는 ‘화성동행기구’ 모델을 소개하고, ② 시·LH 보유 유휴·유보지를 주택용지로 바꿔 1~2년 내 공공주택 1만호 이상을 공급하는 방안과 ③ 화옹지구 등에 수도권 재생에너지 거점을 조성해 기업 RE100을 지원하고 발전수익을 주민과 공유하는 방안을 건의함.",
+    keywords:[
+      {term:"1년, 늦어도 2년 안에 1만 세대 이상 공급 가능",importance:"max",query:"화성시 1만호 공공주택 프로젝트"},
+      {term:"1~2년 내 공공주택 1만호 이상",importance:"max",query:"화성시 1만호 공공주택 프로젝트"},
+      {term:"1만호 공공주택 프로젝트",importance:"max"},{term:"화성 1만호 공공주택 프로젝트",importance:"max",query:"화성시 1만호 공공주택 프로젝트"},
+      {term:"수도권 재생에너지 공급 거점",importance:"max"},{term:"주민참여형 발전수익 공유 모델",importance:"max"},
+      {term:"화성동행기구",importance:"high"},{term:"정명근",importance:"high"},{term:"화성특례시",importance:"high"},
+      {term:"LH",importance:"high",query:"한국토지주택공사"},{term:"국토교통부",importance:"high"},{term:"지구단위계획",importance:"high"},
+      {term:"화옹지구",importance:"high"},{term:"RE100",importance:"high"},{term:"재생에너지",importance:"high"}
+    ]
+  };
+
+  function newsNarrative(item) {
+    const title = String(item.title || "");
+    if (/화성특례시장|화성동행기구/.test(title) && /1만호/.test(title)) return CURATED_HWASEONG;
+    const paragraphs = Array.isArray(item.narrative_paragraphs) && item.narrative_paragraphs.length
+      ? item.narrative_paragraphs
+      : [item.easy_explanation || item.summary || "공개 기사에서 확인된 내용은 원문 링크에서 확인할 수 있습니다."];
+    return {paragraphs,core:item.core_summary || item.summary || paragraphs[0],keywords:item.highlight_keywords || []};
+  }
+
+  function emphasizedText(value, keywords) {
+    const rows = (keywords || []).filter(row=>row?.term).sort((a,b)=>b.term.length-a.term.length);
+    if (!rows.length) return esc(value);
+    const pattern = new RegExp(`(${rows.map(row=>row.term.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")})`,"g");
+    return String(value || "").split(pattern).map(part=>{
+      const row = rows.find(item=>item.term === part);
+      if (!row) return esc(part);
+      const href = `${WIKI_SEARCH}${encodeURIComponent(row.wiki_query || row.query || row.term)}`;
+      return `<a class="news-keyword ${row.importance === "max" ? "max" : "high"}" href="${href}" target="_blank" rel="noopener noreferrer">${esc(part)}</a>`;
+    }).join("");
+  }
+
+  function newsReportHtml(item) {
+    const narrative = newsNarrative(item);
+    const body = narrative.paragraphs.map(paragraph=>`<p>${emphasizedText(paragraph,narrative.keywords)}</p>`).join("");
+    const sources = narrative.sourceUrl ? (item.sources || []).map((source,index)=>index === 0 ? {...source,url:narrative.sourceUrl} : source) : item.sources;
+    return `<header class="report-head news-report-head"><span>${esc(item.eyebrow)} · ${esc(item.date)} · 약 ${esc(item.read_minutes || 3)}분</span><h2 id="editorialDialogTitle">${esc(item.title)}</h2></header><section class="news-sixw-summary"><h3>기사 요약</h3>${body}</section><section class="news-core-summary"><h3>핵심 요약</h3><p>${emphasizedText(narrative.core,narrative.keywords)}</p></section>${sourceLedgerHtml(sources)}<p class="report-disclaimer">${esc(item.disclaimer || "공개자료를 바탕으로 작성한 정보이며 투자 권유가 아닙니다.")}</p>`;
+  }
+
   function coverageHtml(item) {
     const note = item.coverage_note || "과거 수집본의 공개 기사 제목·RSS 요약 범위입니다. 원문 전체·유료벽 내부는 추측해 채우지 않았으므로 원문 링크에서 세부 내용을 재확인해야 합니다.";
     return `<aside class="report-coverage ${item.coverage_status === "title_only" || !item.coverage_status ? "limited" : ""}"><b>요약의 확보 범위</b><p>${esc(note)}</p></aside>`;
@@ -149,8 +199,8 @@
   }
 
   function render(item, options = {}) {
+    if (options.kind === "news") return newsReportHtml(item);
     let sections = Array.isArray(item.sections) ? item.sections : [];
-    if (options.kind === "news") sections = structuredNewsSections(item);
     const charts = Array.isArray(item.charts) ? [...item.charts] : [];
     const coverage = options.kind === "news" ? null : inferredCoverage(item);
     if (!charts.length && coverage) charts.push(coverage);
