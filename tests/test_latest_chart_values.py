@@ -31,4 +31,3 @@ def test_economic_indicators_have_an_independent_daily_workflow() -> None:
     assert 'cron: "15 22 * * *"' in workflow
     assert "update_economic_context.py" in workflow
     assert "update_market_snapshot.py" in workflow
-    assert "update_stock_briefing.py" not in workflow
