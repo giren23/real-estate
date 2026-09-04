@@ -36,8 +36,11 @@ def test_daily_generator_archives_by_date_and_reorders_pages() -> None:
     assert payload["title"] == "2026년 8월 29일 토요일 아침 — 전수 스캔 투자 브리핑"
     assert [section["id"] for section in payload["sections"]] == ["world", "us", "kr"]
     assert all(section["summary"] == "" for section in payload["sections"])
-    assert index["pages"][0]["date"] == "2026-08-29"
-    assert index["pages"][0]["file"] == "2026-08-29.json"
+    page_dates = [page["date"] for page in index["pages"]]
+    assert "2026-08-29" in page_dates
+    assert page_dates == sorted(page_dates, reverse=True)
+    archived_page = next(page for page in index["pages"] if page["date"] == "2026-08-29")
+    assert archived_page["file"] == "2026-08-29.json"
 
 
 def test_morning_workflow_generates_and_commits_the_archive_once() -> None:
