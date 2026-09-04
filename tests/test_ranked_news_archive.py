@@ -9,11 +9,14 @@ from scripts.update_economic_news import (
     classify_region,
     classify_topic_region,
     enrich_video_news,
+    article_sentences,
     importance_details,
     item_from_feed,
     mark_important,
     representative_score,
     select_caption_excerpts,
+    sixw_summary_from_sentences,
+    fetch_article_sentences,
     youtube_video_id,
 )
 
@@ -181,3 +184,53 @@ def test_video_news_enrichment_never_invents_missing_dialogue(monkeypatch) -> No
     enrich_video_news([item])
     assert item["video_transcript"]["status"] == "captions_unavailable"
     assert "excerpts" not in item["video_transcript"]
+
+
+def test_full_article_is_reduced_to_one_evidence_bound_sixw_summary() -> None:
+    page = """<html><article>
+    <p>신한글로벌액티브리츠가 원·달러 환율 하락으로 환헤지 정산 부담을 크게 덜게 됐습니다.</p>
+    <p>25일 업계에 따르면 계약 기준환율은 달러당 1352원이며 최근 환율 1380원을 적용하면 7700만달러 계약의 정산금은 22억~25억원입니다.</p>
+    <p>환율이 1550원일 때 예상 정산금은 150억원 안팎이었습니다.</p>
+    <p>회사는 정산 목적으로 확보한 80억원 가운데 남을 수 있는 50억~60억원을 신규 투자에 활용할 계획입니다.</p>
+    <p>계약 만기는 내년 1월 19일이며 환율이 1352원까지 하락하면 별도 정산금 없이 종료하는 방안도 검토합니다.</p>
+    </article></html>"""
+    sentences = article_sentences(page)
+    result = sixw_summary_from_sentences("신한글로벌액티브리츠, 고환율 부담 완화", "딜사이트", "2026-08-30", sentences)
+    assert len(result["narrative_paragraphs"]) == 1
+    summary = result["narrative_paragraphs"][0]
+    assert all(value in summary for value in ("신한글로벌액티브리츠", "25일", "1352원", "7700만달러", "22억~25억원", "50억~60억원", "내년 1월 19일"))
+    assert result["core_summary"] in summary
+    assert result["summary_basis"] == "공개 원문 본문"
+
+
+def test_collector_enriches_current_and_archived_articles() -> None:
+    collector = (ROOT / "scripts" / "update_economic_news.py").read_text(encoding="utf-8")
+    assert "enrich_article_bodies(items)" in collector
+    assert "enrich_archived_bodies(archive_limit)" in collector
+    assert 'parser.add_argument("--archive-enrich-limit"' in collector
+    assert "rss.blog.naver.com/dealsite.xml" in collector
+
+
+def test_naver_rss_article_url_is_normalized_to_post_view(monkeypatch) -> None:
+    captured = {}
+
+    class Headers:
+        def get(self, _name, default=""):
+            return "text/html; charset=utf-8"
+        def get_content_charset(self):
+            return "utf-8"
+
+    class Response:
+        headers = Headers()
+        def __enter__(self): return self
+        def __exit__(self, *_args): return None
+        def geturl(self): return captured["url"]
+        def read(self, _limit): return b"<article><p>This is a sufficiently long public article sentence for extraction.</p></article>"
+
+    def fake_urlopen(request, timeout=0):
+        captured["url"] = request.full_url
+        return Response()
+
+    monkeypatch.setattr("scripts.update_economic_news.urlopen", fake_urlopen)
+    fetch_article_sentences("https://blog.naver.com/dealsite/224394383227?fromRss=true")
+    assert "PostView.naver" in captured["url"] and "logNo=224394383227" in captured["url"]

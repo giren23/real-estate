@@ -8,8 +8,10 @@ import os
 import re
 import time
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, urlparse
 from urllib.request import Request, urlopen
@@ -34,6 +36,7 @@ GLOBAL_FEEDS = (
     ("(site:economist.com OR site:asia.nikkei.com OR site:lemonde.fr OR site:theguardian.com OR site:dw.com OR site:aljazeera.com) (economy OR markets OR rates OR trade)", "en-GB", "GB", "GB:en", "global"),
 )
 DIRECT_RSS_FEEDS = (
+    ("https://rss.blog.naver.com/dealsite.xml", "딜사이트", "domestic"),
     ("https://nypost.com/business/feed/", "New York Post", "us"),
     ("https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "The New York Times", "us"),
     ("https://feeds.bbci.co.uk/news/business/rss.xml", "BBC", "global"),
@@ -48,6 +51,11 @@ NUMBER_PATTERN = re.compile(
     r"(?<![\w.])(?:[$€£¥]\s*)?\d[\d,.]*(?:\.\d+)?\s*(?:%p|%|bp|bps|basis\s+points?|조원|억원|억|만원|원|달러|엔|유로|trillion|billion|million|조|만|건|척|호|명|대|배럴|포인트|년|개월|월|분기|일)?",
     re.I,
 )
+SENTENCE_PATTERN = re.compile(r"(?<=[.!?。])\s+")
+CAUSE_PATTERN = re.compile(r"때문|따라|영향|배경|이유|목적|위해|으로 인해|기인|전망|예상", re.I)
+METHOD_PATTERN = re.compile(r"통해|활용|설정|계획|방식|구조|계약|조치|추진|검토|절차|대응", re.I)
+TIME_PATTERN = re.compile(r"(?:\d{1,4}년|\d{1,2}월|\d{1,2}일|최근|현재|지난|올해|내년|상반기|하반기|분기|당시)")
+ARTICLE_NOISE_PATTERN = re.compile(r"(?:무단전재|재배포|저작권|기자\s*[\w.@-]+|구독|로그인|댓글|공감|관련기사|ADVERTISEMENT|Copyright|All rights reserved)", re.I)
 
 
 CATEGORY_RULES = (
@@ -88,6 +96,156 @@ GLOBAL_ORIGIN_TERMS = ("중국", "China", "일본", "Japan", "유럽", "European
 
 def clean_text(value: str) -> str:
     return SPACE_PATTERN.sub(" ", html.unescape(TAG_PATTERN.sub(" ", value or ""))).strip()
+
+
+class ArticleParagraphParser(HTMLParser):
+    """Collect public article paragraphs and articleBody JSON without site-specific dependencies."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.paragraphs: list[str] = []
+        self._capture = 0
+        self._buffer: list[str] = []
+        self._json_ld = False
+        self._json_buffer: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = {key.lower(): value or "" for key, value in attrs}
+        if tag.lower() in {"p", "article", "blockquote"}:
+            self._capture += 1
+            if self._capture == 1:
+                self._buffer = []
+        if tag.lower() == "script" and "ld+json" in attributes.get("type", "").lower():
+            self._json_ld = True
+            self._json_buffer = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"p", "article", "blockquote"} and self._capture:
+            self._capture -= 1
+            if self._capture == 0:
+                text = clean_text(" ".join(self._buffer))
+                if text:
+                    self.paragraphs.append(text)
+        if tag.lower() == "script" and self._json_ld:
+            self._json_ld = False
+            raw = "".join(self._json_buffer).strip()
+            try:
+                self._collect_json(json.loads(raw))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                pass
+
+    def handle_data(self, data: str) -> None:
+        if self._capture:
+            self._buffer.append(data)
+        if self._json_ld:
+            self._json_buffer.append(data)
+
+    def _collect_json(self, value: object) -> None:
+        if isinstance(value, dict):
+            body = value.get("articleBody")
+            if isinstance(body, str):
+                self.paragraphs.extend(part.strip() for part in body.splitlines() if part.strip())
+            for child in value.values():
+                if isinstance(child, (dict, list)):
+                    self._collect_json(child)
+        elif isinstance(value, list):
+            for child in value:
+                self._collect_json(child)
+
+
+def article_sentences(page: str) -> list[str]:
+    parser = ArticleParagraphParser()
+    parser.feed(page)
+    sentences: list[str] = []
+    seen: set[str] = set()
+    for paragraph in parser.paragraphs:
+        for sentence in SENTENCE_PATTERN.split(clean_text(paragraph)):
+            sentence = sentence.strip(" -•\t")
+            normalized = SPACE_PATTERN.sub("", sentence).lower()
+            if len(sentence) < 25 or len(sentence) > 700 or ARTICLE_NOISE_PATTERN.search(sentence) or normalized in seen:
+                continue
+            if sentence.count("#") >= 2:
+                continue
+            seen.add(normalized)
+            sentences.append(sentence)
+    return sentences
+
+
+def fetch_article_sentences(url: str) -> tuple[list[str], str]:
+    parsed = urlparse(url)
+    if parsed.netloc.lower() == "blog.naver.com":
+        match = re.fullmatch(r"/([^/]+)/(\d+)", parsed.path.rstrip("/"))
+        if match:
+            url = f"https://blog.naver.com/PostView.naver?blogId={quote_plus(match.group(1))}&logNo={match.group(2)}"
+    request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml", "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.7"})
+    with urlopen(request, timeout=18) as response:
+        final_url = response.geturl()
+        content_type = response.headers.get("Content-Type", "")
+        if "html" not in content_type.lower():
+            return [], final_url
+        page = response.read(3_000_000).decode(response.headers.get_content_charset() or "utf-8", errors="replace")
+    return article_sentences(page), final_url
+
+
+def sixw_summary_from_sentences(title: str, publisher: str, published_at: str, sentences: list[str]) -> dict[str, object]:
+    """Build one evidence-bound 6W1H narrative and a matching core summary."""
+    if not sentences:
+        return {}
+    title_tokens = {token.lower() for token in TOKEN_PATTERN.findall(title) if len(token) >= 2 and token not in STOPWORDS}
+    article_start = next((index for index, sentence in enumerate(sentences) if len(title_tokens & {token.lower() for token in TOKEN_PATTERN.findall(sentence) if len(token) >= 2}) >= 2), 0)
+    sentences = sentences[article_start:]
+    ranked: list[tuple[int, int, str]] = []
+    for index, sentence in enumerate(sentences):
+        tokens = {token.lower() for token in TOKEN_PATTERN.findall(sentence) if len(token) >= 2}
+        score = min(8, len(tokens & title_tokens) * 2)
+        score += min(6, len(NUMBER_PATTERN.findall(sentence)) * 2)
+        score += 3 if CAUSE_PATTERN.search(sentence) else 0
+        score += 3 if METHOD_PATTERN.search(sentence) else 0
+        score += 2 if TIME_PATTERN.search(sentence) else 0
+        score += 4 if index < 3 else 0
+        ranked.append((score, index, sentence))
+    chosen_indices = {0}
+    coverage_patterns = (TIME_PATTERN, CAUSE_PATTERN, METHOD_PATTERN, NUMBER_PATTERN)
+    for pattern in coverage_patterns:
+        match = next((row for row in ranked if pattern.search(row[2])), None)
+        if match:
+            chosen_indices.add(match[1])
+    for _score, index, sentence in ranked:
+        if NUMBER_PATTERN.search(sentence) or CAUSE_PATTERN.search(sentence) or METHOD_PATTERN.search(sentence):
+            chosen_indices.add(index)
+        if len(chosen_indices) >= 25:
+            break
+    for _score, index, _sentence in sorted(ranked, reverse=True):
+        chosen_indices.add(index)
+        if len(chosen_indices) >= 12:
+            break
+    chosen = [sentences[index] for index in sorted(chosen_indices)]
+    while len(" ".join(chosen)) > 8000 and len(chosen) > 8:
+        chosen.pop()
+    lead = chosen[0]
+    prefix = f"{publisher}는 {published_at} 공개한 기사에서 " if publisher or published_at else "기사에서는 "
+    narrative = prefix + lead[0].lower() + lead[1:] if lead[:1].isascii() and lead[:1].isupper() else prefix + lead
+    if not narrative.endswith((".", "다.", "요.")):
+        narrative += "."
+    if len(chosen) > 1:
+        narrative += " " + " ".join(chosen[1:])
+    core_candidates = [chosen[0]]
+    for sentence in chosen[1:]:
+        if (CAUSE_PATTERN.search(sentence) or METHOD_PATTERN.search(sentence) or NUMBER_PATTERN.search(sentence)) and sentence not in core_candidates:
+            core_candidates.append(sentence)
+        if len(core_candidates) >= 3:
+            break
+    core = " ".join(core_candidates)[:900]
+    facts_source = [{"title": title, "description": narrative, "publisher": publisher, "published_at": published_at, "published_time": published_at}]
+    fields = narrative_fields(facts_source, core)
+    fields.update({
+        "narrative_paragraphs": [narrative],
+        "core_summary": core,
+        "summary_basis": "공개 원문 본문",
+        "article_body_status": "fetched",
+        "article_body_sentence_count": len(sentences),
+    })
+    return fields
 
 
 def extract_number_facts(sources: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -176,6 +334,10 @@ def numeric_charts(facts: list[dict[str, str]]) -> list[dict[str, object]]:
 
 def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
     """Migrate archived cards to the single narrative format without network or GPT."""
+    if item.get("article_body_status") == "fetched" and item.get("narrative_paragraphs") and item.get("core_summary"):
+        for obsolete in ("sections", "expert_analysis", "timeline", "fact_ledger", "coverage_status", "coverage_note", "causal_path"):
+            item.pop(obsolete, None)
+        return item
     sources = item.get("sources") or []
     prepared: list[dict[str, str]] = []
     for index, source in enumerate(sources):
@@ -655,6 +817,87 @@ def translate_foreign_sources(items: list[dict[str, object]]) -> None:
             item.update(narrative_fields(narrative_sources, narrative_sources[0].get("description") or narrative_sources[0].get("title", "")))
 
 
+def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dict[str, object]]:
+    sources = list(item.get("sources") or [])
+    sources.sort(key=lambda source: ("news.google.com" in str(source.get("url", "")), -representative_score(source)[0]))
+    last_error = ""
+    for source in sources[:3]:
+        url = str(source.get("url", ""))
+        if not url:
+            continue
+        try:
+            sentences, final_url = fetch_article_sentences(url)
+        except Exception as error:
+            last_error = str(error)[:160]
+            continue
+        if len(sentences) < 3 or len(" ".join(sentences)) < 350:
+            last_error = "공개 본문 분량 부족"
+            continue
+        fields = sixw_summary_from_sentences(
+            str(item.get("title", "")), str(source.get("publisher") or item.get("publisher") or "원문"),
+            str(source.get("published_at") or item.get("date") or ""), sentences,
+        )
+        fields["article_source_url"] = final_url
+        fields["article_body_checked_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+        fields["article_body_attempts"] = int(item.get("article_body_attempts") or 0) + 1
+        return item, fields
+    return item, {
+        "article_body_status": "unavailable",
+        "article_body_error": last_error or "공개 원문 본문을 확보하지 못함",
+        "article_body_checked_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "summary_basis": "제목·RSS 공개요약",
+        "article_body_attempts": int(item.get("article_body_attempts") or 0) + 1,
+    }
+
+
+def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = None, workers: int = 6) -> None:
+    """Fetch representative public bodies concurrently, then replace feed-only summaries."""
+    pending = [item for item in items if item.get("article_body_status") != "fetched" and int(item.get("article_body_attempts") or 0) < 3]
+    if limit is not None:
+        pending = pending[: max(0, limit)]
+    if not pending:
+        return
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, 8))) as executor:
+        futures = [executor.submit(_article_enrichment, item) for item in pending]
+        for future in as_completed(futures):
+            try:
+                item, fields = future.result()
+            except Exception as error:
+                print(f"기사 원문 본문 처리 실패: {error}")
+                continue
+            item.update(fields)
+            if fields.get("article_body_status") == "fetched":
+                item["summary"] = str(fields.get("core_summary", item.get("summary", "")))[:900]
+                item["easy_explanation"] = str(fields.get("narrative_paragraphs", [item.get("summary", "")])[0])
+                prepared = [{"title": str(item.get("title", "")), "description": str(item.get("easy_explanation", "")), "publisher": str(item.get("publisher", "원문")), "published_at": str(item.get("date", "")), "published_time": str(item.get("date", ""))}]
+                item["news_charts"] = numeric_charts(extract_number_facts(prepared))
+
+
+def enrich_archived_bodies(limit: int) -> int:
+    """Gradually migrate past archives so each scheduled run makes bounded progress."""
+    if limit <= 0:
+        return 0
+    targets: list[tuple[Path, dict[str, object], dict[str, object]]] = []
+    payloads: dict[Path, dict[str, object]] = {}
+    for path in sorted(NEWS_DIR.glob("20??-??-??.json"), reverse=True):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payloads[path] = payload
+        for item in payload.get("items", []):
+            if item.get("article_body_status") != "fetched" and int(item.get("article_body_attempts") or 0) < 3:
+                targets.append((path, payload, item))
+                if len(targets) >= limit:
+                    break
+        if len(targets) >= limit:
+            break
+    if not targets:
+        return 0
+    enrich_article_bodies([item for _path, _payload, item in targets], workers=6)
+    touched = {path for path, _payload, _item in targets}
+    for path in touched:
+        path.write_text(json.dumps(payloads[path], ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    return len(targets)
+
+
 def collect_day(target: date, limit: int) -> list[dict[str, object]]:
     unique: dict[str, dict[str, str]] = {}
     for query in FEED_QUERIES:
@@ -700,6 +943,7 @@ def collect_day(target: date, limit: int) -> list[dict[str, object]]:
         selected_ids = {str(item.get("id")) for item in items}
         items.extend(item for item in candidates if str(item.get("id")) not in selected_ids and len(items) < limit)
     translate_foreign_sources(items)
+    enrich_article_bodies(items)
     enrich_video_news(items)
     mark_important(items)
     return sorted(items, key=lambda row: int(row.get("importance_score", 0)), reverse=True)
@@ -748,9 +992,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="경제·금융·산업·부동산 뉴스 RSS를 날짜별로 보관합니다.")
     parser.add_argument("--backfill-days", type=int, default=1)
     parser.add_argument("--limit-per-day", type=int, default=24)
+    parser.add_argument("--archive-enrich-limit", type=int, default=24, help="한 실행에서 과거 원문 본문을 다시 처리할 최대 기사 수")
     args = parser.parse_args()
     days = max(1, min(args.backfill_days, 365))
     limit = max(6, min(args.limit_per_day, 60))
+    archive_limit = max(0, min(args.archive_enrich_limit, 120))
     NEWS_DIR.mkdir(parents=True, exist_ok=True)
     today = date.today()
     for offset in range(days - 1, -1, -1):
@@ -759,6 +1005,9 @@ def main() -> None:
         if items:
             write_day(target, items)
             print(f"{target}: {len(items)}건 저장")
+    enriched = enrich_archived_bodies(archive_limit)
+    if enriched:
+        print(f"과거 기사 원문 본문 재처리: {enriched}건")
     rebuild_index()
     print(f"경제뉴스 인덱스 생성 완료: {INDEX_PATH}")
 

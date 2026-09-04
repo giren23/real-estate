@@ -1,38 +1,21 @@
-function configuredOrigin(env) {
-  const value = String(env?.UPSTREAM_ORIGIN || "").trim();
-  if (!value) throw new Error("PC tunnel is not configured.");
-  const parsed = new URL(value);
-  if (parsed.protocol !== "https:" || !parsed.hostname.endsWith(".trycloudflare.com")) {
-    throw new Error("PC tunnel address is invalid.");
-  }
-  return parsed.origin;
+const PUBLIC_SITE = "https://giren23.github.io/real-estate/";
+
+function publicTarget(requestUrl) {
+  const incoming = new URL(requestUrl);
+  const base = new URL(PUBLIC_SITE);
+  const relativePath = incoming.pathname.replace(/^\/+/, "");
+  const target = new URL(relativePath || "index.html", base);
+  target.search = incoming.search;
+  return target;
 }
 
-async function fetchUpstream(target, request) {
-  const retryable = request.method === "GET" || request.method === "HEAD";
-  let lastError;
-  for (let attempt = 0; attempt < (retryable ? 3 : 1); attempt += 1) {
-    try {
-      const response = await globalThis.fetch(target, {
-        method: request.method,
-        headers: request.headers,
-        body: retryable ? undefined : request.body,
-        redirect: "manual",
-      });
-      if (response.status !== 530) return response;
-      lastError = new Error("PC server is offline.");
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError || new Error("PC server is offline.");
-}
-
-function offlineResponse() {
-  return new Response("이 사이트는 지정된 PC와 터널이 실행 중일 때만 접속할 수 있습니다.", {
+function unavailableApi() {
+  return new Response(JSON.stringify({
+    detail: "이 기능은 로컬 PC 전용입니다. 공개 사이트에서는 저장된 최신 데이터로 동작합니다.",
+  }), {
     status: 503,
     headers: {
-      "content-type": "text/plain; charset=utf-8",
+      "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
       "x-content-type-options": "nosniff",
     },
@@ -40,34 +23,28 @@ function offlineResponse() {
 }
 
 export default {
-  async fetch(request, env) {
-    try {
-      const origin = configuredOrigin(env);
-      const incoming = new URL(request.url);
-      const target = new URL(incoming.pathname + incoming.search, origin);
-      const headers = new Headers(request.headers);
-      headers.delete("host");
-      headers.delete("authorization");
-      headers.delete("cookie");
-      const upstream = await fetchUpstream(target, new Request(request, { headers }));
+  async fetch(request) {
+    const incoming = new URL(request.url);
+    if (incoming.pathname.startsWith("/api/")) return unavailableApi();
 
-      const responseHeaders = new Headers(upstream.headers);
-      const location = responseHeaders.get("location");
-      if (location && location.startsWith(origin)) {
-        responseHeaders.set("location", location.replace(origin, incoming.origin));
-      }
-      responseHeaders.set("cache-control", "no-store");
-      responseHeaders.set("x-content-type-options", "nosniff");
-      responseHeaders.set("referrer-policy", "no-referrer");
-      responseHeaders.set("x-real-estate-version", "2026-08-29-pc-only");
-
-      return new Response(upstream.body, {
-        status: upstream.status,
-        statusText: upstream.statusText,
-        headers: responseHeaders,
-      });
-    } catch (_error) {
-      return offlineResponse();
-    }
+    const target = publicTarget(request.url);
+    const upstream = await fetch(target, {
+      method: request.method === "HEAD" ? "HEAD" : "GET",
+      headers: { "user-agent": "korean-real-estate-public-gateway/1.0" },
+      redirect: "follow",
+    });
+    const responseHeaders = new Headers(upstream.headers);
+    responseHeaders.delete("set-cookie");
+    responseHeaders.set("x-content-type-options", "nosniff");
+    responseHeaders.set("referrer-policy", "strict-origin-when-cross-origin");
+    responseHeaders.set("x-real-estate-version", "2026-09-05-github-always-on");
+    responseHeaders.set("cache-control", /\.(?:js|css|png|jpg|jpeg|svg|webp|woff2?)$/i.test(incoming.pathname)
+      ? "public, max-age=300"
+      : "public, max-age=60, must-revalidate");
+    return new Response(upstream.body, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers: responseHeaders,
+    });
   },
 };

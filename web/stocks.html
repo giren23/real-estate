@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="시장·경제뉴스·관심종목 신호와 직접 승인 모의투자 안전상태를 확인하는 아침 주식 브리핑입니다.">
+<title>주식 아침 브리핑 | Korean real estate prices</title>
+<link rel="stylesheet" href="stocks.css?v=1">
+</head>
+<body>
+<header class="stock-topbar"><a href="./">← 실거래가</a><a href="market.html">시장 한 컷</a><span>KIS MORNING BRIEF</span></header>
+<main class="stock-page">
+  <header class="stock-hero">
+    <div><span>MORNING CHECKLIST</span><h1>주식 아침 브리핑</h1><p>시장 흐름과 주요 경제뉴스, 관심종목의 규칙 기반 신호를 보여줍니다. 주문은 자동 실행되지 않습니다.</p></div>
+    <div class="stock-date"><b id="briefingDate">—</b><span id="briefingUpdatedAt">업데이트 확인 중</span></div>
+  </header>
+  <section id="connection" class="connection-card"></section>
+  <section class="stock-section"><header><span>01</span><div><h2>오늘 아침 시장판</h2><p>주문 판단 전 먼저 확인하는 외부 환경입니다.</p></div></header><div id="marketGrid" class="market-grid"></div></section>
+  <section class="stock-section"><header><span>02</span><div><h2>관심종목 현황</h2><p>브리핑 문장이 아닌 가격 이력으로 계산한 보조 신호입니다.</p></div></header><div id="watchlist" class="watchlist"></div></section>
+  <section class="stock-section"><header><span>03</span><div><h2>주요 경제·시장 이슈</h2><p>뉴스는 맥락 확인용이며 주문을 직접 발생시키지 않습니다.</p></div></header><div id="newsList" class="news-list"></div></section>
+  <section class="stock-section"><header><span>04</span><div><h2>직접 승인 안전장치</h2><p>모의 지정가 주문 한 건마다 로컬 터미널에서 직접 승인해야 하며, 조건을 통과하지 못하면 차단됩니다.</p></div></header><div id="riskGrid" class="risk-grid"></div><ul id="safetyList" class="safety-list"></ul></section>
+  <footer><p id="disclaimer"></p><p>한국투자증권 Open API 연결 전에는 공개 시장 브리핑만 표시됩니다.</p></footer>
+</main>
+<script src="stocks.js?v=2"></script>
+</body>
+</html>
