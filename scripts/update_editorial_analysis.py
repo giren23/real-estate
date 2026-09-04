@@ -186,6 +186,25 @@ def research_contract(item: dict[str, object], report_type: str) -> dict[str, ob
     return item
 
 
+def daily_company_selection(company_items: list[dict[str, object]], previous: dict[str, object] | None = None) -> dict[str, object]:
+    """Publish at most one newly verified company per day; never fill gaps with weak data."""
+    today = date.today().isoformat()
+    previous = previous or {}
+    prior = dict(previous.get("daily_company_selection") or {})
+    history = list(previous.get("daily_company_history") or [])
+    if prior.get("date") == today:
+        return {"selection": prior, "history": history}
+    published_ids = {str(row.get("company_id") or "") for row in history if row.get("status") == "published"}
+    eligible = [item for item in company_items if item.get("verification_status") == "official_verified" and str(item.get("id") or "") not in published_ids]
+    if not eligible:
+        selection = {"date":today, "status":"no_eligible_company", "message":"오늘은 검증 조건을 통과한 신규 기업이 없음", "company_id":""}
+    else:
+        chosen = max(eligible, key=lambda item: (int(item.get("issue_score") or 0), str(item.get("date") or "")))
+        selection = {"date":today, "status":"published", "message":f"오늘의 검증 기업: {chosen.get('title', '')}", "company_id":str(chosen.get("id") or ""), "title":str(chosen.get("title") or ""), "verification_status":"official_verified"}
+    history = ([selection] + history)[:365]
+    return {"selection": selection, "history": history}
+
+
 def company_item(company: dict[str, object], matches: list[dict[str, object]]) -> dict[str, object]:
     sources = unique_sources(matches)
     metrics = [{"label": "관련 기사", "value": f"{len(matches)}건", "note": "최근 수집 기간"}, {"label": "확인 매체", "value": f"{len({s['publisher'] for s in sources})}곳", "note": "중복 제외"}]
@@ -368,7 +387,12 @@ def build(days: int, company_limit: int, analysis_limit: int) -> dict[str, objec
     analysis_items.sort(key=lambda item: (item["date"], item["issue_score"]), reverse=True)
     company_items = [research_contract(item, "company_analysis") for item in company_items[:company_limit]]
     analysis_items = [research_contract(item, "deep_dive") for item in analysis_items[:analysis_limit]]
-    return {"schema_version": 2, "generation_policy":"공개 원자료 우선 · 타 사이트 문장/그래픽 비복제 · 사실/분석 분리", "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"), "lookback_days": days, "company_items": company_items, "analysis_items": analysis_items}
+    try:
+        previous = json.loads(INDEX_PATH.read_text(encoding="utf-8")) if INDEX_PATH.exists() else {}
+    except (OSError, ValueError, json.JSONDecodeError):
+        previous = {}
+    daily = daily_company_selection(company_items, previous)
+    return {"schema_version": 2, "generation_policy":"공개 원자료 우선 · 타 사이트 문장/그래픽 비복제 · 사실/분석 분리", "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"), "lookback_days": days, "daily_company_selection":daily["selection"], "daily_company_history":daily["history"], "company_items": company_items, "analysis_items": analysis_items}
 
 
 def main() -> None:

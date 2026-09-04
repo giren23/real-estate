@@ -59,4 +59,4 @@ def test_failed_old_article_gets_one_new_schema_retry_then_cooldown() -> None:
 
 def test_dialog_backdrop_does_not_blur_or_dim_article_heavily() -> None:
     css = (ROOT / "web" / "style.css").read_text(encoding="utf-8")
-    assert ".editorial-dialog::backdrop{background:rgba(27,22,34,.28);backdrop-filter:none}" in css
+    assert ".editorial-dialog::backdrop{background:transparent;backdrop-filter:none}" in css

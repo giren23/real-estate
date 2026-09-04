@@ -23,3 +23,16 @@ def test_workflow_passes_dart_key_without_exposing_it() -> None:
     workflow = (ROOT / ".github" / "workflows" / "economic-indicators-daily.yml").read_text(encoding="utf-8")
     assert "DART_API_KEY: ${{ secrets.DART_API_KEY }}" in workflow
     assert "tests/test_research_contract.py" in workflow
+
+
+def test_daily_selection_withholds_unverified_reports() -> None:
+    from scripts.update_editorial_analysis import daily_company_selection
+
+    result = daily_company_selection([{"id":"unverified", "verification_status":"official_source_review_required", "issue_score":100}], {})
+    assert result["selection"]["status"] == "no_eligible_company"
+    assert result["selection"]["message"] == "오늘은 검증 조건을 통과한 신규 기업이 없음"
+
+
+def test_dialog_does_not_dim_the_page() -> None:
+    css = (ROOT / "web" / "style.css").read_text(encoding="utf-8")
+    assert ".editorial-dialog::backdrop{background:transparent;backdrop-filter:none}" in css
