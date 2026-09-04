@@ -225,3 +225,5 @@ def test_homepage_shows_local_server_availability_and_limitations() -> None:
     assert "공개 데이터에 아직 저장되지 않은 실거래 상세 조회" in html
     assert 'response.headers.get("x-real-estate-source")==="local-pc"' in script
     assert "꺼짐 · 연결 불가" in script
+    assert "localMeta.trade_count" in script
+    assert "style.css?v=33" in html

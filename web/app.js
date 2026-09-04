@@ -419,7 +419,7 @@ async function load(){
         group.hydrated=false;
         return group;
       });
-      byId("dataCount").textContent=fmt(localMeta.represented_trades||localMeta.transaction_rows||0)+"건 · "+fmt(apartmentGroups.length)+"단지";
+      byId("dataCount").textContent=fmt(localMeta.represented_trades||localMeta.transaction_rows||localMeta.trade_count||0)+"건 · "+fmt(apartmentGroups.length)+"단지";
       rebuildGroupIndexes();
       renderQuickSearch();
       restoreGraphBoards();
@@ -2058,7 +2058,7 @@ async function refreshCatalogIfUpdated(){
     const nextMeta=await response.json();
     const currentCount=Number(localMeta.complex_count||apartmentGroups.length||0);
     const nextCount=Number(nextMeta.complex_count||0);
-    const currentTrades=Number(localMeta.represented_trades||localMeta.transaction_rows||0);
+    const currentTrades=Number(localMeta.represented_trades||localMeta.transaction_rows||localMeta.trade_count||0);
     const nextTrades=Number(nextMeta.represented_trades||nextMeta.transaction_rows||0);
     if(nextCount&&((nextCount!==currentCount)||(nextTrades&&nextTrades!==currentTrades))){
       setStatus("새로 수집된 단지 자료를 자동 반영하는 중입니다…");
