@@ -44,9 +44,16 @@
     <header><div><span>13-MONTH TREND</span><h2>📈 핵심 지표 추세 차트</h2></div><p>각 월의 마지막 거래일 종가입니다. 점을 누르면 정확한 값을 확인할 수 있습니다.</p></header>
     <div id="trendCharts" class="trend-grid"></div>
   </section>
+  <section class="legacy-briefing" aria-label="시장 핵심 요약과 관심종목">
+    <section id="connection" class="connection-card"></section>
+    <section class="stock-section"><header><span>01</span><div><h2>시장·환율·원자재 핵심 요약</h2><p>시장·환율·원자재의 주요 변화를 빠르게 확인합니다.</p></div></header><div id="marketGrid" class="market-grid"></div></section>
+    <section class="stock-section"><header><span>02</span><div><h2>관심종목 현황</h2><p>가격 이력으로 계산한 보조 신호이며 주문을 직접 발생시키지 않습니다.</p></div></header><div id="watchlist" class="watchlist"></div></section>
+    <section class="stock-section"><header><span>03</span><div><h2>직접 승인 안전장치</h2><p>로컬 모의투자 안전 설정입니다.</p></div></header><div id="riskGrid" class="risk-grid"></div><ul id="safetyList" class="safety-list"></ul></section>
+    <p id="disclaimer" class="briefing-disclaimer"></p>
+  </section>
   <section id="paperTrading" class="paper-trading" aria-labelledby="paperTradingTitle">
     <header class="paper-head"><div><span>LOCAL PAPER PORTFOLIO</span><h2 id="paperTradingTitle">모의 투자</h2><p>실제 계좌·증권사 API와 연결되지 않는 브라우저 전용 가상계좌입니다.</p></div><strong>🔒 직접 확인 후에만 가상 체결</strong></header>
-    <section class="paper-quotes" aria-labelledby="paperQuotesTitle"><header><div><h3 id="paperQuotesTitle">주요 종목 현재가</h3><p>최대 10종목 · 조회 전용 · 장중 15초 자동 갱신</p></div><span id="paperQuoteStatus">시세 연결 확인 중</span></header><div class="paper-quote-controls"><input id="paperQuoteSymbols" type="text" aria-label="조회할 종목코드" value="005930,000660,005380,035420,035720,373220,207940,068270,105560,005490"><button id="paperQuoteApply" type="button">목록 적용</button></div><div id="paperQuoteGrid" class="paper-quote-grid"><p>현재가를 불러오는 중입니다.</p></div></section>
+    <section class="paper-quotes" aria-labelledby="paperQuotesTitle"><header><div><h3 id="paperQuotesTitle">주요 종목 현재가</h3><p>최대 10종목 · 조회 전용 · 장중 15초 자동 갱신</p></div><span id="paperQuoteStatus">시세 연결 확인 중</span></header><div class="paper-quote-controls"><input id="paperQuoteSymbols" type="text" aria-label="조회할 종목코드" placeholder="종목코드를 쉼표로 구분해 입력"><button id="paperQuoteApply" type="button">목록 적용</button></div><div id="paperQuoteGrid" class="paper-quote-grid"><p>현재가를 불러오는 중입니다.</p></div></section>
     <div class="paper-capital"><label>초기 가상자금 <span><input id="paperInitialCash" type="number" min="100000" step="100000" value="100000000"><em>원</em></span></label><button id="paperApplyCapital" type="button">초기자금 적용</button><small>거래가 없을 때만 변경됩니다.</small></div>
     <div id="paperMetrics" class="paper-metrics"></div>
     <form id="paperOrderForm" class="paper-order-form">
@@ -68,14 +75,6 @@
     <p id="paperMessage" class="paper-message" aria-live="polite">실제 주문은 발생하지 않습니다. 입력값은 이 브라우저에만 저장됩니다.</p>
   </section>
   <section id="domesticNotice" class="domestic-notice"></section>
-  <section class="legacy-briefing" aria-labelledby="morningBriefTitle">
-    <header class="legacy-briefing-head"><span>MORNING CHECKLIST</span><h2 id="morningBriefTitle">주식 아침 브리핑 · 기존 기능 보존</h2><p>시장 요약은 위 지표와 함께 보고, 관심종목·경제 이슈·안전장치는 아래에서 이어서 확인합니다.</p><time><b id="briefingDate">—</b> <span id="briefingUpdatedAt">업데이트 확인 중</span></time></header>
-    <section id="connection" class="connection-card"></section>
-    <section class="stock-section"><header><span>01</span><div><h2>시장·환율·원자재 핵심 요약</h2><p>기존 아침 시장판을 삭제하지 않고 빠른 확인용으로 유지했습니다.</p></div></header><div id="marketGrid" class="market-grid"></div></section>
-    <section class="stock-section"><header><span>02</span><div><h2>관심종목 현황</h2><p>가격 이력으로 계산한 보조 신호이며 주문을 직접 발생시키지 않습니다.</p></div></header><div id="watchlist" class="watchlist"></div></section>
-    <section class="stock-section"><header><span>03</span><div><h2>직접 승인 안전장치</h2><p>로컬 모의투자 안전 설정은 기존대로 보존합니다.</p></div></header><div id="riskGrid" class="risk-grid"></div><ul id="safetyList" class="safety-list"></ul></section>
-    <p id="disclaimer" class="briefing-disclaimer"></p>
-  </section>
   <footer class="market-footer"><div id="sourceLinks"></div><p id="marketMethod"></p><p>시차·휴장·공급처 사정으로 기준일이 지표마다 다를 수 있으며, 투자 권유 자료가 아닙니다.</p></footer>
 </main>
 <dialog id="editorialDialog" class="editorial-dialog" aria-labelledby="editorialDialogTitle">
@@ -83,9 +82,9 @@
   <article id="editorialArticle" class="editorial-article"></article>
 </dialog>
 <script src="market.js?v=4"></script>
-<script src="paper.js?v=2"></script>
-<script src="stocks.js?v=3"></script>
+<script src="paper.js?v=3"></script>
+<script src="stocks.js?v=4"></script>
 <script src="report.js?v=5"></script>
-<script src="editorial.js?v=9"></script>
+<script src="editorial.js?v=10"></script>
 </body>
 </html>

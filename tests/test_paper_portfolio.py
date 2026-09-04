@@ -30,6 +30,8 @@ def test_manual_paper_portfolio_is_local_and_requires_confirmation() -> None:
     assert "slice(0, 10)" in script
     assert "setInterval(refreshQuotes, 15000)" in script
     assert "최대 10종목" in html
+    assert 'id="paperQuoteSymbols"' in html and 'value="005930,000660' not in html
+    assert "defaultQuoteSymbols" in script
 
 
 def test_market_issues_live_inside_editorial_hub_and_dates_are_quiet() -> None:

@@ -34,7 +34,13 @@
     const hasSixW = ["who", "when", "what", "why", "how"].every(key => Array.isArray(sixW[key]) && sixW[key].length);
     return paragraphs.length >= 3 && totalLength >= 250 && String(item?.core_summary || "").trim().length >= 80 && hasSource && hasSixW;
   };
-  const canShowNewsDetail = item => ["fetched", "full_text", "verified_reconstruction"].includes(item?.article_body_status) || hasVerifiedLegacySummary(item);
+  const hasSubstantiveSummary = item => {
+    const title = String(item?.title || "").replace(/\s+/g, " ").trim();
+    const paragraphs = item?.article_summary || item?.narrative_paragraphs || [];
+    const text = (paragraphs.length ? paragraphs.join(" ") : String(item?.summary || "")).replace(/\s+/g, " ").trim();
+    return text.length >= 240 && text !== title && !text.startsWith(`${title} ${item?.publisher || ""}`.trim()) && (paragraphs.length >= 2 || (text.match(/[.!?。]|(?:함|임|했음|됐음)\s/g) || []).length >= 2);
+  };
+  const canShowNewsDetail = item => ["fetched", "full_text", "verified_reconstruction"].includes(item?.article_body_status) || hasVerifiedLegacySummary(item) || hasSubstantiveSummary(item);
 
   function cardHtml(item) {
     const tags = (item.tags || []).slice(0, 3).map(tag => `<span>${escapeHtml(tag)}</span>`).join("");

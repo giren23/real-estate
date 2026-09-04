@@ -10,7 +10,8 @@
   try { state = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (_error) { state = null; }
   if (!state || state.version !== 1) state = emptyState(100000000);
   const quoteNames = {"005930":"삼성전자","000660":"SK하이닉스","005380":"현대차","035420":"NAVER","035720":"카카오","373220":"LG에너지솔루션","207940":"삼성바이오로직스","068270":"셀트리온","105560":"KB금융","005490":"POSCO홀딩스"};
-  let quoteSymbols = (localStorage.getItem(QUOTE_KEY) || $("#paperQuoteSymbols")?.value || "").split(",").map(clean).filter(Boolean).slice(0, 10), quoteLoading = false;
+  const defaultQuoteSymbols = Object.keys(quoteNames);
+  let quoteSymbols = (localStorage.getItem(QUOTE_KEY) || defaultQuoteSymbols.join(",")).split(",").map(clean).filter(Boolean).slice(0, 10), quoteLoading = false;
 
   const save = () => localStorage.setItem(KEY, JSON.stringify(state));
   const positionValue = position => position.quantity * position.currentPrice;
@@ -129,6 +130,6 @@
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }), link = document.createElement("a");
     link.href = URL.createObjectURL(blob); link.download = `paper-portfolio-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href);
   });
-  $("#paperQuoteSymbols").value = quoteSymbols.join(",");
+  $("#paperQuoteSymbols").value = "";
   render(); orderPreview(); refreshQuotes(); setInterval(refreshQuotes, 15000);
 })();

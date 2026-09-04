@@ -37,8 +37,8 @@ async function init(){
     const response=await fetch(`data/stock_briefing.json?v=${Date.now()}`);
     if(!response.ok)throw new Error(`HTTP ${response.status}`);
     const data=await response.json();
-    $('#briefingDate').textContent=data.briefing_date;
-    $('#briefingUpdatedAt').textContent=`업데이트 ${new Date(data.updated_at).toLocaleString('ko-KR')}`;
+    if ($('#briefingDate')) $('#briefingDate').textContent=data.briefing_date;
+    if ($('#briefingUpdatedAt')) $('#briefingUpdatedAt').textContent=`업데이트 ${new Date(data.updated_at).toLocaleString('ko-KR')}`;
     $('#connection').innerHTML=connection(data.connection);
     $('#marketGrid').innerHTML=data.market.map(marketCard).join('')||'<p class="empty">시장 자료를 준비 중입니다.</p>';
     $('#watchlist').innerHTML=data.watchlist.map(watchCard).join('')||'<p class="empty">관심종목이 비어 있습니다. KIS 모의투자 연결 후 config/trading.json에 종목을 추가하세요.</p>';

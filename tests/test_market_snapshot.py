@@ -12,6 +12,8 @@ def test_market_snapshot_page_and_data_are_wired() -> None:
     assert "시장 한 컷" in html
     assert "data/market_snapshot.json" in script
     assert 'href="market.html"' in index
+    assert "주식 아침 브리핑 · 기존 기능 보존" not in html
+    assert html.index("시장·환율·원자재 핵심 요약") > html.index('id="trendCharts"')
 
 
 def test_market_snapshot_has_required_sections_and_charts() -> None:

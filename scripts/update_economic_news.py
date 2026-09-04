@@ -1105,9 +1105,8 @@ def rebuild_index() -> None:
         payload["items"] = items
         path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         archives.append({"date": payload.get("date"), "count": len(items), "file": path.name})
-        detailed_items = [item for item in items if item.get("article_body_status") in {"full_text", "verified_reconstruction"}]
         if not latest_archive_items:
-            latest_archive_items = detailed_items
+            latest_archive_items = items
         all_items.extend(items)
     important_items = sorted(
         [item for item in latest_archive_items if item.get("important")],
@@ -1119,7 +1118,7 @@ def rebuild_index() -> None:
         "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "archive_days": len(archives),
         "total_articles": len(all_items),
-        "latest_items": [item for item in all_items if item.get("article_body_status") in {"full_text", "verified_reconstruction"}][:12],
+        "latest_items": all_items[:12],
         "important_items": important_items,
         "importance_method": "실제 조회수·좋아요 미제공 · 유사 보도 확산, 매체 다양성, 대표 기사 품질, 출처 신뢰도, 금리 결정 등 시장 영향도로 산정",
         # Keep the first load light on mobile. Older days load on demand.
