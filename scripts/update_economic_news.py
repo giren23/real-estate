@@ -589,7 +589,7 @@ def fetch_youtube_captions(video_url: str) -> dict[str, object]:
         "video_id": video_id, "source_url": watch_url, "language": "en",
         "caption_kind": "auto" if track.get("kind") == "asr" else "manual",
         "summary": " ".join((translated or originals)[:3])[:900],
-        "translation_status": "translated" if translated else "translation_api_key_required",
+        "translation_status": "translated" if translated else "translation_unavailable",
         "excerpts": excerpts,
         "excerpt_policy": "투자 판단 관련 주요 구간만 시간순으로 발췌",
     }
@@ -897,7 +897,7 @@ def translate_foreign_sources(items: list[dict[str, object]]) -> None:
     if not translated:
         return
     for index, (source, _title, _summary) in enumerate(pending):
-        source.update({"title_ko": translated[index * 2], "summary_ko": translated[index * 2 + 1], "translation_status": "translated", "translation_provider": "DeepL"})
+        source.update({"title_ko": translated[index * 2], "summary_ko": translated[index * 2 + 1], "translation_status": "translated", "translation_provider": "자동 번역"})
     for item in items:
         translated_by_title = {str(source.get("title")): source for source in item.get("sources") or []}
         for event in item.get("timeline") or []:
