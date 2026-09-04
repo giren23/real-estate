@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
+import os
 import re
+import zipfile
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +20,7 @@ NEWS_DIR = ROOT / "web" / "content" / "news"
 OUTPUT_DIR = ROOT / "web" / "content" / "analysis"
 INDEX_PATH = OUTPUT_DIR / "index.json"
 NUMBER_PATTERN = re.compile(r"(?<!\d)(\d[\d,.]*(?:\.\d+)?\s*(?:조원|억원|억|만원|만명|만호|만대|%|bp|건|척|호|명|대))", re.I)
+USER_AGENT = "KoreanEconomicResearch/2.0"
 
 
 COMPANIES = (
@@ -124,6 +131,61 @@ def coverage_charts(matches: list[dict[str, object]], sources: list[dict[str, st
     ]
 
 
+def dart_corp_codes(api_key: str) -> dict[str, str]:
+    """Download the official DART company-code table when a key is configured."""
+    if not api_key:
+        return {}
+    request = Request("https://opendart.fss.or.kr/api/corpCode.xml?" + urlencode({"crtfc_key": api_key}), headers={"User-Agent": USER_AGENT})
+    with urlopen(request, timeout=40) as response:
+        archive = zipfile.ZipFile(io.BytesIO(response.read()))
+        root = ET.fromstring(archive.read("CORPCODE.xml"))
+    return {str(row.findtext("corp_name") or "").strip(): str(row.findtext("corp_code") or "").strip() for row in root.findall("list")}
+
+
+def dart_latest_sources(company_name: str, corp_code: str, api_key: str) -> list[dict[str, str]]:
+    if not api_key or not corp_code:
+        return []
+    params = {"crtfc_key": api_key, "corp_code": corp_code, "bgn_de": (date.today()-timedelta(days=550)).strftime("%Y%m%d"), "page_count": 100}
+    request = Request("https://opendart.fss.or.kr/api/list.json?" + urlencode(params), headers={"User-Agent": USER_AGENT})
+    with urlopen(request, timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    rows = [row for row in payload.get("list", []) if any(token in str(row.get("report_nm", "")) for token in ("사업보고서", "반기보고서", "분기보고서", "감사보고서"))]
+    return [{"publisher":"금융감독원 DART", "title":str(row.get("report_nm") or company_name), "url":f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={row.get('rcept_no')}", "published_at":str(row.get("rcept_dt") or ""), "source_type":"공시", "source_id":f"dart-{row.get('rcept_no')}"} for row in rows[:4]]
+
+
+def source_contract(sources: list[dict[str, object]]) -> list[dict[str, str]]:
+    result: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for index, source in enumerate(sources):
+        url = str(source.get("url") or "")
+        key = url or f"{source.get('publisher')}|{source.get('title')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        publisher = str(source.get("publisher") or "원문")
+        source_type = str(source.get("source_type") or ("공시" if "DART" in publisher else "거래소" if "거래소" in publisher or "KRX" in publisher else "언론"))
+        result.append({"source_id":str(source.get("source_id") or f"source-{index+1}"), "publisher":publisher, "document":str(source.get("document") or source.get("title") or "원문"), "title":str(source.get("title") or source.get("document") or "원문"), "published_at":str(source.get("published_at") or ""), "url":url, "source_type":source_type, "accessed_at":date.today().isoformat()})
+    return result
+
+
+def research_contract(item: dict[str, object], report_type: str) -> dict[str, object]:
+    """Attach the strict, source-traceable report schema while retaining legacy rendering fields."""
+    sources = source_contract(list(item.get("sources") or []))
+    item["sources"] = sources
+    source_id = sources[0]["source_id"] if sources else "source-required"
+    charts = []
+    for index, chart in enumerate(item.get("charts") or []):
+        rows = list(chart.get("rows") or [])
+        charts.append({**chart, "chart_id":str(chart.get("chart_id") or f"chart-{index+1}"), "purpose":str(chart.get("purpose") or "본문의 수치 비교를 검증"), "unit":str(chart.get("unit") or chart.get("subtitle") or "원자료 표기"), "basis":str(chart.get("basis") or "출처별 기준 확인"), "as_of":str(item.get("date") or ""), "source":[{"source_id":source_id}], "series":[{"name":str(chart.get("title") or "지표"), "data":[{"label":str(row.get("label") or ""), "value":row.get("value")} for row in rows]}], "annotation":[], "interpretation":str(chart.get("note") or "그래프에 표시된 값의 상대적 흐름을 비교함."), "caution":"단위·기간·연결/별도 기준이 같은 값만 직접 비교해야 함."})
+    sections = []
+    for index, section in enumerate(item.get("sections") or []):
+        paragraphs = list(section.get("paragraphs") or [])
+        sections.append({**section, "id":str(section.get("id") or f"section-{index+1}"), "number":index+1, "title":str(section.get("title") or section.get("heading") or ""), "summary":str(section.get("summary") or (paragraphs[0] if paragraphs else "")), "chart_ids":[str(row.get("chart_id") or f"section-{index+1}-chart-{chart_index+1}") for chart_index,row in enumerate(section.get("charts") or [])], "fact_or_analysis":str(section.get("fact_or_analysis") or "mixed")})
+    tags = list(item.get("tags") or [])
+    item.update({"type":report_type, "subtitle":str(item.get("summary") or ""), "as_of":str(item.get("date") or ""), "ticker":str(tags[1] if report_type=="company_analysis" and len(tags)>1 else ""), "reading_minutes":int(item.get("read_minutes") or 0), "key_message":str(item.get("easy_explanation") or item.get("summary") or ""), "key_metrics":[{"label":str(row.get("label") or ""), "value":str(row.get("value") or ""), "comparison":str(row.get("note") or ""), "basis":"보고서 표기 기준", "source_id":source_id} for row in item.get("metrics") or []], "toc":[section["title"] for section in sections], "sections":sections, "charts":charts, "scenarios":[scenario for section in sections for scenario in section.get("scenarios") or []], "risks":[{"risk":str(value), "probability":"판단불가", "impact":"판단불가", "warning_indicator":"후속 공식 공시·통계 확인", "source_id":source_id} for section in sections if "위험" in section["title"] for value in section.get("bullets") or []], "calendar":[], "uncertainties":["원자료에서 확인되지 않는 값은 자료 미확인으로 처리함"], "verification_status":"official_verified" if any(source["source_type"] in {"공시","정부통계","중앙은행통계","거래소"} and "main.do?rcpNo=" in source["url"] for source in sources) else "official_source_review_required"})
+    return item
+
+
 def company_item(company: dict[str, object], matches: list[dict[str, object]]) -> dict[str, object]:
     sources = unique_sources(matches)
     metrics = [{"label": "관련 기사", "value": f"{len(matches)}건", "note": "최근 수집 기간"}, {"label": "확인 매체", "value": f"{len({s['publisher'] for s in sources})}곳", "note": "중복 제외"}]
@@ -186,7 +248,7 @@ def curated_company_item(company: dict[str, object], matches: list[dict[str, obj
         "charts": [{"type":"bar","title":"핵심 실적 흐름","subtitle":facts["basis"],"rows":trend_rows,"note":"서로 다른 기간·손익 항목이 함께 있을 수 있어 방향 비교용으로 읽어야 합니다."}],
         "easy_explanation": f"{company['business']} 이번 분석의 핵심은 ‘{facts['headline']}’이 실제 손익과 현금흐름으로 이어지는지 확인하는 것입니다.",
         "market_comment": "매출 성장만으로 기업가치를 판단하지 않습니다. 영업이익, 부채·현금, 일회성 요인과 다음 분기의 재현 가능성을 함께 비교했습니다.",
-        "methodology": f"{facts['basis']} 공시에서 공개된 사실·수치를 표로 구조화하고 계산 가능한 증감률을 교차 확인했습니다. 참고 페이지의 문장은 복제하지 않고 동일 수치를 자체 설명과 공통 장표 체계로 재구성했습니다.",
+        "methodology": f"{facts['basis']} 기준으로 수집된 수치를 구조화했습니다. 정확한 DART 접수번호가 연결되면 원문과 자동 교차검증하며, 연결 전에는 공식 원문 재확인이 필요한 참고값으로 표시합니다. 외부 사이트의 문장과 그래픽은 복제하지 않습니다.",
         "sections": [
             {"heading":"기업과 사업구조 — 무엇으로 돈을 버나","paragraphs":[str(company["business"])],"bullets":list(facts["drivers"]),"tables":tables[:1]},
             {"heading":"핵심 실적 — 성장의 질을 숫자로 확인","paragraphs":[f"기준은 {facts['basis']}입니다. 매출과 영업이익의 방향이 같은지, 비용 증가가 성장을 상쇄하는지 구분합니다."],"bullets":[],"charts":[{"type":"bar","title":"공시 수치 비교","subtitle":facts["basis"],"rows":trend_rows}]},
@@ -196,9 +258,9 @@ def curated_company_item(company: dict[str, object], matches: list[dict[str, obj
             {"heading":"위험요인과 다음 공시 체크리스트","paragraphs":["위험의 존재보다 실제 지표가 악화되는지를 확인합니다."],"bullets":list(facts["risks"])+list(company["watch"])}
         ],
         "sources": news_sources + [
-            {"publisher":"공개 장표 교차검증","title":f"{company['name']} 공개 공시 수치 구조 확인","url":facts["source"],"published_at":facts["date"]},
             {"publisher":"금융감독원 DART","title":f"{company['name']} 정기·주요사항 공시","url":"https://dart.fss.or.kr/dsab002/main.do","published_at":facts["date"]},
             {"publisher":"한국거래소 KIND","title":f"{company['name']} 상장공시·기업정보","url":"https://kind.krx.co.kr/","published_at":facts["date"]},
+            {"publisher":"KRX 정보데이터시스템","title":f"{company['name']} 시장·종목 기초정보","url":"https://data.krx.co.kr/","published_at":facts["date"]},
         ],
         "disclaimer":"공개 공시와 감사보고서 수치를 교육·분석 목적으로 재구성한 자료이며 투자 권유가 아닙니다. 최신 정정공시 여부를 원문에서 확인하세요."
     }
@@ -282,10 +344,21 @@ def analysis_item(theme: dict[str, object], matches: list[dict[str, object]]) ->
 
 def build(days: int, company_limit: int, analysis_limit: int) -> dict[str, object]:
     news = load_news(days)
+    dart_key = os.environ.get("DART_API_KEY", "").strip()
+    try:
+        corp_codes = dart_corp_codes(dart_key)
+    except Exception as error:
+        print(f"DART 기업코드 수집 실패: {error}")
+        corp_codes = {}
     company_items = [memory_comparison_item()]
     for company in COMPANIES:
         matches = [item for item in news if any(alias.lower() in f"{item.get('title', '')} {item.get('summary', '')}".lower() for alias in company["aliases"])]
-        company_items.append(curated_company_item(company, matches) if company["name"] in COMPANY_FACTS else company_item(company, matches))
+        report = curated_company_item(company, matches) if company["name"] in COMPANY_FACTS else company_item(company, matches)
+        try:
+            report["sources"] = dart_latest_sources(str(company["name"]), corp_codes.get(str(company["name"]), ""), dart_key) + list(report.get("sources") or [])
+        except Exception as error:
+            print(f"{company['name']} DART 공시 수집 실패: {error}")
+        company_items.append(report)
     analysis_items = []
     for theme in THEMES:
         matches = [item for item in news if any(keyword.lower() in f"{item.get('title', '')} {item.get('summary', '')}".lower() for keyword in theme["keywords"])]
@@ -293,7 +366,9 @@ def build(days: int, company_limit: int, analysis_limit: int) -> dict[str, objec
             analysis_items.append(analysis_item(theme, matches))
     company_items.sort(key=lambda item: (item["issue_score"], item["date"]), reverse=True)
     analysis_items.sort(key=lambda item: (item["date"], item["issue_score"]), reverse=True)
-    return {"schema_version": 1, "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"), "lookback_days": days, "company_items": company_items[:company_limit], "analysis_items": analysis_items[:analysis_limit]}
+    company_items = [research_contract(item, "company_analysis") for item in company_items[:company_limit]]
+    analysis_items = [research_contract(item, "deep_dive") for item in analysis_items[:analysis_limit]]
+    return {"schema_version": 2, "generation_policy":"공개 원자료 우선 · 타 사이트 문장/그래픽 비복제 · 사실/분석 분리", "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"), "lookback_days": days, "company_items": company_items, "analysis_items": analysis_items}
 
 
 def main() -> None:
