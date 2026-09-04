@@ -226,4 +226,4 @@ def test_homepage_shows_local_server_availability_and_limitations() -> None:
     assert 'response.headers.get("x-real-estate-source")==="local-pc"' in script
     assert "꺼짐 · 연결 불가" in script
     assert "localMeta.trade_count" in script
-    assert "style.css?v=33" in html
+    assert "style.css?v=34" in html
