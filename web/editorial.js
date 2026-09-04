@@ -26,7 +26,15 @@
 
   let contentById = new Map();
   const isRateDecision = item => /(?:기준금리|정책금리|연준|한은|한국은행).{0,28}(?:인상|인하|동결|올렸|내렸)|금리.{0,18}(?:인상 결정|인하 결정|동결 결정|올렸다|내렸다)/i.test(item.title || "");
-  const canShowNewsDetail = item => ["full_text", "verified_reconstruction"].includes(item?.article_body_status);
+  const hasVerifiedLegacySummary = item => {
+    const paragraphs = item?.article_summary || item?.narrative_paragraphs || [];
+    const totalLength = paragraphs.reduce((sum, row) => sum + String(row || "").trim().length, 0);
+    const hasSource = (item?.sources || []).some(source => /^https?:\/\//i.test(String(source?.url || "")));
+    const sixW = item?.six_w_one_h || {};
+    const hasSixW = ["who", "when", "what", "why", "how"].every(key => Array.isArray(sixW[key]) && sixW[key].length);
+    return paragraphs.length >= 3 && totalLength >= 250 && String(item?.core_summary || "").trim().length >= 80 && hasSource && hasSixW;
+  };
+  const canShowNewsDetail = item => ["fetched", "full_text", "verified_reconstruction"].includes(item?.article_body_status) || hasVerifiedLegacySummary(item);
 
   function cardHtml(item) {
     const tags = (item.tags || []).slice(0, 3).map(tag => `<span>${escapeHtml(tag)}</span>`).join("");

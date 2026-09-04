@@ -71,6 +71,25 @@ def test_feed_only_article_is_kept_for_statistics_not_detail_publication() -> No
     assert result["publication_status"] == "statistics_only"
 
 
+def test_substantive_legacy_manual_summary_is_preserved_as_verified_reconstruction() -> None:
+    item = {
+        "title": "검증된 과거 기사", "publisher": "연합뉴스", "date": "2026-09-04",
+        "article_summary": ["정부가 정책을 발표함. " * 8, "관계 기관이 집행 절차와 적용 대상을 설명함. " * 7, "후속 일정과 불확실성을 구분해 설명함. " * 7],
+        "core_summary": "정부의 발표 주체와 정책 내용, 집행 절차, 적용 대상, 핵심 수치 및 남은 조건을 원문에 따라 종합한 핵심 요약임. " * 2,
+        "six_w_one_h": {key: [key] for key in ("who", "when", "where", "what", "why", "how", "result")},
+        "sources": [{"url": "https://example.com/full-article"}],
+    }
+    result = MODULE.upgrade_existing_item(item)
+    assert result["article_body_status"] == "verified_reconstruction"
+    assert result["publication_status"] == "detail"
+
+
+def test_title_only_legacy_item_is_not_promoted() -> None:
+    item = {"title": "제목뿐인 기사", "summary": "제목뿐인 기사", "sources": [{"url": "https://example.com"}]}
+    assert not MODULE.has_verified_legacy_summary(item)
+    assert MODULE.upgrade_existing_item(item)["publication_status"] == "statistics_only"
+
+
 def test_dialog_backdrop_does_not_blur_or_dim_article_heavily() -> None:
     css = (ROOT / "web" / "style.css").read_text(encoding="utf-8")
     assert ".editorial-dialog::backdrop{background:transparent;backdrop-filter:none}" in css

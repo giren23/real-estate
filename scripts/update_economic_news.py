@@ -390,10 +390,29 @@ def numeric_charts(facts: list[dict[str, str]]) -> list[dict[str, object]]:
     return [{"type": "bar", "title": "기사에서 확인된 비교 수치", "subtitle": f"동일 단위 · {unit}", "rows": rows, "note": "서로 같은 단위인 공개 수치만 자동 비교했습니다. 기준기간과 대상은 각 문장을 확인하세요."}]
 
 
+def has_verified_legacy_summary(item: dict[str, object]) -> bool:
+    """Recognize substantive hand-edited archives without admitting title/RSS stubs."""
+    paragraphs = item.get("article_summary") or item.get("narrative_paragraphs") or []
+    paragraphs = [str(row).strip() for row in paragraphs if str(row).strip()]
+    sources = item.get("sources") or []
+    six_w = item.get("six_w_one_h") or {}
+    return (
+        len(paragraphs) >= 3
+        and sum(map(len, paragraphs)) >= 250
+        and len(str(item.get("core_summary") or "").strip()) >= 80
+        and any(str(source.get("url") or "").startswith(("http://", "https://")) for source in sources)
+        and all(isinstance(six_w.get(key), list) and six_w[key] for key in ("who", "when", "what", "why", "how"))
+    )
+
+
 def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
     """Migrate archived cards to the single narrative format without network or GPT."""
     if item.get("article_body_status") == "fetched":
         item["article_body_status"] = "full_text"
+    if not item.get("article_body_status") and has_verified_legacy_summary(item):
+        item["article_body_status"] = "verified_reconstruction"
+        if not item.get("narrative_paragraphs") and item.get("article_summary"):
+            item["narrative_paragraphs"] = list(item["article_summary"])
     if item.get("article_body_status") in {"full_text", "verified_reconstruction"} and item.get("narrative_paragraphs") and item.get("core_summary") and all(key in item for key in STRUCTURED_KEYS):
         item["publication_status"] = "detail"
         for obsolete in ("sections", "expert_analysis", "timeline", "fact_ledger", "coverage_status", "coverage_note", "causal_path"):
