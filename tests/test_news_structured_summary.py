@@ -46,6 +46,8 @@ def test_old_fetched_article_is_upgraded_without_network() -> None:
         "core_summary": "정부가 주택 1만호 공급 계획을 발표함.",
     }
     result = MODULE.upgrade_existing_item(item)
+    assert result["article_body_status"] == "full_text"
+    assert result["publication_status"] == "detail"
     assert result["summary_schema_version"] == MODULE.SUMMARY_SCHEMA_VERSION
     assert all(key in result for key in MODULE.STRUCTURED_KEYS)
 
@@ -55,6 +57,18 @@ def test_failed_old_article_gets_one_new_schema_retry_then_cooldown() -> None:
     assert MODULE.article_retry_due(old)
     updated = {**old, "summary_schema_version": MODULE.SUMMARY_SCHEMA_VERSION, "next_body_retry_at": "2999-01-01"}
     assert not MODULE.article_retry_due(updated)
+
+
+def test_feed_only_article_is_kept_for_statistics_not_detail_publication() -> None:
+    result = MODULE.upgrade_existing_item({
+        "title": "제목뿐인 기사",
+        "summary": "제목뿐인 기사",
+        "publisher": "매체",
+        "date": "2026-09-05",
+        "article_body_status": "unavailable",
+        "sources": [],
+    })
+    assert result["publication_status"] == "statistics_only"
 
 
 def test_dialog_backdrop_does_not_blur_or_dim_article_heavily() -> None:

@@ -256,7 +256,8 @@ def sixw_summary_from_sentences(title: str, publisher: str, published_at: str, s
         "narrative_paragraphs": [narrative],
         "core_summary": core,
         "summary_basis": "공개 원문 본문",
-        "article_body_status": "fetched",
+        "article_body_status": "full_text",
+        "publication_status": "detail",
         "article_body_sentence_count": len(sentences),
     })
     return fields
@@ -391,14 +392,18 @@ def numeric_charts(facts: list[dict[str, str]]) -> list[dict[str, object]]:
 
 def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
     """Migrate archived cards to the single narrative format without network or GPT."""
-    if item.get("article_body_status") == "fetched" and item.get("narrative_paragraphs") and item.get("core_summary") and all(key in item for key in STRUCTURED_KEYS):
+    if item.get("article_body_status") == "fetched":
+        item["article_body_status"] = "full_text"
+    if item.get("article_body_status") in {"full_text", "verified_reconstruction"} and item.get("narrative_paragraphs") and item.get("core_summary") and all(key in item for key in STRUCTURED_KEYS):
+        item["publication_status"] = "detail"
         for obsolete in ("sections", "expert_analysis", "timeline", "fact_ledger", "coverage_status", "coverage_note", "causal_path"):
             item.pop(obsolete, None)
         return item
-    if item.get("article_body_status") == "fetched" and item.get("narrative_paragraphs"):
+    if item.get("article_body_status") in {"full_text", "verified_reconstruction"} and item.get("narrative_paragraphs"):
         paragraphs = [str(row) for row in item.get("narrative_paragraphs") or [] if str(row).strip()]
         item.update(structured_summary_fields(str(item.get("title", "")), str(item.get("publisher", "원문")), str(item.get("date", "")), paragraphs, str(item.get("core_summary") or item.get("summary") or "")))
         item["summary_schema_version"] = SUMMARY_SCHEMA_VERSION
+        item["publication_status"] = "detail"
         return item
     sources = item.get("sources") or []
     prepared: list[dict[str, str]] = []
@@ -418,6 +423,7 @@ def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
     facts = extract_number_facts(prepared)
     item.update(narrative_fields(prepared, fallback))
     item["news_charts"] = numeric_charts(facts)
+    item["publication_status"] = "statistics_only"
     item["region"] = classify_topic_region(" ".join(f"{row.get('title', '')} {row.get('description', '')}" for row in prepared), prepared)
     for obsolete in ("sections", "expert_analysis", "timeline", "fact_ledger", "coverage_status", "coverage_note", "causal_path"):
         item.pop(obsolete, None)
@@ -935,6 +941,10 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         if item.get("region") in {"us", "global"}:
             fields = translate_summary_fields(fields)
         fields["article_source_url"] = final_url
+        fields["title"] = str(source.get("title_ko") or source.get("title") or item.get("title") or "")[:78]
+        fields["publisher"] = str(source.get("publisher") or item.get("publisher") or "원문")[:40]
+        fields["primary_source_role"] = "full_text"
+        fields["statistics_only_source_count"] = max(0, len(sources) - 1)
         fields["article_body_checked_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
         fields["article_body_attempts"] = int(item.get("article_body_attempts") or 0) + 1
         fields["summary_schema_version"] = SUMMARY_SCHEMA_VERSION
@@ -942,6 +952,7 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         return item, fields
     return item, {
         "article_body_status": "unavailable",
+        "publication_status": "statistics_only",
         "article_body_error": last_error or "공개 원문 본문을 확보하지 못함",
         "article_body_checked_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "summary_basis": "제목·RSS 공개요약",
@@ -952,7 +963,7 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
 
 
 def article_retry_due(item: dict[str, object]) -> bool:
-    if item.get("article_body_status") == "fetched":
+    if item.get("article_body_status") in {"fetched", "full_text", "verified_reconstruction"}:
         return False
     if int(item.get("summary_schema_version") or 0) < SUMMARY_SCHEMA_VERSION:
         return True
@@ -976,7 +987,7 @@ def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = No
                 print(f"기사 원문 본문 처리 실패: {error}")
                 continue
             item.update(fields)
-            if fields.get("article_body_status") == "fetched":
+            if fields.get("article_body_status") in {"full_text", "verified_reconstruction"}:
                 item["summary"] = str(fields.get("core_summary", item.get("summary", "")))[:900]
                 item["easy_explanation"] = str(fields.get("narrative_paragraphs", [item.get("summary", "")])[0])
                 prepared = [{"title": str(item.get("title", "")), "description": str(item.get("easy_explanation", "")), "publisher": str(item.get("publisher", "원문")), "published_at": str(item.get("date", "")), "published_time": str(item.get("date", ""))}]
@@ -1075,8 +1086,9 @@ def rebuild_index() -> None:
         payload["items"] = items
         path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         archives.append({"date": payload.get("date"), "count": len(items), "file": path.name})
+        detailed_items = [item for item in items if item.get("article_body_status") in {"full_text", "verified_reconstruction"}]
         if not latest_archive_items:
-            latest_archive_items = items
+            latest_archive_items = detailed_items
         all_items.extend(items)
     important_items = sorted(
         [item for item in latest_archive_items if item.get("important")],
@@ -1088,11 +1100,13 @@ def rebuild_index() -> None:
         "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "archive_days": len(archives),
         "total_articles": len(all_items),
-        "latest_items": all_items[:12],
+        "latest_items": [item for item in all_items if item.get("article_body_status") in {"full_text", "verified_reconstruction"}][:12],
         "important_items": important_items,
         "importance_method": "실제 조회수·좋아요 미제공 · 유사 보도 확산, 매체 다양성, 대표 기사 품질, 출처 신뢰도, 금리 결정 등 시장 영향도로 산정",
         # Keep the first load light on mobile. Older days load on demand.
         "items": all_items[:600],
+        "detailed_articles": sum(item.get("article_body_status") in {"full_text", "verified_reconstruction"} for item in all_items),
+        "statistics_only_articles": sum(item.get("article_body_status") not in {"full_text", "verified_reconstruction"} for item in all_items),
         "archives": archives,
     }
     INDEX_PATH.write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

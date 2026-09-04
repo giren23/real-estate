@@ -26,6 +26,7 @@
 
   let contentById = new Map();
   const isRateDecision = item => /(?:기준금리|정책금리|연준|한은|한국은행).{0,28}(?:인상|인하|동결|올렸|내렸)|금리.{0,18}(?:인상 결정|인하 결정|동결 결정|올렸다|내렸다)/i.test(item.title || "");
+  const canShowNewsDetail = item => ["full_text", "verified_reconstruction"].includes(item?.article_body_status);
 
   function cardHtml(item) {
     const tags = (item.tags || []).slice(0, 3).map(tag => `<span>${escapeHtml(tag)}</span>`).join("");
@@ -133,8 +134,8 @@
       const overrideById = new Map((overrides.items || []).map(item => [item.id,item]));
       if (news) {
         const apply = item => ({...item,...(overrideById.get(item.id) || {})});
-        news.latest_items = (news.latest_items || []).map(apply);
-        news.important_items = (news.important_items || []).map(apply);
+        news.latest_items = (news.latest_items || []).map(apply).filter(canShowNewsDetail);
+        news.important_items = (news.important_items || []).map(apply).filter(canShowNewsDetail);
       }
       const sections = Array.isArray(data.sections) ? data.sections : [];
       const newsSection = sections.find(section => section.id === "news");
