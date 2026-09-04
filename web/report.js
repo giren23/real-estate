@@ -94,10 +94,12 @@
   function newsNarrative(item) {
     const title = String(item.title || "");
     if (/화성특례시장|화성동행기구/.test(title) && /1만호/.test(title)) return CURATED_HWASEONG;
-    const paragraphs = Array.isArray(item.narrative_paragraphs) && item.narrative_paragraphs.length
+    const paragraphs = Array.isArray(item.article_summary) && item.article_summary.length
+      ? item.article_summary
+      : Array.isArray(item.narrative_paragraphs) && item.narrative_paragraphs.length
       ? item.narrative_paragraphs
       : [item.easy_explanation || item.summary || "공개 기사에서 확인된 내용은 원문 링크에서 확인할 수 있습니다."];
-    return {paragraphs,core:item.core_summary || item.summary || paragraphs[0],keywords:item.highlight_keywords || []};
+    return {title:item.summary_title || "기사 요약",paragraphs,core:item.core_summary || item.summary || paragraphs[0],keywords:item.highlight_keywords || []};
   }
 
   function emphasizedText(value, keywords) {
@@ -114,10 +116,13 @@
 
   function newsReportHtml(item) {
     const narrative = newsNarrative(item);
+    const summaryHeading = narrative.title === "기사 요약" ? "기사 요약" : `${narrative.title} 요약`;
     const body = narrative.paragraphs.map(paragraph=>`<p>${emphasizedText(paragraph,narrative.keywords)}</p>`).join("");
     const sources = narrative.sourceUrl ? (item.sources || []).map((source,index)=>index === 0 ? {...source,url:narrative.sourceUrl} : source) : item.sources;
     const charts = Array.isArray(item.news_charts) && item.news_charts.length ? `<section class="news-evidence-charts"><h3>관련 통계·비교</h3><div class="report-chart-grid">${item.news_charts.map(chartHtml).join("")}</div></section>` : "";
-    return `<header class="report-head news-report-head"><span>${esc(item.eyebrow)} · ${esc(item.date)} · 약 ${esc(item.read_minutes || 3)}분</span><h2 id="editorialDialogTitle">${esc(item.title)}</h2></header><section class="news-sixw-summary"><h3>기사 요약</h3>${body}</section><section class="news-core-summary"><h3>핵심 요약</h3><p>${emphasizedText(narrative.core,narrative.keywords)}</p></section>${videoTranscriptHtml(item.video_transcript)}${charts}${sourceLedgerHtml(sources)}<p class="report-disclaimer">${esc(item.disclaimer || "공개자료를 바탕으로 작성한 정보이며 투자 권유가 아닙니다.")}</p>`;
+    const uncertainties = Array.isArray(item.uncertainties) && item.uncertainties.length ? item.uncertainties : ["기사 원문에서 별도로 확인할 중대한 불확실성 없음"];
+    const checks = `<section class="news-checks"><h3>확인이 필요한 사항</h3><ul>${uncertainties.map(value=>`<li>${esc(value)}</li>`).join("")}</ul></section>`;
+    return `<header class="report-head news-report-head"><span>${esc(item.eyebrow)} · ${esc(item.date)} · 약 ${esc(item.read_minutes || 3)}분</span><h2 id="editorialDialogTitle">${esc(item.title)}</h2></header><section class="news-sixw-summary"><h3>${esc(summaryHeading)}</h3>${body}</section><section class="news-core-summary"><h3>핵심 요약</h3><p>${emphasizedText(narrative.core,narrative.keywords)}</p></section>${checks}${videoTranscriptHtml(item.video_transcript)}${charts}${sourceLedgerHtml(sources)}<p class="report-disclaimer">${esc(item.disclaimer || "공개자료를 바탕으로 작성한 정보이며 투자 권유가 아닙니다.")}</p>`;
   }
 
   function videoTranscriptHtml(video) {

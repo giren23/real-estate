@@ -126,9 +126,16 @@
       return response.json();
     }),
     fetch("content/news/index.json?v=5", { cache: "no-store" }).then(response => response.ok ? response.json() : null).catch(() => null),
-    fetch("content/analysis/index.json?v=1", { cache: "no-store" }).then(response => response.ok ? response.json() : null).catch(() => null)
+    fetch("content/analysis/index.json?v=1", { cache: "no-store" }).then(response => response.ok ? response.json() : null).catch(() => null),
+    fetch("content/news/domestic-overrides.json?v=1", { cache: "no-store" }).then(response => response.ok ? response.json() : {items:[]}).catch(() => ({items:[]}))
   ])
-    .then(([data, news, automatic]) => {
+    .then(([data, news, automatic, overrides]) => {
+      const overrideById = new Map((overrides.items || []).map(item => [item.id,item]));
+      if (news) {
+        const apply = item => ({...item,...(overrideById.get(item.id) || {})});
+        news.latest_items = (news.latest_items || []).map(apply);
+        news.important_items = (news.important_items || []).map(apply);
+      }
       const sections = Array.isArray(data.sections) ? data.sections : [];
       const newsSection = sections.find(section => section.id === "news");
       if (newsSection && news && Array.isArray(news.latest_items)) {
