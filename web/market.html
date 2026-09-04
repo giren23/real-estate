@@ -19,6 +19,24 @@
     <div><span>DAILY MARKET BRIEF</span><h1>📈 주식 시장 한 컷 브리핑</h1><p>기존 시장 한 컷과 주식 아침 브리핑의 모든 항목을 한 페이지에 모았습니다.</p></div>
     <div class="market-date"><b id="marketDate">—</b><span>최근 종가 기준</span><small id="updatedAt">업데이트 확인 중</small></div>
   </header>
+  <section id="editorialHub" class="editorial-hub" aria-labelledby="editorialTitle">
+    <div class="editorial-hub-head">
+      <div>
+        <span class="editorial-kicker">ECONOMY &amp; REAL ESTATE BRIEFING</span>
+        <h2 id="editorialTitle">뉴스·기업분석·심층분석</h2>
+        <p>경제 통합뉴스와 기업·심층분석을 짧고 쉽게 정리하고, 원문과 기준일을 함께 표시합니다.</p>
+      </div>
+      <span id="editorialUpdated" class="editorial-updated">콘텐츠 불러오는 중</span>
+    </div>
+    <section class="editorial-issues-section" aria-labelledby="marketIssuesTitle"><header><div><span>IMPORTANT MARKET NEWS</span><h3 id="marketIssuesTitle">중요 경제·시장 뉴스</h3></div><p>통합 뉴스 중 화제성·투자 영향·보도 확산·출처 신뢰도를 반영해 선별하고, 주식·금리·환율·원자재는 따로 묶었습니다.</p></header><div id="newsList" class="important-news-list"></div></section>
+    <div id="editorialSections" class="editorial-sections" aria-live="polite">
+      <p class="editorial-loading">경제 브리핑을 불러오는 중입니다…</p>
+    </div>
+    <details class="editorial-method">
+      <summary>콘텐츠 작성 기준</summary>
+      <p>뉴스는 사실과 해석을 분리하고, 기업분석은 공시 수치와 위험요인을 함께 적으며, 심층분석은 수도권·서울 핵심지·지방의 영향을 나누어 설명합니다. 모든 수치는 원문과 기준일을 표시하고 투자 권유 문구는 사용하지 않습니다.</p>
+    </details>
+  </section>
   <nav id="marketNav" class="market-nav" aria-label="시장 구분"></nav>
   <div id="marketStatus" class="market-status">시장 자료를 불러오는 중입니다…</div>
   <section id="marketSections" class="market-sections" aria-live="polite"></section>
@@ -57,24 +75,6 @@
     <section class="stock-section"><header><span>02</span><div><h2>관심종목 현황</h2><p>가격 이력으로 계산한 보조 신호이며 주문을 직접 발생시키지 않습니다.</p></div></header><div id="watchlist" class="watchlist"></div></section>
     <section class="stock-section"><header><span>03</span><div><h2>직접 승인 안전장치</h2><p>로컬 모의투자 안전 설정은 기존대로 보존합니다.</p></div></header><div id="riskGrid" class="risk-grid"></div><ul id="safetyList" class="safety-list"></ul></section>
     <p id="disclaimer" class="briefing-disclaimer"></p>
-  </section>
-  <section id="editorialHub" class="editorial-hub" aria-labelledby="editorialTitle">
-    <div class="editorial-hub-head">
-      <div>
-        <span class="editorial-kicker">ECONOMY &amp; REAL ESTATE BRIEFING</span>
-        <h2 id="editorialTitle">뉴스·기업분석·심층분석</h2>
-        <p>경제 통합뉴스와 기업·심층분석을 짧고 쉽게 정리하고, 원문과 기준일을 함께 표시합니다.</p>
-      </div>
-      <span id="editorialUpdated" class="editorial-updated">콘텐츠 불러오는 중</span>
-    </div>
-    <section class="editorial-issues-section" aria-labelledby="marketIssuesTitle"><header><div><span>IMPORTANT MARKET NEWS</span><h3 id="marketIssuesTitle">중요 경제·시장 뉴스</h3></div><p>통합 뉴스 중 화제성·투자 영향·보도 확산·출처 신뢰도를 반영해 선별하고, 주식·금리·환율·원자재는 따로 묶었습니다.</p></header><div id="newsList" class="important-news-list"></div></section>
-    <div id="editorialSections" class="editorial-sections" aria-live="polite">
-      <p class="editorial-loading">경제 브리핑을 불러오는 중입니다…</p>
-    </div>
-    <details class="editorial-method">
-      <summary>콘텐츠 작성 기준</summary>
-      <p>뉴스는 사실과 해석을 분리하고, 기업분석은 공시 수치와 위험요인을 함께 적으며, 심층분석은 수도권·서울 핵심지·지방의 영향을 나누어 설명합니다. 모든 수치는 원문과 기준일을 표시하고 투자 권유 문구는 사용하지 않습니다.</p>
-    </details>
   </section>
   <footer class="market-footer"><div id="sourceLinks"></div><p id="marketMethod"></p><p>시차·휴장·공급처 사정으로 기준일이 지표마다 다를 수 있으며, 투자 권유 자료가 아닙니다.</p></footer>
 </main>

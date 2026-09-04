@@ -38,6 +38,7 @@ def test_market_issues_live_inside_editorial_hub_and_dates_are_quiet() -> None:
 
     assert html.count('id="newsList"') == 1
     assert html.index('id="newsList"') > html.index('id="editorialHub"')
+    assert html.index('id="editorialHub"') < html.index('id="marketNav"') < html.index('id="trendCharts"')
     assert "중요 경제·시장 뉴스" in html
     assert "주식·금리·환율·원자재는 따로 묶었습니다" in html
     assert '<time class="editorial-date"' in editorial
