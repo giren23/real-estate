@@ -92,6 +92,8 @@ NOISE_KEYWORDS = ("화재", "사망", "숨져", "대피", "홍수", "실종", "�
 RATE_DECISION_PATTERN = re.compile(r"(?:기준금리|정책금리|연준|한은|한국은행).{0,28}(?:인상|인하|동결|올렸|내렸)|(?:금리).{0,18}(?:인상 결정|인하 결정|동결 결정|올렸다|내렸다)", re.I)
 US_ORIGIN_TERMS = ("미국", "연방준비제도", "연준", "Federal Reserve", "Fed ", "트럼프", "Trump", "백악관", "White House", "월가", "Wall Street", "나스닥", "NASDAQ", "S&P 500", "뉴욕증시")
 GLOBAL_ORIGIN_TERMS = ("중국", "China", "일본", "Japan", "유럽", "European Union", "EU ", "영국", "독일", "프랑스", "러시아", "우크라이나", "중동", "OPEC", "IMF", "세계은행", "World Bank", "글로벌")
+SUMMARY_SCHEMA_VERSION = 2
+STRUCTURED_KEYS = ("summary_title", "article_summary", "core_summary", "six_w_one_h", "key_figures", "fact_status", "uncertainties")
 
 
 def clean_text(value: str) -> str:
@@ -172,6 +174,14 @@ def article_sentences(page: str) -> list[str]:
 
 
 def fetch_article_sentences(url: str) -> tuple[list[str], str]:
+    if "news.google.com" in urlparse(url).netloc.lower():
+        try:
+            from googlenewsdecoder import gnewsdecoder
+            decoded = gnewsdecoder(url, interval=0)
+            if decoded.get("status") and decoded.get("decoded_url"):
+                url = str(decoded["decoded_url"])
+        except Exception:
+            pass
     parsed = urlparse(url)
     if parsed.netloc.lower() == "blog.naver.com":
         match = re.fullmatch(r"/([^/]+)/(\d+)", parsed.path.rstrip("/"))
@@ -381,9 +391,14 @@ def numeric_charts(facts: list[dict[str, str]]) -> list[dict[str, object]]:
 
 def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
     """Migrate archived cards to the single narrative format without network or GPT."""
-    if item.get("article_body_status") == "fetched" and item.get("narrative_paragraphs") and item.get("core_summary"):
+    if item.get("article_body_status") == "fetched" and item.get("narrative_paragraphs") and item.get("core_summary") and all(key in item for key in STRUCTURED_KEYS):
         for obsolete in ("sections", "expert_analysis", "timeline", "fact_ledger", "coverage_status", "coverage_note", "causal_path"):
             item.pop(obsolete, None)
+        return item
+    if item.get("article_body_status") == "fetched" and item.get("narrative_paragraphs"):
+        paragraphs = [str(row) for row in item.get("narrative_paragraphs") or [] if str(row).strip()]
+        item.update(structured_summary_fields(str(item.get("title", "")), str(item.get("publisher", "원문")), str(item.get("date", "")), paragraphs, str(item.get("core_summary") or item.get("summary") or "")))
+        item["summary_schema_version"] = SUMMARY_SCHEMA_VERSION
         return item
     sources = item.get("sources") or []
     prepared: list[dict[str, str]] = []
@@ -425,17 +440,43 @@ def classify_region(publisher: str, hinted: str = "") -> str:
 
 
 def translate_to_korean(texts: list[str]) -> list[str] | None:
-    """Translate only when an explicit DeepL key exists; never invent a Korean summary."""
+    """Translate with DeepL, then a keyless fallback; never invent missing content."""
     key = os.environ.get("DEEPL_API_KEY", "").strip()
-    if not key or not texts:
+    if not texts:
         return None
-    endpoint = os.environ.get("DEEPL_API_URL", "").strip() or ("https://api-free.deepl.com/v2/translate" if key.endswith(":fx") else "https://api.deepl.com/v2/translate")
-    payload = json.dumps({"text": texts, "target_lang": "KO"}, ensure_ascii=False).encode("utf-8")
-    request = Request(endpoint, data=payload, headers={"User-Agent": USER_AGENT, "Authorization": f"DeepL-Auth-Key {key}", "Content-Type": "application/json", "Accept": "application/json"}, method="POST")
-    with urlopen(request, timeout=45) as response:
-        rows = json.loads(response.read().decode("utf-8")).get("translations", [])
-    translated = [clean_text(row.get("text", "")) for row in rows]
-    return translated if len(translated) == len(texts) and all(translated) else None
+    if key:
+        try:
+            endpoint = os.environ.get("DEEPL_API_URL", "").strip() or ("https://api-free.deepl.com/v2/translate" if key.endswith(":fx") else "https://api.deepl.com/v2/translate")
+            payload = json.dumps({"text": texts, "target_lang": "KO"}, ensure_ascii=False).encode("utf-8")
+            request = Request(endpoint, data=payload, headers={"User-Agent": USER_AGENT, "Authorization": f"DeepL-Auth-Key {key}", "Content-Type": "application/json", "Accept": "application/json"}, method="POST")
+            with urlopen(request, timeout=45) as response:
+                rows = json.loads(response.read().decode("utf-8")).get("translations", [])
+            translated = [clean_text(row.get("text", "")) for row in rows]
+            if len(translated) == len(texts) and all(translated):
+                return translated
+        except Exception:
+            pass
+    try:
+        from deep_translator import GoogleTranslator
+        translated = [clean_text(GoogleTranslator(source="auto", target="ko").translate(text[:4500])) for text in texts]
+        return translated if len(translated) == len(texts) and all(translated) else None
+    except Exception:
+        return None
+
+
+def translate_summary_fields(fields: dict[str, object]) -> dict[str, object]:
+    paragraphs = [str(row) for row in fields.get("article_summary") or fields.get("narrative_paragraphs") or []]
+    texts = [str(fields.get("summary_title") or ""), *paragraphs, str(fields.get("core_summary") or "")]
+    translated = translate_to_korean(texts)
+    if not translated:
+        fields["translation_status"] = "translation_unavailable"
+        return fields
+    title, core = translated[0], translated[-1]
+    korean_paragraphs = translated[1:-1]
+    rebuilt = structured_summary_fields(title, "번역 원문", "", korean_paragraphs, core)
+    fields.update(rebuilt)
+    fields.update({"summary_title": title, "article_summary": korean_paragraphs, "narrative_paragraphs": korean_paragraphs, "core_summary": core, "translation_status": "translated"})
+    return fields
 
 
 VIDEO_TITLE_PATTERN = re.compile(r"(?:\[영상\]|\[동영상\]|\bvideo\b|\bwatch\b)", re.I)
@@ -577,6 +618,13 @@ def enrich_video_news(items: list[dict[str, object]], page_budget: int = 6) -> N
             continue
         try:
             item["video_transcript"] = {"status": "available", **fetch_youtube_captions(video_url)}
+            transcript = item["video_transcript"]
+            translated_paragraphs = [str(row.get("translation", "")) for row in transcript.get("excerpts", []) if row.get("translation")]
+            if translated_paragraphs:
+                fields = structured_summary_fields(str(item.get("title", "")), str(item.get("publisher", "영상 원문")), str(item.get("date", "")), translated_paragraphs, str(transcript.get("summary", "")))
+                fields.update({"narrative_paragraphs": translated_paragraphs, "summary_basis": "공개 동영상 자막 번역", "summary_schema_version": SUMMARY_SCHEMA_VERSION})
+                item.update(fields)
+                item["summary"] = str(fields.get("core_summary", ""))[:900]
         except Exception as error:
             item["video_transcript"] = {"status": "captions_unavailable", "source_url": video_url, "message": str(error)[:180]}
 
@@ -884,9 +932,13 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
             str(item.get("title", "")), str(source.get("publisher") or item.get("publisher") or "원문"),
             str(source.get("published_at") or item.get("date") or ""), sentences,
         )
+        if item.get("region") in {"us", "global"}:
+            fields = translate_summary_fields(fields)
         fields["article_source_url"] = final_url
         fields["article_body_checked_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
         fields["article_body_attempts"] = int(item.get("article_body_attempts") or 0) + 1
+        fields["summary_schema_version"] = SUMMARY_SCHEMA_VERSION
+        fields["next_body_retry_at"] = ""
         return item, fields
     return item, {
         "article_body_status": "unavailable",
@@ -894,12 +946,23 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         "article_body_checked_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "summary_basis": "제목·RSS 공개요약",
         "article_body_attempts": int(item.get("article_body_attempts") or 0) + 1,
+        "summary_schema_version": SUMMARY_SCHEMA_VERSION,
+        "next_body_retry_at": (date.today() + timedelta(days=7)).isoformat(),
     }
+
+
+def article_retry_due(item: dict[str, object]) -> bool:
+    if item.get("article_body_status") == "fetched":
+        return False
+    if int(item.get("summary_schema_version") or 0) < SUMMARY_SCHEMA_VERSION:
+        return True
+    retry_at = str(item.get("next_body_retry_at") or "")
+    return bool(retry_at and retry_at <= date.today().isoformat())
 
 
 def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = None, workers: int = 6) -> None:
     """Fetch representative public bodies concurrently, then replace feed-only summaries."""
-    pending = [item for item in items if item.get("article_body_status") != "fetched" and int(item.get("article_body_attempts") or 0) < 3]
+    pending = [item for item in items if article_retry_due(item)]
     if limit is not None:
         pending = pending[: max(0, limit)]
     if not pending:
@@ -930,7 +993,7 @@ def enrich_archived_bodies(limit: int) -> int:
         payload = json.loads(path.read_text(encoding="utf-8"))
         payloads[path] = payload
         for item in payload.get("items", []):
-            if item.get("article_body_status") != "fetched" and int(item.get("article_body_attempts") or 0) < 3:
+            if article_retry_due(item):
                 targets.append((path, payload, item))
                 if len(targets) >= limit:
                     break
@@ -1039,19 +1102,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="경제·금융·산업·부동산 뉴스 RSS를 날짜별로 보관합니다.")
     parser.add_argument("--backfill-days", type=int, default=1)
     parser.add_argument("--limit-per-day", type=int, default=24)
-    parser.add_argument("--archive-enrich-limit", type=int, default=24, help="한 실행에서 과거 원문 본문을 다시 처리할 최대 기사 수")
+    parser.add_argument("--archive-enrich-limit", type=int, default=60, help="한 실행에서 과거 원문 본문을 다시 처리할 최대 기사 수")
+    parser.add_argument("--archive-only", action="store_true", help="새 뉴스 수집 없이 과거 기사 구조화만 실행")
     args = parser.parse_args()
     days = max(1, min(args.backfill_days, 365))
     limit = max(6, min(args.limit_per_day, 60))
     archive_limit = max(0, min(args.archive_enrich_limit, 120))
     NEWS_DIR.mkdir(parents=True, exist_ok=True)
     today = date.today()
-    for offset in range(days - 1, -1, -1):
-        target = today - timedelta(days=offset)
-        items = collect_day(target, limit)
-        if items:
-            write_day(target, items)
-            print(f"{target}: {len(items)}건 저장")
+    if not args.archive_only:
+        for offset in range(days - 1, -1, -1):
+            target = today - timedelta(days=offset)
+            items = collect_day(target, limit)
+            if items:
+                write_day(target, items)
+                print(f"{target}: {len(items)}건 저장")
     enriched = enrich_archived_bodies(archive_limit)
     if enriched:
         print(f"과거 기사 원문 본문 재처리: {enriched}건")

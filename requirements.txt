@@ -6,3 +6,5 @@ tenacity>=9,<10
 pytest>=8,<9
 fastapi>=0.116,<1
 uvicorn[standard]>=0.35,<1
+googlenewsdecoder==0.1.7
+deep-translator==1.11.4

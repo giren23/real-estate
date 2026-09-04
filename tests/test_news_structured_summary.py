@@ -37,3 +37,26 @@ def test_browser_renders_complete_numbers_as_plain_bold_not_links() -> None:
     assert 'class="news-number"' in script
     assert "!/\\d/.test(row.term)" in script
     assert "조원|억원|만원|원|달러" in script
+
+
+def test_old_fetched_article_is_upgraded_without_network() -> None:
+    item = {
+        "title": "주택 공급 계획", "publisher": "연합뉴스", "date": "2026-09-04",
+        "article_body_status": "fetched", "narrative_paragraphs": ["정부가 2026년 9월 4일 주택 1만호 공급 계획을 발표함.", "인허가 절차를 거쳐 추진할 계획임.", "구체적인 착공일은 확정되지 않음."],
+        "core_summary": "정부가 주택 1만호 공급 계획을 발표함.",
+    }
+    result = MODULE.upgrade_existing_item(item)
+    assert result["summary_schema_version"] == MODULE.SUMMARY_SCHEMA_VERSION
+    assert all(key in result for key in MODULE.STRUCTURED_KEYS)
+
+
+def test_failed_old_article_gets_one_new_schema_retry_then_cooldown() -> None:
+    old = {"article_body_status": "unavailable", "article_body_attempts": 3}
+    assert MODULE.article_retry_due(old)
+    updated = {**old, "summary_schema_version": MODULE.SUMMARY_SCHEMA_VERSION, "next_body_retry_at": "2999-01-01"}
+    assert not MODULE.article_retry_due(updated)
+
+
+def test_dialog_backdrop_does_not_blur_or_dim_article_heavily() -> None:
+    css = (ROOT / "web" / "style.css").read_text(encoding="utf-8")
+    assert ".editorial-dialog::backdrop{background:rgba(27,22,34,.28);backdrop-filter:none}" in css
