@@ -103,14 +103,17 @@
   }
 
   function emphasizedText(value, keywords) {
-    const rows = (keywords || []).filter(row=>row?.term).sort((a,b)=>b.term.length-a.term.length);
-    if (!rows.length) return esc(value);
-    const pattern = new RegExp(`(${rows.map(row=>row.term.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")})`,"g");
+    const rows = (keywords || []).filter(row=>row?.term && !/\d/.test(row.term) && String(row.term).trim().length >= 2).sort((a,b)=>b.term.length-a.term.length);
+    const numeric = String.raw`(?:[$€£¥]\s*)?\d[\d,.]*(?:\s*(?:조|억|만)\s*\d[\d,.]*)*\s*(?:조원|억원|만원|원|달러|엔|유로|%p|%|bp|bps|포인트|년|개월|월|일|분기|건|척|호|명|대|배럴)?`;
+    const parts = rows.map(row=>row.term.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"));
+    const pattern = new RegExp(`(${[...parts,numeric].join("|")})`,"g");
     return String(value || "").split(pattern).map(part=>{
       const row = rows.find(item=>item.term === part);
-      if (!row) return esc(part);
-      const href = `${WIKI_SEARCH}${encodeURIComponent(row.wiki_query || row.query || row.term)}`;
-      return `<a class="news-keyword ${row.importance === "max" ? "max" : "high"}" href="${href}" target="_blank" rel="noopener noreferrer">${esc(part)}</a>`;
+      if (row) {
+        const href = `${WIKI_SEARCH}${encodeURIComponent(row.wiki_query || row.query || row.term)}`;
+        return `<a class="news-keyword ${row.importance === "max" ? "max" : "high"}" href="${href}" target="_blank" rel="noopener noreferrer">${esc(part)}</a>`;
+      }
+      return /^\s*(?:[$€£¥]\s*)?\d/.test(part) ? `<strong class="news-number">${esc(part)}</strong>` : esc(part);
     }).join("");
   }
 

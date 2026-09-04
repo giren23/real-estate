@@ -238,6 +238,10 @@ def sixw_summary_from_sentences(title: str, publisher: str, published_at: str, s
     core = " ".join(core_candidates)[:900]
     facts_source = [{"title": title, "description": narrative, "publisher": publisher, "published_at": published_at, "published_time": published_at}]
     fields = narrative_fields(facts_source, core)
+    paragraph_count = max(3, min(7, (len(chosen) + 2) // 3))
+    chunk_size = max(1, (len(chosen) + paragraph_count - 1) // paragraph_count)
+    article_summary = [" ".join(chosen[index:index + chunk_size]) for index in range(0, len(chosen), chunk_size)][:7]
+    fields.update(structured_summary_fields(title, publisher, published_at, article_summary, core))
     fields.update({
         "narrative_paragraphs": [narrative],
         "core_summary": core,
@@ -272,6 +276,49 @@ def extract_number_facts(sources: list[dict[str, str]]) -> list[dict[str, str]]:
     return facts
 
 
+def structured_summary_fields(title: str, publisher: str, published_at: str, paragraphs: list[str], core: str) -> dict[str, object]:
+    """Create the stable, LLM-free JSON contract used by every new article."""
+    paragraphs = [clean_text(row) for row in paragraphs if clean_text(row)][:7]
+    if len(paragraphs) < 3:
+        paragraphs.append("공개된 기사 범위에서 확인되는 배경·실행 방법·적용 대상은 원문 링크에서 추가 확인이 필요함.")
+    if len(paragraphs) < 3:
+        paragraphs.append("공개 원문에서 확정되지 않은 수치·일정·시장 영향은 임의로 추정하지 않음.")
+    full_text = " ".join(paragraphs)
+    sentence_rows = [row.strip() for paragraph in paragraphs for row in SENTENCE_PATTERN.split(paragraph) if row.strip()]
+    first = sentence_rows[0] if sentence_rows else core
+    times = list(dict.fromkeys(match.group(0) for match in TIME_PATTERN.finditer(full_text)))[:8]
+    locations = list(dict.fromkeys(re.findall(r"(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[가-힣\s]{0,18}", full_text)))[:5]
+    causes = [row for row in sentence_rows if CAUSE_PATTERN.search(row)][:3]
+    methods = [row for row in sentence_rows if METHOD_PATTERN.search(row)][:3]
+    number_sources = [{"title": title, "description": full_text, "publisher": publisher, "published_at": published_at, "published_time": published_at}]
+    key_figures = [{"value": row["value"], "meaning": row["context"][:240], "basis": "기사 원문", "period": row["published_time"] or published_at} for row in extract_number_facts(number_sources)[:30]]
+    status_rules = (("확정", "확정"), ("시행", "시행"), ("의결", "의결"), ("공포", "공포"), ("건의", "건의"), ("검토", "검토"), ("계획", "계획"), ("전망", "전망"), ("주장", "주장"))
+    fact_status = []
+    for row in sentence_rows:
+        status = next((label for token, label in status_rules if token in row), "보도된 사실")
+        fact_status.append({"statement": row[:500], "status": status})
+        if len(fact_status) >= 12:
+            break
+    uncertain = [row for row in sentence_rows if re.search(r"미정|미확정|검토|예정|계획|전망|가능성|추정|주장|필요", row)][:5]
+    return {
+        "summary_title": re.sub(r"\s*[-|·:]\s*[^-|·:]{1,30}$", "", clean_text(title)).strip() or clean_text(title),
+        "article_summary": paragraphs,
+        "core_summary": core,
+        "six_w_one_h": {
+            "who": [publisher] if publisher else [],
+            "when": times or ([published_at] if published_at else []),
+            "where": locations,
+            "what": [first[:500]] if first else [],
+            "why": causes,
+            "how": methods,
+            "result": [sentence_rows[-1][:500]] if sentence_rows else [],
+        },
+        "key_figures": key_figures,
+        "fact_status": fact_status,
+        "uncertainties": uncertain or ["기사 원문에서 별도로 확인할 중대한 불확실성 없음"],
+    }
+
+
 def narrative_fields(related: list[dict[str, str]], fallback: str) -> dict[str, object]:
     """Create a deterministic 6W1H evidence flow without an LLM."""
     ordered = sorted(related, key=lambda item: item.get("published_time") or item.get("published_at") or "")
@@ -296,10 +343,10 @@ def narrative_fields(related: list[dict[str, str]], fallback: str) -> dict[str, 
     for term in HIGH_HIGHLIGHT_TERMS:
         if term.lower() in full_text.lower() and not any(row["term"] == term for row in keywords):
             keywords.append({"term": term, "importance": "high", "wiki_query": term})
-    for value in dict.fromkeys(match.group(0).strip() for match in NUMBER_PATTERN.finditer(full_text)):
-        if value and re.search(r"\d", value):
-            keywords.append({"term": value, "importance": "max", "wiki_query": value})
-    return {"narrative_paragraphs": paragraphs, "core_summary": fallback, "highlight_keywords": keywords}
+    primary = ordered[0] if ordered else {}
+    structured = structured_summary_fields(str(primary.get("title") or fallback), str(primary.get("publisher") or ""), str(primary.get("published_at") or ""), paragraphs, fallback)
+    structured.update({"narrative_paragraphs": paragraphs, "core_summary": fallback, "highlight_keywords": keywords})
+    return structured
 
 
 def classify_topic_region(text: str, sources: list[dict[str, str]] | None = None) -> str:

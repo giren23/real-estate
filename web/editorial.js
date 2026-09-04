@@ -127,7 +127,7 @@
     }),
     fetch("content/news/index.json?v=5", { cache: "no-store" }).then(response => response.ok ? response.json() : null).catch(() => null),
     fetch("content/analysis/index.json?v=1", { cache: "no-store" }).then(response => response.ok ? response.json() : null).catch(() => null),
-    fetch("content/news/domestic-overrides.json?v=1", { cache: "no-store" }).then(response => response.ok ? response.json() : {items:[]}).catch(() => ({items:[]}))
+    fetch("content/news/domestic-overrides.json?v=2", { cache: "no-store" }).then(response => response.ok ? response.json() : {items:[]}).catch(() => ({items:[]}))
   ])
     .then(([data, news, automatic, overrides]) => {
       const overrideById = new Map((overrides.items || []).map(item => [item.id,item]));

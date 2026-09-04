@@ -136,7 +136,7 @@ def test_feed_item_preserves_every_number_with_context_and_time() -> None:
     assert "timeline" not in item and "coverage_note" not in item and "sections" not in item
     assert item["narrative_paragraphs"]
     assert item["core_summary"]
-    assert any(row["importance"] == "max" for row in item["highlight_keywords"])
+    assert all(not any(character.isdigit() for character in row["term"]) for row in item["highlight_keywords"])
     assert item["news_charts"]
 
 

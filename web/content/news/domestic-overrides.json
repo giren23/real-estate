@@ -25,6 +25,7 @@
       "fact_status": [{"statement":"코스피와 코스닥 종가 및 투자자별 순매매가 집계됨","status":"확정 집계"},{"statement":"미국 8월 고용보고서가 당일 저녁 공개될 예정이었음","status":"발표 예정"}],
       "uncertainties": ["기사 작성 시점에는 미국 8월 고용보고서가 발표 전이므로 이후 시장 반응은 이 기사에 포함되지 않음"],
       "summary_basis": "공개 원문 본문 직접 검증",
+      "highlight_keywords": [{"term":"연방준비제도","importance":"high","wiki_query":"연방준비제도"},{"term":"코스피","importance":"high","wiki_query":"코스피"},{"term":"코스닥","importance":"high","wiki_query":"코스닥"},{"term":"삼성전자","importance":"high","wiki_query":"삼성전자"},{"term":"SK하이닉스","importance":"high","wiki_query":"SK하이닉스"}],
       "sources": [{"publisher":"연합뉴스","title":"美국채금리 안정에 외인·기관 복귀…코스피 1.6% 상승 마감(종합)","url":"https://www.yna.co.kr/view/AKR20260904131300008","published_at":"2026-09-04","region":"domestic"}]
     },
     {
@@ -43,6 +44,7 @@
       "fact_status": [{"statement":"GIST-Arm 스쿨 개교 기념식을 개최함","status":"시행"},{"statement":"2030년까지 1,400명을 양성함","status":"계획"}],
       "uncertainties": ["연도별 교육 인원, 예산, 취업·창업 연계 성과는 기사에 구체적으로 제시되지 않음"],
       "summary_basis": "공개 원문·산업통상부 공식자료 직접 검증",
+      "highlight_keywords": [{"term":"산업통상부","importance":"high","wiki_query":"산업통상자원부"},{"term":"광주과학기술원","importance":"high","wiki_query":"광주과학기술원"},{"term":"Arm","importance":"high","wiki_query":"Arm Holdings"},{"term":"반도체","importance":"high","wiki_query":"반도체"}],
       "sources": [{"publisher":"전자신문","title":"'GIST-Arm 스쿨' 개교…전남광주 '반도체 핵심인재 1400명' 양성 본격화","url":"https://www.etnews.com/20260904000364","published_at":"2026-09-04","region":"domestic"},{"publisher":"대한민국 정책브리핑·산업통상부","title":"남부권 반도체 설계인재 양성 거점 'GIST-Arm 스쿨' 개교","url":"https://www.korea.kr/news/policyNewsView.do?newsId=148971251","published_at":"2026-09-04","region":"domestic"}]
     },
     {
@@ -61,6 +63,7 @@
       "fact_status": [{"statement":"가족 재산 31억7,593만원을 신고함","status":"국회 제출자료"},{"statement":"과천 아파트에서 약 4개월 거주함","status":"확인된 거주 이력"},{"statement":"법 위반 또는 투기 목적이 있었음","status":"기사로 확정되지 않음"}],
       "uncertainties": ["비거주 기간에 관한 후보자의 상세 해명과 인사청문 결과는 기사 작성 시점에 확정되지 않음"],
       "summary_basis": "공개 원문 본문 직접 검증",
+      "highlight_keywords": [{"term":"기획재정부","importance":"high","wiki_query":"기획재정부"},{"term":"국제부흥개발은행","importance":"high","wiki_query":"국제부흥개발은행"}],
       "sources": [{"publisher":"연합뉴스","title":"이형일 후보자, 17년 보유한 아파트서 거주는 총 4개월(종합)","url":"https://www.yna.co.kr/view/AKR20260904068451001","published_at":"2026-09-04","region":"domestic"}]
     },
     {
@@ -79,6 +82,7 @@
       "fact_status": [{"statement":"아파트 매입 및 차입 내역이 국회 제출자료 분석에서 제시됨","status":"자료 확인"},{"statement":"정부 정책과 배치되는 영끌 매수임","status":"야당 주장"},{"statement":"차입에 위법성이 있음","status":"기사로 확정되지 않음"}],
       "uncertainties": ["후보자의 상세 자금출처 소명, 세무 검증 및 인사청문 결과는 기사 작성 시점에 확정되지 않음"],
       "summary_basis": "공개 원문·국회 제출자료 인용 보도 직접 검증",
+      "highlight_keywords": [{"term":"국토교통부","importance":"high","wiki_query":"국토교통부"},{"term":"국민의힘","importance":"high","wiki_query":"국민의힘"}],
       "sources": [{"publisher":"뉴시스","title":"국힘 ‘홍지선 국토장관 후보자, 10억 아파트에 5.3억 빚내 영끌 매수’","url":"https://mobile.newsis.com/view/NISX20260904_0003777180","published_at":"2026-09-04","region":"domestic"}]
     },
     {
@@ -96,6 +100,7 @@
       "fact_status": [{"statement":"반도체공장 화재가 발생해 진화 작업이 진행됨","status":"발생·진행 중"},{"statement":"주민 대상 재난문자가 발송됨","status":"시행"},{"statement":"화재 원인과 피해 규모가 확정됨","status":"미확인"}],
       "uncertainties": ["공장명, 발화 원인, 완진 시각, 인명·재산 피해와 생산 차질 규모가 기사 작성 시점에 확인되지 않음"],
       "summary_basis": "공개 원문 본문 직접 검증",
+      "highlight_keywords": [{"term":"고령군","importance":"high","wiki_query":"고령군"},{"term":"반도체","importance":"high","wiki_query":"반도체"}],
       "sources": [{"publisher":"MBC 뉴스","title":"경북 고령군 반도체공장서 불‥소방 당국 진화 중","url":"https://imnews.imbc.com/news/2026/society/article/6849730_36918.html","published_at":"2026-09-04","region":"domestic"}]
     }
   ]
