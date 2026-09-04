@@ -29,6 +29,24 @@
   </div>
 </header>
 
+<aside id="mainServerNotice" class="main-server-notice checking" aria-live="polite">
+  <div class="main-server-status-row">
+    <span class="main-server-dot" aria-hidden="true"></span>
+    <span>메인 서버(로컬 PC)</span>
+    <strong id="mainServerStatus">상태 확인 중</strong>
+  </div>
+  <details>
+    <summary>서버가 꺼져 있을 때 제한되는 기능</summary>
+    <ol>
+      <li>모의투자의 실시간 종목 시세 API</li>
+      <li>KIS 모의투자 API 연결</li>
+      <li>일부 지도·주소 검색·공시가격 즉시 조회</li>
+      <li>공개 데이터에 아직 저장되지 않은 실거래 상세 조회</li>
+    </ol>
+    <p>저장된 실거래 자료와 기사·요약·차트는 서버가 꺼져 있어도 이용할 수 있습니다.</p>
+  </details>
+</aside>
+
 <section class="search-card">
   <div class="region-picker" aria-label="지역 선택">
     <nav id="regionBreadcrumb" class="region-breadcrumb" aria-label="선택한 지역"></nav>
@@ -92,6 +110,6 @@
 </section>
 
 </main>
-<script src="app.js?v=56"></script>
+<script src="app.js?v=57"></script>
 </body>
 </html>

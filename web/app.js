@@ -3,6 +3,24 @@ let localApi = false, localMeta = {};
 const minorVersion = location.hostname.endsWith(".github.io") || new URLSearchParams(location.search).get("minor") === "1";
 const minorVersionBadge = document.getElementById("minorVersionBadge");
 if(minorVersionBadge) minorVersionBadge.hidden = !minorVersion;
+const mainServerNotice = document.getElementById("mainServerNotice");
+const mainServerStatus = document.getElementById("mainServerStatus");
+async function checkMainServerStatus(){
+  if(!mainServerNotice||!mainServerStatus)return;
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),3500);
+  try{
+    const response=await fetch(`/api/meta?server_status=${Date.now()}`,{cache:"no-store",signal:controller.signal});
+    const fromLocal=response.headers.get("x-real-estate-source")==="local-pc";
+    const directLocal=["localhost","127.0.0.1"].includes(location.hostname);
+    if(!response.ok||(!fromLocal&&!directLocal))throw new Error("local server unavailable");
+    mainServerNotice.className="main-server-notice online";
+    mainServerStatus.textContent="켜짐";
+  }catch(_error){
+    mainServerNotice.className="main-server-notice offline";
+    mainServerStatus.textContent="꺼짐 · 연결 불가";
+  }finally{clearTimeout(timeout);}
+}
+checkMainServerStatus();
 let economicContext = {exchange_rates:[],base_rates:[],us_policy_rates:[],japan_policy_rates:[],money_supply:[],metal_prices:[],bond_yields:[],oil_prices:[],market_indices:[],fear_greed:[],policies:[]};
 const markers = new Map(), charts = new Map();
 const groupByKey = new Map(), groupsByLawd = new Map(), groupsByMapName = new Map();

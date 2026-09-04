@@ -213,3 +213,15 @@ def test_tax_ui_requests_official_price_after_complex_and_area_selection() -> No
     script = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
     assert "/api/official-price?" in script
     assert "같은 전용면적 전체의 중앙값" in script
+
+
+def test_homepage_shows_local_server_availability_and_limitations() -> None:
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    assert 'id="mainServerStatus"' in html
+    assert "모의투자의 실시간 종목 시세 API" in html
+    assert "KIS 모의투자 API 연결" in html
+    assert "일부 지도·주소 검색·공시가격 즉시 조회" in html
+    assert "공개 데이터에 아직 저장되지 않은 실거래 상세 조회" in html
+    assert 'response.headers.get("x-real-estate-source")==="local-pc"' in script
+    assert "꺼짐 · 연결 불가" in script
