@@ -12,6 +12,14 @@
       return "#";
     }
   };
+  const isAggregatorUrl = value => {
+    try {
+      const host = new URL(String(value || ""), location.origin).hostname.toLowerCase();
+      return ["news.google.com", "google.com", "www.google.com", "bing.com", "www.bing.com"].includes(host);
+    } catch (_error) {
+      return true;
+    }
+  };
   const number = value => {
     const match = String(value ?? "").replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
     return match ? Math.abs(Number(match[0])) : 0;
@@ -66,7 +74,12 @@
   function sourceLedgerHtml(sources) {
     if (!Array.isArray(sources) || !sources.length) return "";
     const labels={domestic:"국내",us:"미국",global:"글로벌"};
-    return `<section class="report-sources"><h3>공식 원자료·관련 보도</h3><p>주요 경제·시장 뉴스 원문과 공시·정부통계·거래소 자료를 구분해 제공합니다.</p><ol class="report-source-links">${sources.map((source, index) => `<li><a href="${safe(source.url)}" target="_blank" rel="noopener noreferrer"><span>${index === 0 ? "대표 근거 · " : ""}${esc(source.source_type||labels[source.region]||"언론")} · ${esc(source.publisher || "원문")} · ${esc(source.published_at || "-")}</span><b>${esc(source.title_ko || source.document || source.title || "원문 보기")}</b><em>원문 보기 ↗</em></a>${source.summary_ko?`<p class="source-translation"><b>한국어 번역 요약</b>${esc(source.summary_ko)}</p>`:source.region&&source.region!=="domestic"?'<p class="source-translation pending">번역 API가 연결되면 검증된 한국어 요약이 이 위치에 자동 표시됩니다.</p>':""}</li>`).join("")}</ol></section>`;
+    return `<section class="report-sources"><h3>공식 원자료·관련 보도</h3><p>주요 경제·시장 뉴스 원문과 공시·정부통계·거래소 자료를 구분해 제공합니다.</p><ol class="report-source-links">${sources.map((source, index) => {
+      const unresolved = source.link_status === "unresolved_aggregator" || isAggregatorUrl(source.url) || safe(source.url) === "#";
+      const label = `<span>${index === 0 ? "대표 근거 · " : ""}${esc(source.source_type||labels[source.region]||"언론")} · ${esc(source.publisher || "원문")} · ${esc(source.published_at || "-")}</span><b>${esc(source.title_ko || source.document || source.title || "원문")}</b>`;
+      const link = unresolved ? `<div class="source-link-unresolved">${label}<em>원문 주소 확인 중</em></div>` : `<a href="${safe(source.url)}" target="_blank" rel="noopener noreferrer">${label}<em>원문 보기 ↗</em></a>`;
+      return `<li>${link}${source.summary_ko?`<p class="source-translation"><b>한국어 번역 요약</b>${esc(source.summary_ko)}</p>`:source.region&&source.region!=="domestic"?'<p class="source-translation pending">번역 API가 연결되면 검증된 한국어 요약이 이 위치에 자동 표시됩니다.</p>':""}</li>`;
+    }).join("")}</ol></section>`;
   }
 
   const WIKI_SEARCH = "https://namu.wiki/Search?q=";
@@ -121,7 +134,8 @@
     const narrative = newsNarrative(item);
     const summaryHeading = narrative.title === "기사 요약" ? "기사 요약" : `${narrative.title} 요약`;
     const body = narrative.paragraphs.map(paragraph=>`<p>${emphasizedText(paragraph,narrative.keywords)}</p>`).join("");
-    const sources = narrative.sourceUrl ? (item.sources || []).map((source,index)=>index === 0 ? {...source,url:narrative.sourceUrl} : source) : item.sources;
+    const verifiedSourceUrl = narrative.sourceUrl || item.article_source_url;
+    const sources = verifiedSourceUrl ? (item.sources || []).map((source,index)=>index === 0 ? {...source,url:verifiedSourceUrl,link_status:"verified_direct"} : source) : item.sources;
     const charts = Array.isArray(item.news_charts) && item.news_charts.length ? `<section class="news-evidence-charts"><h3>관련 통계·비교</h3><div class="report-chart-grid">${item.news_charts.map(chartHtml).join("")}</div></section>` : "";
     const uncertainties = Array.isArray(item.uncertainties) && item.uncertainties.length ? item.uncertainties : ["기사 원문에서 별도로 확인할 중대한 불확실성 없음"];
     const checks = `<section class="news-checks"><h3>확인이 필요한 사항</h3><ul>${uncertainties.map(value=>`<li>${esc(value)}</li>`).join("")}</ul></section>`;

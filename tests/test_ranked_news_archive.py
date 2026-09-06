@@ -24,6 +24,13 @@ from scripts.update_economic_news import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_news_report_prefers_verified_direct_link_and_hides_aggregator_link() -> None:
+    script = (ROOT / "web" / "report.js").read_text(encoding="utf-8")
+    assert "narrative.sourceUrl || item.article_source_url" in script
+    assert "원문 주소 확인 중" in script
+    assert 'source.link_status === "unresolved_aggregator"' in script
+
+
 def sample(title: str, category: str, reports: int = 2, sources: int = 2) -> dict:
     return {
         "title": title,

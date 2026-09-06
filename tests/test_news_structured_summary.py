@@ -127,6 +127,26 @@ def test_known_canonical_article_bypasses_google_news_retry_cooldown() -> None:
     assert MODULE.article_retry_due(item)
 
 
+def test_known_yna_article_has_direct_canonical_source() -> None:
+    item = {"title": '트럼프 "美-캐나다 달러 불균형"…관세 이어 환율 건드리나', "date": "2026-09-07"}
+    source = MODULE.canonical_article_source(item)
+    assert source
+    assert source["publisher"] == "연합뉴스"
+    assert source["url"] == "https://www.yna.co.kr/amp/view/AKR20260907001200071"
+
+
+def test_resolved_direct_url_replaces_visible_google_source() -> None:
+    item = {
+        "title": "기사", "publisher": "연합뉴스",
+        "article_source_url": "https://www.yna.co.kr/view/example",
+        "sources": [{"url": "https://news.google.com/rss/articles/token", "publisher": "연합뉴스"}],
+    }
+    MODULE.promote_resolved_source(item)
+    assert item["sources"][0]["url"] == item["article_source_url"]
+    assert item["sources"][0]["resolved_from_url"].startswith("https://news.google.com/")
+    assert item["sources"][0]["link_status"] == "verified_direct"
+
+
 def test_feed_only_article_is_kept_for_statistics_not_detail_publication() -> None:
     result = MODULE.upgrade_existing_item({
         "title": "제목뿐인 기사",

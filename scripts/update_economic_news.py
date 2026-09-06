@@ -100,11 +100,50 @@ CANONICAL_ARTICLE_OVERRIDES = {
         "publisher": "서울신문",
         "url": "https://www.seoul.co.kr/news/economy/2026/09/06/20260906500069",
     },
+    "美-캐나다달러불균형": {
+        "publisher": "연합뉴스",
+        "url": "https://www.yna.co.kr/amp/view/AKR20260907001200071",
+    },
 }
+
+AGGREGATOR_HOSTS = {"news.google.com", "www.google.com", "google.com", "www.bing.com", "bing.com"}
 
 
 def clean_text(value: str) -> str:
     return SPACE_PATTERN.sub(" ", html.unescape(TAG_PATTERN.sub(" ", value or ""))).strip()
+
+
+def is_aggregator_url(value: str) -> bool:
+    try:
+        host = urlparse(str(value or "")).hostname or ""
+    except ValueError:
+        return True
+    return host.lower() in AGGREGATOR_HOSTS
+
+
+def promote_resolved_source(item: dict[str, object]) -> None:
+    """Make a previously resolved publisher URL the visible primary source."""
+    direct = str(item.get("article_source_url") or "").strip()
+    sources = [dict(source) for source in (item.get("sources") or [])]
+    if direct and not is_aggregator_url(direct):
+        matched = next((i for i, source in enumerate(sources) if source.get("url") == direct), None)
+        if matched is not None:
+            source = sources.pop(matched)
+        elif sources:
+            source = sources.pop(0)
+            old_url = str(source.get("url") or "")
+            if old_url and old_url != direct:
+                source["resolved_from_url"] = old_url
+        else:
+            source = {"publisher": item.get("publisher", "원문"), "title": item.get("title", "")}
+        source.update({"url": direct, "link_status": "verified_direct", "source_role": "canonical_article"})
+        sources.insert(0, source)
+    for source in sources:
+        if is_aggregator_url(str(source.get("url") or "")):
+            source["link_status"] = "unresolved_aggregator"
+    if sources:
+        item["sources"] = sources
+        item["source_count"] = len(sources)
 
 
 def canonical_article_source(item: dict[str, object]) -> dict[str, str] | None:
@@ -483,6 +522,7 @@ def has_verified_legacy_summary(item: dict[str, object]) -> bool:
 
 def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
     """Migrate archived cards to the single narrative format without network or GPT."""
+    promote_resolved_source(item)
     if item.get("article_body_status") == "fetched":
         item["article_body_status"] = "full_text"
     if not item.get("article_body_status") and has_verified_legacy_summary(item):
@@ -1017,6 +1057,7 @@ def translate_foreign_sources(items: list[dict[str, object]]) -> None:
 
 
 def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dict[str, object]]:
+    promote_resolved_source(item)
     sources = list(item.get("sources") or [])
     sources.sort(key=lambda source: ("news.google.com" in str(source.get("url", "")), -representative_score(source)[0]))
     canonical = canonical_article_source(item)
@@ -1042,13 +1083,20 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         if len(sentences) < 3 or len(" ".join(sentences)) < 350:
             last_error = "공개 본문 분량 부족"
             continue
+        if final_url and not is_aggregator_url(final_url):
+            original_url = str(source.get("url") or "")
+            if original_url and original_url != final_url:
+                source["resolved_from_url"] = original_url
+            source.update({"url": final_url, "link_status": "verified_direct", "source_role": "canonical_article"})
+            item["sources"] = sources
+            item["source_count"] = len(sources)
         fields = sixw_summary_from_sentences(
             str(item.get("title", "")), str(source.get("publisher") or item.get("publisher") or "원문"),
             str(source.get("published_at") or item.get("date") or ""), sentences,
         )
         if article_requires_korean_translation(source, sentences):
             fields = translate_summary_fields(fields)
-        fields["article_source_url"] = final_url
+        fields["article_source_url"] = final_url if final_url and not is_aggregator_url(final_url) else ""
         fields["title"] = str(source.get("title_ko") or source.get("title") or item.get("title") or "")[:78]
         fields["publisher"] = str(source.get("publisher") or item.get("publisher") or "원문")[:40]
         fields["primary_source_role"] = "full_text"
@@ -1068,6 +1116,10 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         "summary_schema_version": SUMMARY_SCHEMA_VERSION,
         "next_body_retry_at": (date.today() + timedelta(days=1 if item.get("important") else 7)).isoformat(),
     }
+    for source in sources:
+        if is_aggregator_url(str(source.get("url") or "")):
+            source["link_status"] = "unresolved_aggregator"
+    item["sources"] = sources
     if broken_encoding_detected:
         failure.update(broken_article_fallback(item, last_error))
     return item, failure
