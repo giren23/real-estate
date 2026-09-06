@@ -1,6 +1,5 @@
-param([string]$Bucket = "korean-real-estate-archive")
-
 $ErrorActionPreference = "Stop"
+$Bucket = "korean-real-estate-archive"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $Wrangler = Join-Path $ProjectRoot "cloudflare-worker\node_modules\.bin\wrangler.cmd"
@@ -12,9 +11,12 @@ $env:PYTHONPATH = Join-Path $ProjectRoot "src"
 
 Push-Location (Join-Path $ProjectRoot "cloudflare-worker")
 try {
-    & $Wrangler r2 bucket create $Bucket
+    & $Wrangler r2 bucket info $Bucket | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw "R2 버킷을 만들지 못했습니다. Cloudflare Dashboard의 Storage & databases > R2에서 R2를 먼저 활성화하세요."
+        & $Wrangler r2 bucket create $Bucket
+        if ($LASTEXITCODE -ne 0) {
+            throw "R2 버킷을 만들지 못했습니다. Cloudflare Dashboard의 Storage & databases > R2에서 R2를 먼저 활성화하세요."
+        }
     }
 } finally { Pop-Location }
 
