@@ -8,6 +8,7 @@ on:
   push:
     paths:
       - ".github/workflows/economic-indicators-daily.yml"
+      - "scripts/update_economic_news.py"
 
 permissions:
   contents: write
