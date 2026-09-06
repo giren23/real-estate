@@ -197,6 +197,55 @@ def article_sentences(page: str) -> list[str]:
     return sentences
 
 
+def decode_article_page(raw: bytes, declared_charset: str | None) -> str:
+    """Choose the least-corrupted decoding for Korean and UTF-8 news pages."""
+    candidates: list[tuple[int, int, str]] = []
+    encodings = list(dict.fromkeys(filter(None, (declared_charset, "utf-8", "cp949", "euc-kr"))))
+    for priority, encoding in enumerate(encodings):
+        try:
+            page = raw.decode(encoding, errors="replace")
+        except LookupError:
+            continue
+        replacement_count = page.count("\ufffd")
+        hangul_count = len(re.findall(r"[가-힣]", page))
+        candidates.append((replacement_count * 1_000_000 - hangul_count, priority, page))
+    return min(candidates, key=lambda row: (row[0], row[1]))[2] if candidates else raw.decode("utf-8", errors="replace")
+
+
+def has_broken_article_encoding(sentences: list[str]) -> bool:
+    return "\ufffd" in " ".join(sentences)
+
+
+def broken_article_fallback(item: dict[str, object], error: str) -> dict[str, object]:
+    title = clean_text(str(item.get("title", "")))
+    publisher = clean_text(str(item.get("publisher", "원문")))
+    source_texts = [clean_text(str(source.get("description") or source.get("title") or "")) for source in item.get("sources") or []]
+    source_texts = [text for text in source_texts if text and "\ufffd" not in text]
+    lead = next((text for text in source_texts if len(text) >= 25), title)
+    fields = structured_summary_fields(title, publisher, str(item.get("date", "")), [lead], lead)
+    fields.update({
+        "summary": lead[:500],
+        "easy_explanation": lead,
+        "narrative_paragraphs": fields["article_summary"],
+        "article_body_status": "unavailable",
+        "publication_status": "statistics_only",
+        "article_body_error": error,
+        "summary_basis": "제목·RSS 공개요약",
+        "news_charts": [],
+    })
+    return fields
+
+
+def article_requires_korean_translation(source: dict[str, object], sentences: list[str]) -> bool:
+    """Use the body language, never the event's geography, to decide translation."""
+    text = " ".join(sentences)
+    hangul = len(re.findall(r"[가-힣]", text))
+    latin = len(re.findall(r"[A-Za-z]", text))
+    if hangul >= 20 and hangul >= latin * 0.2:
+        return False
+    return source.get("region") in {"us", "global"} and latin > hangul
+
+
 def fetch_article_sentences(url: str) -> tuple[list[str], str]:
     if "news.google.com" in urlparse(url).netloc.lower():
         try:
@@ -217,7 +266,7 @@ def fetch_article_sentences(url: str) -> tuple[list[str], str]:
         content_type = response.headers.get("Content-Type", "")
         if "html" not in content_type.lower():
             return [], final_url
-        page = response.read(3_000_000).decode(response.headers.get_content_charset() or "utf-8", errors="replace")
+        page = decode_article_page(response.read(3_000_000), response.headers.get_content_charset())
     return article_sentences(page), final_url
 
 
@@ -976,6 +1025,7 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         item["sources"] = sources
         item["source_count"] = len(sources)
     last_error = ""
+    broken_encoding_detected = "\ufffd" in json.dumps(item, ensure_ascii=False)
     for source in sources[:3]:
         url = str(source.get("url", ""))
         if not url:
@@ -985,6 +1035,10 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         except Exception as error:
             last_error = str(error)[:160]
             continue
+        if has_broken_article_encoding(sentences):
+            last_error = "원문 문자 인코딩 손상"
+            broken_encoding_detected = True
+            continue
         if len(sentences) < 3 or len(" ".join(sentences)) < 350:
             last_error = "공개 본문 분량 부족"
             continue
@@ -992,7 +1046,7 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
             str(item.get("title", "")), str(source.get("publisher") or item.get("publisher") or "원문"),
             str(source.get("published_at") or item.get("date") or ""), sentences,
         )
-        if source.get("region") in {"us", "global"}:
+        if article_requires_korean_translation(source, sentences):
             fields = translate_summary_fields(fields)
         fields["article_source_url"] = final_url
         fields["title"] = str(source.get("title_ko") or source.get("title") or item.get("title") or "")[:78]
@@ -1004,7 +1058,7 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         fields["summary_schema_version"] = SUMMARY_SCHEMA_VERSION
         fields["next_body_retry_at"] = ""
         return item, fields
-    return item, {
+    failure = {
         "article_body_status": "unavailable",
         "publication_status": "statistics_only",
         "article_body_error": last_error or "공개 원문 본문을 확보하지 못함",
@@ -1014,6 +1068,9 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         "summary_schema_version": SUMMARY_SCHEMA_VERSION,
         "next_body_retry_at": (date.today() + timedelta(days=1 if item.get("important") else 7)).isoformat(),
     }
+    if broken_encoding_detected:
+        failure.update(broken_article_fallback(item, last_error))
+    return item, failure
 
 
 def article_retry_due(item: dict[str, object]) -> bool:
@@ -1027,9 +1084,9 @@ def article_retry_due(item: dict[str, object]) -> bool:
     return bool(retry_at and retry_at <= date.today().isoformat())
 
 
-def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = None, workers: int = 6) -> None:
+def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = None, workers: int = 6, force: bool = False) -> None:
     """Fetch representative public bodies concurrently, then replace feed-only summaries."""
-    pending = [item for item in items if article_retry_due(item)]
+    pending = list(items) if force else [item for item in items if article_retry_due(item)]
     if limit is not None:
         pending = pending[: max(0, limit)]
     if not pending:
@@ -1042,8 +1099,10 @@ def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = No
             except Exception as error:
                 print(f"기사 원문 본문 처리 실패: {error}")
                 continue
-            item.update(fields)
-            if fields.get("article_body_status") in {"full_text", "verified_reconstruction"}:
+            succeeded = fields.get("article_body_status") in {"full_text", "verified_reconstruction"}
+            if succeeded or item.get("article_body_status") not in {"fetched", "full_text", "verified_reconstruction"}:
+                item.update(fields)
+            if succeeded:
                 item["summary"] = str(fields.get("core_summary", item.get("summary", "")))[:900]
                 item["easy_explanation"] = str(fields.get("narrative_paragraphs", [item.get("summary", "")])[0])
                 prepared = [{"title": str(item.get("title", "")), "description": str(item.get("easy_explanation", "")), "publisher": str(item.get("publisher", "원문")), "published_at": str(item.get("date", "")), "published_time": str(item.get("date", ""))}]
@@ -1073,6 +1132,20 @@ def enrich_archived_bodies(limit: int) -> int:
     for path in touched:
         path.write_text(json.dumps(payloads[path], ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     return len(targets)
+
+
+def reprocess_all_archived_bodies(workers: int = 8) -> int:
+    """Revalidate every archived article and checkpoint each day independently."""
+    processed = 0
+    for path in sorted(NEWS_DIR.glob("20??-??-??.json"), reverse=True):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        items = payload.get("items", [])
+        enrich_article_bodies(items, workers=workers, force=True)
+        payload["items"] = mark_important([upgrade_existing_item(item) for item in items])
+        path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        processed += len(items)
+        print(f"{path.name}: 기존 기사 {len(items)}건 재검증 완료", flush=True)
+    return processed
 
 
 def collect_day(target: date, limit: int) -> list[dict[str, object]]:
@@ -1173,6 +1246,7 @@ def main() -> None:
     parser.add_argument("--limit-per-day", type=int, default=24)
     parser.add_argument("--archive-enrich-limit", type=int, default=60, help="한 실행에서 과거 원문 본문을 다시 처리할 최대 기사 수")
     parser.add_argument("--archive-only", action="store_true", help="새 뉴스 수집 없이 과거 기사 구조화만 실행")
+    parser.add_argument("--reprocess-all-archives", action="store_true", help="모든 과거 기사를 현재 수집·번역·요약 규칙으로 다시 검증")
     args = parser.parse_args()
     days = max(1, min(args.backfill_days, 365))
     limit = max(6, min(args.limit_per_day, 60))
@@ -1186,7 +1260,7 @@ def main() -> None:
             if items:
                 write_day(target, items)
                 print(f"{target}: {len(items)}건 저장")
-    enriched = enrich_archived_bodies(archive_limit)
+    enriched = reprocess_all_archived_bodies() if args.reprocess_all_archives else enrich_archived_bodies(archive_limit)
     if enriched:
         print(f"과거 기사 원문 본문 재처리: {enriched}건")
     rebuild_index()

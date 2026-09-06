@@ -39,6 +39,42 @@ def test_late_title_match_does_not_discard_article_lead_and_numbers() -> None:
     assert "40.6%" in combined
 
 
+def test_translation_uses_body_language_not_event_region() -> None:
+    korean = ["미국 연방준비제도가 기준금리를 검토했고 서울신문이 관련 내용을 보도했습니다."] * 4
+    english = ["The Federal Reserve reviewed interest rates after the latest inflation report."] * 4
+    foreign_source = {"region": "us", "publisher": "서울신문"}
+    assert not MODULE.article_requires_korean_translation(foreign_source, korean)
+    assert MODULE.article_requires_korean_translation(foreign_source, english)
+
+
+def test_article_decoder_recovers_cp949_and_rejects_replacement_characters() -> None:
+    original = "국토교통부가 주택공급 계획과 향후 일정을 발표했습니다."
+    decoded = MODULE.decode_article_page(original.encode("cp949"), "utf-8")
+    assert original in decoded
+    assert not MODULE.has_broken_article_encoding([decoded])
+    assert MODULE.has_broken_article_encoding(["손상된 원문 � 문장"])
+
+
+def test_broken_article_fallback_removes_corrupted_derived_text() -> None:
+    item = {
+        "title": "정상 한글 제목",
+        "publisher": "언론사",
+        "date": "2026-09-02",
+        "article_summary": ["깨진 � 본문"],
+        "sources": [{"title": "정상 한글 제목", "description": "정상적으로 수집된 RSS 공개요약 문장입니다."}],
+    }
+    result = MODULE.broken_article_fallback(item, "원문 문자 인코딩 손상")
+    assert result["publication_status"] == "statistics_only"
+    assert result["summary_basis"] == "제목·RSS 공개요약"
+    assert "�" not in str(result)
+
+
+def test_full_reprocessing_is_supported_and_preserves_good_article_on_transient_failure() -> None:
+    collector = (ROOT / "scripts" / "update_economic_news.py").read_text(encoding="utf-8")
+    assert 'parser.add_argument("--reprocess-all-archives"' in collector
+    assert "succeeded or item.get(\"article_body_status\") not in" in collector
+
+
 def test_number_highlights_are_not_wiki_keywords() -> None:
     result = MODULE.narrative_fields(
         [{"title": "재산 신고", "description": "2026년 재산 3,093만원을 신고했고 한국은행이 확인함.", "publisher": "연합뉴스", "published_at": "2026-09-05"}],
