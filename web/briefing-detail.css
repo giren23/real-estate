@@ -8,4 +8,11 @@
 .brief-table{width:100%;min-width:620px;border-collapse:collapse}
 .brief-table th,.brief-table td{padding:9px;border-top:1px solid #ece8ef;color:#5e5762;font-size:10px;text-align:left}
 .brief-table th{border-top:0;background:#f7f5f8;color:#766d7b}
+.brief-events{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.brief-events li{display:grid;grid-template-columns:26px minmax(0,1fr);gap:8px;align-items:center;padding:8px;border:1px solid #e8e2ec;border-radius:9px;background:#faf9fb}
+.brief-events li>b{display:grid;width:26px;height:26px;border-radius:8px;place-items:center;background:#7657a5;color:#fff;font-size:11px;line-height:1}
+.brief-events li:nth-child(1){border-color:#f1c7c4;background:#fff7f6}.brief-events li:nth-child(1)>b{background:#c83d3d}
+.brief-events li:nth-child(2){border-color:#edd7bb;background:#fffaf3}.brief-events li:nth-child(2)>b{background:#b86b22}
+.brief-events li:nth-child(3){border-color:#d9cdea;background:#faf7fe}.brief-events li:nth-child(3)>b{background:#654394}
+.brief-events li div{display:grid;gap:2px;min-width:0}.brief-events strong{color:#3e3345;font-size:10.5px;line-height:1.35}.brief-events span{color:#817886;font-size:9px;line-height:1.35}
 @media(max-width:760px){.brief-rankings{grid-template-columns:1fr}}

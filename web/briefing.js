@@ -16,9 +16,10 @@
     const summary = section.summary ? `<p class="brief-section-summary">${esc(section.summary)}</p>` : "";
     const bullets = section.bullets?.length ? `<ul class="brief-checks">${section.bullets.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : "";
     const rankings = section.rankings?.length ? `<div class="brief-rankings">${section.rankings.map(group => `<article><b>${esc(group.label)}</b><ol>${group.items.map(item => `<li>${esc(item)}</li>`).join("")}</ol></article>`).join("")}</div>` : "";
-    const rows = section.rows?.length ? `<div class="brief-table-scroll"><table class="brief-table"><thead><tr>${section.columns.map(column => `<th>${esc(column)}</th>`).join("")}</tr></thead><tbody>${section.rows.map(row => `<tr>${row.map(value => `<td>${esc(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : "";
+    const events = section.id === "events" && section.rows?.length ? `<ol class="brief-events">${section.rows.map((row, index) => `<li><b aria-label="${esc(row[0] || index + 1)}순위">${esc(row[0] || index + 1)}</b><div><strong>${esc(row[1])}</strong><span>${esc(row[2])}</span></div></li>`).join("")}</ol>` : "";
+    const rows = section.id !== "events" && section.rows?.length ? `<div class="brief-table-scroll"><table class="brief-table"><thead><tr>${section.columns.map(column => `<th>${esc(column)}</th>`).join("")}</tr></thead><tbody>${section.rows.map(row => `<tr>${row.map(value => `<td>${esc(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : "";
     const news = section.news?.length ? `<div class="brief-news">${section.news.map(item => `<article><time>${esc(item.date)}</time><h3>${item.url ? `<a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.title)}</a>` : esc(item.title)}</h3><p>${esc(item.summary)}</p><div>${(item.tags || []).map(tag => `<span>${esc(tag)}</span>`).join("")}</div></article>`).join("")}</div>` : "";
-    return `${summary}${bullets}${rankings}${rows}${news}`;
+    return `${summary}${bullets}${rankings}${events}${rows}${news}`;
   };
   const render = data => {
     $("#briefingDate").textContent = data.date;

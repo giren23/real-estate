@@ -20,6 +20,8 @@ def test_investment_briefing_page_has_top_and_bottom_pagination() -> None:
     assert 'href="briefing.html"' not in market
     assert index.index('href="market.html"') < index.index('href="briefing.html"')
     assert "briefing-outline" in script and "sectionBody" in script
+    assert 'class="brief-events"' in script
+    assert 'section.id === "events"' in script
 
 
 def test_daily_generator_archives_by_date_and_reorders_pages() -> None:
