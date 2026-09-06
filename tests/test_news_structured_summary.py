@@ -135,6 +135,19 @@ def test_known_yna_article_has_direct_canonical_source() -> None:
     assert source["url"] == "https://www.yna.co.kr/amp/view/AKR20260907001200071"
 
 
+def test_known_coinreaders_article_has_direct_canonical_source() -> None:
+    item = {"title": "비트코인(BTC) '폭풍 전야'...연준 금리 인상 확률 58.4%", "date": "2026-09-07"}
+    source = MODULE.canonical_article_source(item)
+    assert source
+    assert source["url"] == "https://www.coinreaders.com/256759"
+
+
+def test_google_web_results_exclude_google_and_social_targets() -> None:
+    page = '''<a href="/url?q=https%3A%2F%2Fpublisher.example%2Farticle%2F7&sa=U">기사</a>
+    <a href="https://news.google.com/articles/token">집계</a><a href="https://www.youtube.com/watch?v=1">영상</a>'''
+    assert MODULE.extract_google_result_urls(page) == ["https://publisher.example/article/7"]
+
+
 def test_resolved_direct_url_replaces_visible_google_source() -> None:
     item = {
         "title": "기사", "publisher": "연합뉴스",

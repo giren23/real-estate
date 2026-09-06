@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import parse_qs, quote_plus, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -104,9 +104,14 @@ CANONICAL_ARTICLE_OVERRIDES = {
         "publisher": "연합뉴스",
         "url": "https://www.yna.co.kr/amp/view/AKR20260907001200071",
     },
+    "비트코인(BTC)'폭풍전야'": {
+        "publisher": "코인리더스",
+        "url": "https://www.coinreaders.com/256759",
+    },
 }
 
 AGGREGATOR_HOSTS = {"news.google.com", "www.google.com", "google.com", "www.bing.com", "bing.com"}
+SEARCH_EXCLUDED_HOSTS = AGGREGATOR_HOSTS | {"youtube.com", "www.youtube.com", "facebook.com", "www.facebook.com", "x.com", "twitter.com"}
 
 
 def clean_text(value: str) -> str:
@@ -119,6 +124,51 @@ def is_aggregator_url(value: str) -> bool:
     except ValueError:
         return True
     return host.lower() in AGGREGATOR_HOSTS
+
+
+def extract_google_result_urls(page: str) -> list[str]:
+    """Extract ordinary web-result targets without accepting Google-owned links."""
+    candidates: list[str] = []
+    for raw in re.findall(r'href=["\']([^"\']+)', page or "", re.I):
+        value = html.unescape(raw)
+        if value.startswith("/url?"):
+            value = parse_qs(urlparse(value).query).get("q", [""])[0]
+        value = unquote(value)
+        try:
+            parsed = urlparse(value)
+        except ValueError:
+            continue
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme not in {"http", "https"} or not host or host in SEARCH_EXCLUDED_HOSTS:
+            continue
+        if value not in candidates:
+            candidates.append(value)
+    return candidates
+
+
+def google_search_article_candidates(title: str, publisher: str) -> list[str]:
+    """Use ordinary Google web search only after a News RSS target cannot be decoded."""
+    query = f'"{clean_text(title)}" "{clean_text(publisher)}"'
+    api_key = os.environ.get("GOOGLE_SEARCH_API_KEY", "").strip()
+    search_engine_id = os.environ.get("GOOGLE_SEARCH_CX", "").strip()
+    if api_key and search_engine_id:
+        api_url = "https://customsearch.googleapis.com/customsearch/v1?" + urlencode({"key": api_key, "cx": search_engine_id, "q": query, "num": 10})
+        request = Request(api_url, headers={"User-Agent": USER_AGENT})
+        with urlopen(request, timeout=25) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        return [str(item.get("link")) for item in payload.get("items", []) if item.get("link") and not is_aggregator_url(str(item.get("link")))][:8]
+    url = f"https://www.google.com/search?q={quote_plus(query)}&hl=ko"
+    request = Request(url, headers={"User-Agent": USER_AGENT, "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.6"})
+    with urlopen(request, timeout=20) as response:
+        page = decode_article_page(response.read(2_000_000), response.headers.get_content_charset())
+    return extract_google_result_urls(page)[:8]
+
+
+def title_matches_article(title: str, sentences: list[str]) -> bool:
+    expected = {token.lower() for token in TOKEN_PATTERN.findall(title) if len(token) >= 2 and token not in STOPWORDS and not token.isdigit()}
+    actual = {token.lower() for token in TOKEN_PATTERN.findall(" ".join(sentences[:12])) if len(token) >= 2}
+    overlap = len(expected & actual)
+    return overlap >= min(3, max(2, len(expected))) or overlap / max(1, len(expected)) >= 0.45
 
 
 def promote_resolved_source(item: dict[str, object]) -> None:
@@ -1067,6 +1117,25 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         item["source_count"] = len(sources)
     last_error = ""
     broken_encoding_detected = "\ufffd" in json.dumps(item, ensure_ascii=False)
+    if sources and all(is_aggregator_url(str(source.get("url") or "")) for source in sources):
+        primary = sources[0]
+        try:
+            candidates = google_search_article_candidates(str(item.get("title") or primary.get("title") or ""), str(primary.get("publisher") or item.get("publisher") or ""))
+        except Exception as error:
+            candidates = []
+            last_error = f"Google 일반검색 실패: {error}"[:160]
+        for candidate in candidates:
+            try:
+                candidate_sentences, candidate_final_url = fetch_article_sentences(candidate)
+            except Exception:
+                continue
+            if len(candidate_sentences) >= 3 and len(" ".join(candidate_sentences)) >= 350 and title_matches_article(str(item.get("title") or ""), candidate_sentences):
+                recovered = dict(primary)
+                recovered.update({"url": candidate_final_url, "resolved_from_url": primary.get("url", ""), "link_status": "verified_direct", "source_role": "google_web_search_recovery"})
+                sources.insert(0, recovered)
+                item["sources"] = sources
+                item["source_count"] = len(sources)
+                break
     for source in sources[:3]:
         url = str(source.get("url", ""))
         if not url:
