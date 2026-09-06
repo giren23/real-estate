@@ -6,6 +6,12 @@ on:
     paths:
       - "web/**"
       - "data/public/**"
+      - ".github/workflows/pages.yml"
+  workflow_run:
+    workflows:
+      - "Frequent economic indicators"
+      - "Daily real-estate update"
+    types: [completed]
   workflow_dispatch:
 
 permissions:

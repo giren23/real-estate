@@ -95,6 +95,8 @@ jobs:
         run: python -m realestate.cli.main publish
 
       - name: Test
+        id: test
+        continue-on-error: true
         env:
           PYTHONPATH: src
         run: pytest -q
@@ -118,9 +120,9 @@ jobs:
           git push
 
       - name: Mark incomplete refresh as failed after saving successes
-        if: steps.directory.outcome == 'failure' || steps.collect.outcome == 'failure' || steps.recover_history.outcome == 'failure'
+        if: steps.directory.outcome == 'failure' || steps.collect.outcome == 'failure' || steps.recover_history.outcome == 'failure' || steps.test.outcome == 'failure'
         run: |
-          echo "::error::일부 지역 또는 단지 목록 갱신에 실패했습니다. 성공한 데이터는 이미 게시했고, 아래와 아티팩트에 실패 목록을 남깁니다."
+          echo "::error::수집 또는 검증 일부가 실패했습니다. 성공한 데이터는 먼저 게시했고, 아래와 아티팩트에 상세 결과를 남깁니다."
           if [ -f data/reports/trade_collection_failures.json ]; then
             cat data/reports/trade_collection_failures.json
           fi
