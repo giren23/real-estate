@@ -66,6 +66,12 @@ def test_personal_housing_scandals_are_not_selected_as_important_news() -> None:
     assert marked[0]["important"] is False
 
 
+def test_entertainment_gold_price_story_is_not_selected_as_market_news() -> None:
+    entertainment = sample("[TVis] 미우새 황금열쇠 금값 1460만원 화색", "원자재", 4, 3)
+    marked = mark_important([entertainment])
+    assert marked[0]["important"] is False
+
+
 def test_rate_decision_is_always_ranked_as_important_market_news() -> None:
     rows = [sample(f"경제 일반 기사 {index}", "거시경제", 5, 4) for index in range(8)]
     decision = sample("한국은행 기준금리 0.25%p 인상 결정", "금리·채권", 1, 1)
