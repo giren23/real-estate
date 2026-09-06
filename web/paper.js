@@ -2,18 +2,36 @@
   "use strict";
   const KEY = "manualPaperPortfolioV1";
   const QUOTE_KEY = "paperQuoteSymbolsV1";
+  const CLOUD_KEY = "paperCloudCredentialsV1";
   const $ = selector => document.querySelector(selector);
   const money = value => `${new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(Math.round(Number(value) || 0))}원`;
   const clean = value => String(value || "").trim();
+  const escapeHtml = value => String(value || "").replace(/[&<>"']/g, character => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]);
   const emptyState = cash => ({ version: 1, initialCash: cash, cash, realized: 0, positions: {}, orders: [] });
   let state;
   try { state = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (_error) { state = null; }
   if (!state || state.version !== 1) state = emptyState(100000000);
   const quoteNames = {"005930":"삼성전자","000660":"SK하이닉스","005380":"현대차","035420":"NAVER","035720":"카카오","373220":"LG에너지솔루션","207940":"삼성바이오로직스","068270":"셀트리온","105560":"KB금융","005490":"POSCO홀딩스"};
   const defaultQuoteSymbols = Object.keys(quoteNames);
-  let quoteSymbols = (localStorage.getItem(QUOTE_KEY) || defaultQuoteSymbols.join(",")).split(",").map(clean).filter(Boolean).slice(0, 10), quoteLoading = false;
+  let quoteSymbols = (localStorage.getItem(QUOTE_KEY) || defaultQuoteSymbols.join(",")).split(",").map(clean).filter(Boolean).slice(0, 20), quoteLoading = false;
+  let cloudCredentials = null, cloudSaveTimer = 0;
+  try { cloudCredentials = JSON.parse(localStorage.getItem(CLOUD_KEY) || "null"); } catch (_error) { cloudCredentials = null; }
 
-  const save = () => localStorage.setItem(KEY, JSON.stringify(state));
+  const cloudHeaders = () => ({"content-type":"application/json","x-paper-account":cloudCredentials?.account_id || "","authorization":`Bearer ${cloudCredentials?.token || ""}`});
+  const updateCloudStatus = text => { const node=$("#paperSyncStatus"); if(node) node.textContent=text; };
+  const saveCloud = async () => {
+    if (!cloudCredentials) return;
+    try {
+      const response = await fetch("/api/paper/account", {method:"PUT",headers:cloudHeaders(),body:JSON.stringify({payload:{...state,watchlist:quoteSymbols}})});
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      updateCloudStatus(`클라우드 저장 · ${new Date().toLocaleTimeString("ko-KR")}`);
+    } catch (_error) { updateCloudStatus("클라우드 저장 재시도 필요"); }
+  };
+  const save = () => {
+    localStorage.setItem(KEY, JSON.stringify(state));
+    clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = setTimeout(saveCloud, 700);
+  };
   const positionValue = position => position.quantity * position.currentPrice;
   const positionCost = position => position.quantity * position.averagePrice;
   const totals = () => {
@@ -63,13 +81,13 @@
   }
 
   const renderQuotes = items => {
-    $("#paperQuoteGrid").innerHTML = items.length ? items.map(item => item.error ? `<article><span>${quoteNames[item.symbol] || item.symbol}</span><b>조회 실패</b><small>${item.symbol}</small></article>` : `<article><span>${quoteNames[item.symbol] || item.symbol}</span><b>${money(item.price)}</b><small class="${item.change_pct >= 0 ? "paper-positive" : "paper-negative"}">${item.change_pct >= 0 ? "+" : ""}${Number(item.change_pct).toFixed(2)}% · ${item.symbol}</small></article>`).join("") : "<p>표시할 현재가가 없습니다.</p>";
+    $("#paperQuoteGrid").innerHTML = items.length ? items.map(item => item.error ? `<article><span>${escapeHtml(quoteNames[item.symbol] || item.symbol)}</span><b>조회 실패</b><small>${escapeHtml(item.symbol)}</small></article>` : `<article><span>${escapeHtml(item.name || quoteNames[item.symbol] || item.symbol)}</span><b>${money(item.price)}</b><small class="${item.change_pct >= 0 ? "paper-positive" : "paper-negative"}">${item.change_pct >= 0 ? "+" : ""}${Number(item.change_pct).toFixed(2)}% · ${escapeHtml(item.symbol)}</small></article>`).join("") : "<p>표시할 현재가가 없습니다.</p>";
   };
   async function refreshQuotes() {
     if (quoteLoading || !quoteSymbols.length || document.hidden) return;
     quoteLoading = true;
     try {
-      const response = await fetch(`/api/paper-quotes?symbols=${encodeURIComponent(quoteSymbols.join(","))}`, { cache: "no-store" });
+      const response = await fetch(`/api/paper/quotes?symbols=${encodeURIComponent(quoteSymbols.join(","))}`, { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
       $("#paperQuoteStatus").textContent = payload.available ? `자동 갱신 · ${new Date().toLocaleTimeString("ko-KR")}` : "실시간 연결 대기";
@@ -84,9 +102,69 @@
   }
   $("#paperQuoteApply")?.addEventListener("click", () => {
     const values = $("#paperQuoteSymbols").value.split(",").map(clean).filter(Boolean);
-    if (values.length > 10) return message("현재가 목록은 최대 10종목입니다.", "error");
+    if (values.length > 20) return message("현재가 목록은 최대 20종목입니다.", "error");
     if (!values.length || values.some(value => !/^\d{6}$/.test(value))) return message("숫자 6자리 종목코드를 쉼표로 구분해 입력해 주세요.", "error");
     quoteSymbols = [...new Set(values)]; localStorage.setItem(QUOTE_KEY, quoteSymbols.join(",")); refreshQuotes();
+    save();
+  });
+
+  const selectSearchResult = (symbol, name) => {
+    if (!quoteSymbols.includes(symbol)) quoteSymbols = [...quoteSymbols, symbol].slice(0, 20);
+    quoteNames[symbol] = name;
+    localStorage.setItem(QUOTE_KEY, quoteSymbols.join(","));
+    $("#paperQuoteSymbols").value = quoteSymbols.join(",");
+    $("#paperSymbol").value = symbol; $("#paperName").value = name;
+    $("#paperSearchResults").innerHTML = ""; save(); refreshQuotes(); orderPreview();
+  };
+  const searchCompanies = async () => {
+    const query = clean($("#paperCompanySearch").value);
+    if (!query) return;
+    $("#paperSearchResults").innerHTML = "<p>검색 중…</p>";
+    try {
+      const response = await fetch(`/api/paper/search?q=${encodeURIComponent(query)}`, {cache:"no-store"});
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "검색 실패");
+      $("#paperSearchResults").innerHTML = (payload.items || []).map(item => `<button type="button" data-symbol="${escapeHtml(item.symbol)}" data-name="${escapeHtml(item.name)}"><span>${escapeHtml(item.name)}</span><small>${escapeHtml(item.symbol)} · ${escapeHtml(item.exchange)}</small></button>`).join("") || "<p>검색 결과가 없습니다.</p>";
+      document.querySelectorAll("#paperSearchResults button").forEach(button => button.addEventListener("click", () => selectSearchResult(button.dataset.symbol, button.dataset.name)));
+    } catch (error) { $("#paperSearchResults").innerHTML = `<p>${error.message}</p>`; }
+  };
+  $("#paperCompanySearchButton")?.addEventListener("click", searchCompanies);
+  $("#paperCompanySearch")?.addEventListener("keydown", event => { if(event.key === "Enter"){event.preventDefault();searchCompanies();} });
+
+  $("#paperCloudCreate")?.addEventListener("click", async () => {
+    if (cloudCredentials && !window.confirm("이미 연결된 클라우드 계좌가 있습니다. 새 계좌를 만들까요?")) return;
+    try {
+      const response = await fetch("/api/paper/account", {method:"POST"});
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "계좌 생성 실패");
+      cloudCredentials = {account_id:payload.account_id,token:payload.token};
+      localStorage.setItem(CLOUD_KEY, JSON.stringify(cloudCredentials));
+      await saveCloud(); message("클라우드 보관을 시작했습니다. 복구키 파일을 안전하게 백업하세요.", "success");
+    } catch (error) { message(error.message, "error"); }
+  });
+  $("#paperCloudExport")?.addEventListener("click", () => {
+    if (!cloudCredentials) return message("먼저 클라우드 보관을 시작해 주세요.", "error");
+    const blob = new Blob([JSON.stringify({version:1,...cloudCredentials}, null, 2)], {type:"application/json"}), link=document.createElement("a");
+    link.href=URL.createObjectURL(blob); link.download="paper-account-recovery.json"; link.click(); URL.revokeObjectURL(link.href);
+  });
+  $("#paperCloudImport")?.addEventListener("click", () => $("#paperCloudFile").click());
+  $("#paperCloudFile")?.addEventListener("change", async event => {
+    try {
+      const candidate=JSON.parse(await event.target.files[0].text());
+      cloudCredentials={account_id:candidate.account_id,token:candidate.token};
+      const response=await fetch("/api/paper/account",{headers:cloudHeaders()});
+      const payload=await response.json(); if(!response.ok) throw new Error(payload.detail || "복구 실패");
+      state=payload.payload; quoteSymbols=(payload.payload.watchlist || quoteSymbols).slice(0,20);
+      localStorage.setItem(CLOUD_KEY,JSON.stringify(cloudCredentials)); localStorage.setItem(KEY,JSON.stringify(state)); localStorage.setItem(QUOTE_KEY,quoteSymbols.join(","));
+      render(); refreshQuotes(); updateCloudStatus("클라우드 계좌 복구됨"); message("다른 기기의 모의계좌를 불러왔습니다.","success");
+    } catch(error){cloudCredentials=null;message(error.message || "복구키 파일을 확인해 주세요.","error");}
+  });
+  $("#paperCloudDelete")?.addEventListener("click", async () => {
+    if(!cloudCredentials) return message("연결된 클라우드 계좌가 없습니다.","error");
+    if(!window.confirm("클라우드의 모의계좌를 영구 삭제할까요? 현재 브라우저 기록은 유지됩니다.")) return;
+    const response=await fetch("/api/paper/account",{method:"DELETE",headers:cloudHeaders()});
+    if(!response.ok) return message("클라우드 계좌를 삭제하지 못했습니다.","error");
+    cloudCredentials=null; localStorage.removeItem(CLOUD_KEY); updateCloudStatus("이 브라우저에만 저장됨"); message("클라우드 계좌를 삭제했습니다.","success");
   });
 
   $("#paperOrderForm")?.addEventListener("input", event => { if (event.target.id !== "paperConfirm") orderPreview(); });
@@ -130,6 +208,11 @@
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }), link = document.createElement("a");
     link.href = URL.createObjectURL(blob); link.download = `paper-portfolio-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href);
   });
-  $("#paperQuoteSymbols").value = "";
+  $("#paperQuoteSymbols").value = quoteSymbols.join(",");
   render(); orderPreview(); refreshQuotes(); setInterval(refreshQuotes, 15000);
+  if(cloudCredentials) fetch("/api/paper/account",{headers:cloudHeaders()}).then(async response => {
+    if(!response.ok) throw new Error(); const payload=await response.json(); state=payload.payload;
+    quoteSymbols=(payload.payload.watchlist || quoteSymbols).slice(0,20); localStorage.setItem(KEY,JSON.stringify(state)); localStorage.setItem(QUOTE_KEY,quoteSymbols.join(","));
+    $("#paperQuoteSymbols").value=quoteSymbols.join(","); render(); refreshQuotes(); updateCloudStatus("클라우드 계좌 연결됨");
+  }).catch(() => updateCloudStatus("복구키 확인 필요"));
 })();

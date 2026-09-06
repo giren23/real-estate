@@ -26,12 +26,28 @@ def test_manual_paper_portfolio_is_local_and_requires_confirmation() -> None:
     assert "localStorage" in script
     assert "window.confirm" in script
     assert 'id="paperSubmit"' in html and "disabled" in html
-    assert "/api/paper-quotes" in script
-    assert "slice(0, 10)" in script
+    assert "/api/paper/quotes" in script
+    assert "slice(0, 20)" in script
     assert "setInterval(refreshQuotes, 15000)" in script
-    assert "최대 10종목" in html
+    assert "최대 20종목" in html
     assert 'id="paperQuoteSymbols"' in html and 'value="005930,000660' not in html
     assert "defaultQuoteSymbols" in script
+    assert "/api/paper/search" in script
+    assert "/api/paper/account" in script
+    assert "paper-account-recovery.json" in script
+
+
+def test_cloud_paper_api_is_read_only_for_quotes_and_hashes_recovery_tokens() -> None:
+    worker = (ROOT / "cloudflare-worker" / "worker.js").read_text(encoding="utf-8")
+    config = (ROOT / "cloudflare-worker" / "wrangler.toml").read_text(encoding="utf-8")
+    migration = (ROOT / "cloudflare-worker" / "migrations" / "0001_paper_portfolios.sql").read_text(encoding="utf-8")
+    assert 'crypto.subtle.digest("SHA-256"' in worker
+    assert 'crypto.getRandomValues(new Uint8Array(32))' in worker
+    assert 'incoming.pathname === "/api/paper/quotes" && request.method === "GET"' in worker
+    assert "/api/paper/order" not in worker
+    assert 'binding = "PAPER_DB"' in config
+    assert "token_hash TEXT NOT NULL" in migration
+    assert 'new URL("data/stock_catalog.json", PUBLIC_SITE)' in worker
 
 
 def test_market_issues_live_inside_editorial_hub_and_dates_are_quiet() -> None:
