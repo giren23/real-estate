@@ -1,0 +1,11 @@
+.brief-stance{margin-top:8px!important;padding-top:8px;border-top:1px solid #ebe5ef;color:#4f3b63!important;font-weight:750}
+.brief-section-summary{margin:0;color:#5d5563;font-size:12px;white-space:pre-line}
+.brief-rankings{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.brief-rankings article{padding:12px;border:1px solid #e6e1e9;border-radius:9px;background:#faf9fb}
+.brief-rankings b{color:#4a385d;font-size:11px}
+.brief-rankings ol{margin:7px 0 0;padding-left:20px;color:#625b67;font-size:10px}
+.brief-table-scroll{overflow:auto}
+.brief-table{width:100%;min-width:620px;border-collapse:collapse}
+.brief-table th,.brief-table td{padding:9px;border-top:1px solid #ece8ef;color:#5e5762;font-size:10px;text-align:left}
+.brief-table th{border-top:0;background:#f7f5f8;color:#766d7b}
+@media(max-width:760px){.brief-rankings{grid-template-columns:1fr}}

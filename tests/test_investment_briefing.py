@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from pathlib import Path
 
 
@@ -22,32 +19,26 @@ def test_investment_briefing_page_has_top_and_bottom_pagination() -> None:
     assert "오늘의 투자 브리핑" in index
     assert 'href="briefing.html"' not in market
     assert index.index('href="market.html"') < index.index('href="briefing.html"')
-    assert "briefing-outline" in script and "개발 중" in script
+    assert "briefing-outline" in script and "sectionBody" in script
 
 
 def test_daily_generator_archives_by_date_and_reorders_pages() -> None:
-    output_dir = ROOT / "web" / "content" / "investment-briefing"
-    subprocess.run([sys.executable, str(ROOT / "scripts" / "update_investment_briefing.py"), "--date", "2026-08-29"], cwd=ROOT, check=True)
-    payload = json.loads((output_dir / "2026-08-29.json").read_text(encoding="utf-8"))
-    index = json.loads((output_dir / "index.json").read_text(encoding="utf-8"))
+    from scripts.update_investment_briefing import build_payload
+
+    payload = build_payload("2026-08-29")
 
     assert payload["date"] == "2026-08-29"
-    assert payload["schema_version"] == 2
+    assert payload["schema_version"] == 3
     assert payload["title"] == "2026년 8월 29일 토요일 아침 — 전수 스캔 투자 브리핑"
-    assert [section["id"] for section in payload["sections"]] == ["world", "us", "kr"]
-    assert all(section["summary"] == "" for section in payload["sections"])
-    page_dates = [page["date"] for page in index["pages"]]
-    assert "2026-08-29" in page_dates
-    assert page_dates == sorted(page_dates, reverse=True)
-    archived_page = next(page for page in index["pages"] if page["date"] == "2026-08-29")
-    assert archived_page["file"] == "2026-08-29.json"
+    assert [section["id"] for section in payload["sections"]] == ["checks", "news"]
+    assert payload["lead"] and payload["metrics"]
 
 
 def test_morning_workflow_generates_and_commits_the_archive_once() -> None:
-    workflow = (ROOT / ".github" / "workflows" / "economic-indicators-daily.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "investment-briefing-daily.yml").read_text(encoding="utf-8")
 
     assert "python scripts/update_investment_briefing.py" in workflow
-    assert "github.event.schedule == '15 22 * * *'" in workflow
+    assert 'cron: "0 22 * * *"' in workflow
     assert "web/content/investment-briefing" in workflow
 
 

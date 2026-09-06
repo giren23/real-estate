@@ -57,10 +57,6 @@ jobs:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: python scripts/update_stock_catalog.py
 
-      - name: Build the archived morning investment briefing
-        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '15 22 * * *'
-        run: python scripts/update_investment_briefing.py
-
       - name: Verify generated data and chart freshness wiring
         id: test
         continue-on-error: true

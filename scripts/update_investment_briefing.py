@@ -120,18 +120,26 @@ def build_payload(day: str) -> dict:
     observed = datetime.strptime(day, "%Y-%m-%d")
     weekdays = ("월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일")
     title = f"{observed.year}년 {observed.month}월 {observed.day}일 {weekdays[observed.weekday()]} 아침 — 전수 스캔 투자 브리핑"
+    market = json.loads(MARKET_PATH.read_text(encoding="utf-8")) if MARKET_PATH.exists() else {}
+    news = json.loads(NEWS_PATH.read_text(encoding="utf-8")) if NEWS_PATH.exists() else {}
+    items = item_map(market)
+    regime, stance, checks = interpretation(items)
+    selected_news = select_investment_news(list(news.get("latest_items") or []), 6)
+    metrics = [metric(items.get(key)) for key in ("kospi", "kosdaq", "sp500", "nasdaq", "krw_usd", "wti", "gold", "us10y")]
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "date": day,
         "generated_at": datetime.now(SEOUL).isoformat(timespec="seconds"),
         "title": title,
-        "format": "short-development",
+        "format": "daily-clean",
+        "lead": regime,
+        "stance": stance,
+        "metrics": metrics,
         "sections": [
-            {"id": "world", "title": "세계 정세 약식 총평", "subtitle": "세계 정세", "summary": ""},
-            {"id": "us", "title": "미국장", "subtitle": "미국장 주요 핵심 총평", "summary": ""},
-            {"id": "kr", "title": "한국장", "subtitle": "한국장 주요 핵심 총평", "summary": ""},
+            {"id": "checks", "title": "오늘 먼저 확인할 것", "subtitle": "시장 점검", "bullets": checks},
+            {"id": "news", "title": "밤사이 핵심 이슈", "subtitle": "확인 가능한 최신 기사", "news": [{"title": row.get("title", ""), "summary": row.get("summary", ""), "date": row.get("date", ""), "url": ((row.get("sources") or [{}])[0]).get("url", ""), "tags": row.get("tags", [])[:3]} for row in selected_news]},
         ],
-        "disclaimer": "현재 화면 구조를 개발 중이며, 완성 전까지 투자 판단에 사용할 내용을 제공하지 않습니다.",
+        "disclaimer": "공개 시장자료를 자동 정리한 참고용 브리핑이며 투자 권유가 아닙니다. 장중 가격과 수급은 개장 후 다시 확인해야 합니다.",
     }
 
 
