@@ -12,6 +12,7 @@ $ErrorLog = Join-Path $RunDir "public-tunnel-error.log"
 $UrlFile = Join-Path $ProjectRoot "PUBLIC_URL.txt"
 $WorkerDir = Join-Path $ProjectRoot "cloudflare-worker"
 $Wrangler = Join-Path $WorkerDir "node_modules\.bin\wrangler.cmd"
+$R2Flag = Join-Path $ProjectRoot "data\local\r2-enabled.flag"
 
 New-Item -ItemType Directory -Force -Path $RunDir | Out-Null
 if (-not (Test-Path $Cloudflared)) {
@@ -83,7 +84,11 @@ if (Test-Path $Wrangler) {
             $env:PATH = "$($NodeExecutable.DirectoryName);$env:PATH"
         }
         Push-Location $WorkerDir
-        & $Wrangler deploy --var "UPSTREAM_ORIGIN:$PublicUrl" | Out-Null
+        if (Test-Path -LiteralPath $R2Flag) {
+            & $Wrangler deploy --config wrangler.r2.toml --var "UPSTREAM_ORIGIN:$PublicUrl" | Out-Null
+        } else {
+            & $Wrangler deploy --var "UPSTREAM_ORIGIN:$PublicUrl" | Out-Null
+        }
         if ($LASTEXITCODE -ne 0) { throw "Wrangler deploy failed." }
     } catch {
         Write-Warning "The tunnel is active, but the stable Worker address could not be updated: $($_.Exception.Message)"

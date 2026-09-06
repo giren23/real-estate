@@ -1,5 +1,8 @@
 .env
 .env.kis
+config/trading.json
+data/local/kis_token_*.json
+data/local/trading_journal*.jsonl
 .venv/
 __pycache__/
 .pytest_cache/
@@ -12,6 +15,7 @@ data/raw/population/*.csv
 *.egg-info/
 data/reports/
 data/local/
+backups/
 tools/*.exe
 PUBLIC_URL.txt
 cloudflare-worker/node_modules/

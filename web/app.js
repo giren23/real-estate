@@ -356,6 +356,11 @@ function rememberTradeName(group,name,weight=1){
   if(normalized(group.directory_name||group.apt_name)!==normalized(label)) group.tradeAliases.add(label);
 }
 async function fetchJson(path){ try{const response=await fetch(path);return response.ok?response.json():[];}catch{return [];} }
+function scopedArchiveRows(payload,group){
+  const source=Array.isArray(payload)?payload:(Array.isArray(payload?.rows)?payload.rows:[]);
+  if(!payload||payload.scope!=="district")return source;
+  return source.filter(row=>String(row.lawd_cd||"").slice(0,5)===group.lawd_cd&&String(row.dong||"")===group.dong&&String(row.apt_name||"")===group.data_apt_name);
+}
 async function hydrateGroup(group){
   if(!localApi||group.hydrated||group.hydrating) return group.hydrating||group;
   if(!group.data_apt_name){group.hydrated=true;return group;}
@@ -365,8 +370,8 @@ async function hydrateGroup(group){
       fetchJson("/api/history?"+query),
       fetchJson("/api/trades?"+query+"&limit=5000")
     ]);
-    group.history=Array.isArray(history)?history:[];
-    group.trades=Array.isArray(trades)?trades:[];
+    group.history=scopedArchiveRows(history,group);
+    group.trades=scopedArchiveRows(trades,group).slice(-5000);
     group.history.sort((a,b)=>String(a.month).localeCompare(String(b.month)));
     group.trades.sort((a,b)=>String(a.trade_date).localeCompare(String(b.trade_date)));
     group.build_year=Number([...group.trades].reverse().find(row=>Number(row.build_year)>0)?.build_year)||group.build_year||null;

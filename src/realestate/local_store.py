@@ -5,6 +5,7 @@ import re
 import sqlite3
 import statistics
 from collections import defaultdict
+from datetime import date
 from pathlib import Path
 from typing import Iterable
 
@@ -241,6 +242,22 @@ class LocalStore:
         prefix = str(year)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            existing_count = int(db.execute(
+                "SELECT COUNT(*) FROM transactions WHERE lawd_cd=? AND deal_ym LIKE ?",
+                (lawd_cd, f"{prefix}%"),
+            ).fetchone()[0])
+            incoming_count = len(rows)
+            # A blocked/empty upstream response must never erase a previously collected year.
+            if existing_count > 0 and incoming_count == 0:
+                raise RuntimeError(
+                    f"안전 중단: {lawd_cd} {year}년 기존 {existing_count:,}건을 빈 응답으로 교체하지 않음"
+                )
+            # Historical official data can be revised, but a sudden majority loss is far more
+            # likely to be an incomplete download. Keep the old transaction intact for review.
+            if year < date.today().year and existing_count >= 20 and incoming_count < existing_count * 0.5:
+                raise RuntimeError(
+                    f"안전 중단: {lawd_cd} {year}년 수집량이 {existing_count:,}건에서 {incoming_count:,}건으로 급감함"
+                )
             db.execute("DELETE FROM transactions WHERE lawd_cd=? AND deal_ym LIKE ?", (lawd_cd, f"{prefix}%"))
             db.executemany(
                 """INSERT OR IGNORE INTO transactions

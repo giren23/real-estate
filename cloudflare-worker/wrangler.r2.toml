@@ -2,3 +2,7 @@ name = "korean-real-estate"
 main = "worker.js"
 compatibility_date = "2026-09-07"
 workers_dev = true
+
+[[r2_buckets]]
+binding = "REAL_ESTATE_ARCHIVE"
+bucket_name = "korean-real-estate-archive"

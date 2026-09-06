@@ -77,7 +77,7 @@ def _daily_update_loop() -> None:
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             with (logs / f"daily-{stamp}.log").open("a", encoding="utf-8") as output:
                 process = subprocess.run(
-                    [sys.executable, str(ROOT / "scripts" / "daily_local_update.py")],
+                    [sys.executable, str(ROOT / "scripts" / "run_protected_real_estate_update.py")],
                     cwd=ROOT,
                     env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
                     stdout=output,
