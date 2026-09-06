@@ -149,7 +149,9 @@
       if (news) {
         const apply = item => ({...item,...(overrideById.get(item.id) || {})});
         news.latest_items = (news.latest_items || []).map(apply).filter(canShowNewsDetail);
-        news.important_items = (news.important_items || []).map(apply).filter(canShowNewsDetail);
+        // 중요뉴스는 본문 수집 실패 여부와 별개로 선별 결과를 표시한다.
+        // 상세 화면은 확보된 원문/요약 범위를 명시해 제공한다.
+        news.important_items = (news.important_items || []).map(apply);
       }
       const sections = Array.isArray(data.sections) ? data.sections : [];
       const newsSection = sections.find(section => section.id === "news");

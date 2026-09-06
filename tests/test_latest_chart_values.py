@@ -30,6 +30,6 @@ def test_market_trends_identify_the_latest_value_without_hover() -> None:
 def test_economic_indicators_have_an_independent_daily_workflow() -> None:
     workflow = (ROOT / ".github" / "workflows" / "economic-indicators-daily.yml").read_text(encoding="utf-8")
 
-    assert 'cron: "15 22 * * *"' in workflow
+    assert 'cron: "15 */3 * * *"' in workflow
     assert "update_economic_context.py" in workflow
     assert "update_market_snapshot.py" in workflow

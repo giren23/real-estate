@@ -53,6 +53,13 @@ def test_important_news_is_diversified_by_category() -> None:
     assert {row["category"] for row in selected} >= {"증시", "원자재"}
 
 
+def test_stock_quote_pages_are_not_selected_as_important_news() -> None:
+    quote = sample("Check out the latest ETF stock price and quote", "증시", 5, 4)
+    marked = mark_important([quote])
+    assert marked[0]["important"] is False
+    assert marked[0]["importance"]["investment_relevant"] is False
+
+
 def test_rate_decision_is_always_ranked_as_important_market_news() -> None:
     rows = [sample(f"경제 일반 기사 {index}", "거시경제", 5, 4) for index in range(8)]
     decision = sample("한국은행 기준금리 0.25%p 인상 결정", "금리·채권", 1, 1)
@@ -160,7 +167,7 @@ def test_news_pipeline_is_server_side_and_does_not_require_gpt() -> None:
     workflow = (ROOT / ".github" / "workflows" / "economic-indicators-daily.yml").read_text(encoding="utf-8")
     assert "openai" not in collector and "chatgpt" not in collector
     local_loop = "MARKET_REFRESH_HOURS = 4" in server and '("update_economic_news.py", ["--backfill-days", "2", "--limit-per-day", "60"])' in server
-    hosted_loop = workflow.count("- cron:") >= 6 and "python scripts/update_economic_news.py --backfill-days 2 --limit-per-day 60" in workflow
+    hosted_loop = 'cron: "15 */3 * * *"' in workflow and "python scripts/update_economic_news.py --backfill-days 2 --limit-per-day 60" in workflow
     assert local_loop or hosted_loop
 
 

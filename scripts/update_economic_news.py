@@ -89,6 +89,7 @@ INVESTMENT_RELEVANCE = ("금리", "연준", "환율", "달러", "국채", "채�
 MAX_HIGHLIGHT_TERMS = ("기준금리 인상", "기준금리 인하", "금리 인상", "금리 인하", "공급 중단", "대규모 감원", "법정관리", "부도", "디폴트")
 HIGH_HIGHLIGHT_TERMS = ("연방준비제도", "연준", "한국은행", "기준금리", "국채", "환율", "관세", "물가", "고용", "GDP", "코스피", "코스닥", "나스닥", "반도체", "비트코인", "국토교통부", "공공주택", "재생에너지", "RE100")
 NOISE_KEYWORDS = ("화재", "사망", "숨져", "대피", "홍수", "실종", "범죄", "교통사고", "연예", "Weverse", "TXT-LOG", "프라하하하", "[포토]", "시상식", "페스티벌")
+MARKET_QUOTE_NOISE = ("check out", "stock price", "share price", "etf price", "price target")
 RATE_DECISION_PATTERN = re.compile(r"(?:기준금리|정책금리|연준|한은|한국은행).{0,28}(?:인상|인하|동결|올렸|내렸)|(?:금리).{0,18}(?:인상 결정|인하 결정|동결 결정|올렸다|내렸다)", re.I)
 US_ORIGIN_TERMS = ("미국", "연방준비제도", "연준", "Federal Reserve", "Fed ", "트럼프", "Trump", "백악관", "White House", "월가", "Wall Street", "나스닥", "NASDAQ", "S&P 500", "뉴욕증시")
 GLOBAL_ORIGIN_TERMS = ("중국", "China", "일본", "Japan", "유럽", "European Union", "EU ", "영국", "독일", "프랑스", "러시아", "우크라이나", "중동", "OPEC", "IMF", "세계은행", "World Bank", "글로벌")
@@ -692,7 +693,10 @@ def importance_details(item: dict[str, object]) -> dict[str, object]:
     actual_reactions = int(engagement.get("reactions") or 0)
     popularity_rank = int(engagement.get("rank") or 0)
     engagement_bonus = min(24, int((actual_views + actual_reactions * 4) ** 0.25 * 2)) if actual_views or actual_reactions else max(0, 18 - popularity_rank) if popularity_rank else 0
+    title_lower = title.lower()
     noise = 32 if any(keyword in title for keyword in NOISE_KEYWORDS) else 0
+    if any(keyword in title_lower for keyword in MARKET_QUOTE_NOISE):
+        noise = max(noise, 60)
     relevant = category in CORE_MARKET_CATEGORIES or any(keyword.lower() in title.lower() for keyword in INVESTMENT_RELEVANCE)
     score = max(0, min(100, coverage + market + impact + authority + numeric + decision_bonus + engagement_bonus - noise))
     views_available = actual_views > 0
@@ -729,7 +733,7 @@ def mark_important(items: list[dict[str, object]], limit: int = 8) -> list[dict[
     category_counts: dict[str, int] = {}
     selected = 0
     for region in ("domestic", "us", "global"):
-        candidate = next((row for row in ranked if row.get("region") == region and row["importance"].get("investment_relevant")), None)
+        candidate = next((row for row in ranked if row.get("region") == region and row["importance"].get("investment_relevant") and (int(row.get("importance_score", 0)) >= 28 or row["importance"].get("rate_decision"))), None)
         if candidate and selected < limit:
             candidate["important"] = True
             category = str(candidate.get("category", "거시경제"))
