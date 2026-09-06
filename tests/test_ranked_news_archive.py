@@ -60,6 +60,12 @@ def test_stock_quote_pages_are_not_selected_as_important_news() -> None:
     assert marked[0]["importance"]["investment_relevant"] is False
 
 
+def test_personal_housing_scandals_are_not_selected_as_important_news() -> None:
+    scandal = sample("고위직 위장전입 아파트 부정청약 의혹", "부동산", 4, 3)
+    marked = mark_important([scandal])
+    assert marked[0]["important"] is False
+
+
 def test_rate_decision_is_always_ranked_as_important_market_news() -> None:
     rows = [sample(f"경제 일반 기사 {index}", "거시경제", 5, 4) for index in range(8)]
     decision = sample("한국은행 기준금리 0.25%p 인상 결정", "금리·채권", 1, 1)
