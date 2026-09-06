@@ -149,19 +149,21 @@
       if (news) {
         const apply = item => ({...item,...(overrideById.get(item.id) || {})});
         news.latest_items = (news.latest_items || []).map(apply).filter(canShowNewsDetail);
+        news.items = (news.items || []).map(apply);
         // 중요뉴스는 본문 수집 실패 여부와 별개로 선별 결과를 표시한다.
         // 상세 화면은 확보된 원문/요약 범위를 명시해 제공한다.
         news.important_items = (news.important_items || []).map(apply);
       }
       const sections = Array.isArray(data.sections) ? data.sections : [];
+      const importantItems = news ? [...(news.latest_items || []).filter(isRateDecision), ...(news.important_items || [])].filter((item, index, rows) => rows.findIndex(row => row.id === item.id) === index).slice(0, 10).map(item => ({...item, important:true})) : [];
+      const importantIds = new Set(importantItems.map(item => item.id));
       const newsSection = sections.find(section => section.id === "news");
       if (newsSection && news && Array.isArray(news.latest_items)) {
         newsSection.title = "경제 통합 뉴스";
         newsSection.description = `${news.total_articles || 0}건 · 경제·금융·증시·산업·부동산`;
-        newsSection.items = news.latest_items.slice(0, 6);
+        newsSection.items = (news.items || news.latest_items).filter(canShowNewsDetail).filter(item => !importantIds.has(item.id)).slice(0, 10);
         newsSection.more_url = "news.html";
       }
-      const importantItems = news ? [...(news.latest_items || []).filter(isRateDecision), ...(news.important_items || [])].filter((item, index, rows) => rows.findIndex(row => row.id === item.id) === index).slice(0, 10).map(item => ({...item, important:true})) : [];
       importantHtml(importantItems);
       const mergeSection = (id, generated, label, moreUrl) => {
         const section = sections.find(row => row.id === id);

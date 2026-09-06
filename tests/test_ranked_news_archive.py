@@ -105,6 +105,9 @@ def test_news_archive_has_two_paginations_and_clickable_filters() -> None:
     assert "[중요]" in script
     assert "isRateDecision" in script
     assert "important_items" in editorial
+    assert "importantIds" in editorial
+    assert ".filter(item => !importantIds.has(item.id)).slice(0, 10)" in editorial
+    assert "filter(item=>canShow(item)||isImportant(item))" in script
     assert index["important_items"]
     assert index["importance_method"]
 
