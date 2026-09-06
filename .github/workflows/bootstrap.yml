@@ -35,6 +35,8 @@ jobs:
           MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
           PYTHONPATH: src
         run: python -m realestate.cli.main collect --all-history
+      - name: Mark complete history cache
+        run: touch data/raw/trades/.history-complete
       - name: Publish
         env:
           PYTHONPATH: src

@@ -1,6 +1,9 @@
 name: Daily real-estate update
 
 on:
+  push:
+    paths:
+      - ".github/workflows/daily-update.yml"
   schedule:
     # 매일 한국시간 오전 6시 10분(UTC 전날 21시 10분)
     - cron: "10 21 * * *"
@@ -32,6 +35,18 @@ jobs:
           restore-keys: |
             trade-history-
 
+      - name: Check whether complete history is available
+        id: history
+        shell: bash
+        run: |
+          if [ -f data/raw/trades/.history-complete ]; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+            echo "완전한 과거 이력 캐시를 확인했습니다."
+          else
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+            echo "과거 이력 캐시가 없거나 불완전하여 전체 기간을 복구합니다."
+          fi
+
       - run: pip install -r requirements.txt
 
       - name: Refresh nationwide apartment directory
@@ -45,6 +60,7 @@ jobs:
 
       - name: Collect two latest months for all priority districts
         id: collect
+        if: steps.history.outputs.complete == 'true'
         continue-on-error: true
         env:
           MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
@@ -54,6 +70,24 @@ jobs:
           --months 2
           --priority-coverage
           --failure-report data/reports/trade_collection_failures.json
+
+      - name: Recover complete history when cache is missing
+        id: recover_history
+        if: steps.history.outputs.complete != 'true'
+        continue-on-error: true
+        env:
+          MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
+          PYTHONPATH: src
+        run: >
+          python -m realestate.cli.main collect
+          --all-history
+          --priority-coverage
+          --failure-report data/reports/trade_collection_failures.json
+
+      - name: Mark complete history cache
+        if: steps.recover_history.outcome == 'success'
+        shell: bash
+        run: touch data/raw/trades/.history-complete
 
       - name: Publish successful and cached data
         env:
@@ -84,7 +118,7 @@ jobs:
           git push
 
       - name: Mark incomplete refresh as failed after saving successes
-        if: steps.directory.outcome == 'failure' || steps.collect.outcome == 'failure'
+        if: steps.directory.outcome == 'failure' || steps.collect.outcome == 'failure' || steps.recover_history.outcome == 'failure'
         run: |
           echo "::error::일부 지역 또는 단지 목록 갱신에 실패했습니다. 성공한 데이터는 이미 게시했고, 아래와 아티팩트에 실패 목록을 남깁니다."
           if [ -f data/reports/trade_collection_failures.json ]; then
