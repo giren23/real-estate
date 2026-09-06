@@ -1,4 +1,6 @@
 const PUBLIC_SITE = "https://giren23.github.io/real-estate/";
+const PAPER_MAX_BYTES = 200000;
+const PAPER_MAX_SYMBOLS = 20;
 const PUBLIC_REAL_ESTATE_APIS = new Set([
   "/api/catalog",
   "/api/meta",
@@ -30,6 +32,120 @@ function unavailableApi(message = "현재 PC의 부동산 데이터 서버에 �
       "x-content-type-options": "nosniff",
     },
   });
+}
+
+function json(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff",...extraHeaders},
+  });
+}
+
+function base64url(bytes) {
+  let binary = "";
+  for (const value of bytes) binary += String.fromCharCode(value);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+async function sha256(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function paperCredentials(request) {
+  const accountId = request.headers.get("x-paper-account") || "";
+  const authorization = request.headers.get("authorization") || "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (!/^[a-f0-9]{24}$/.test(accountId) || !/^[A-Za-z0-9_-]{40,64}$/.test(token)) return null;
+  return {accountId, token};
+}
+
+function validPaperPayload(value) {
+  if (!value || value.version !== 1 || !Number.isFinite(value.initialCash) || !Number.isFinite(value.cash)) return false;
+  if (!value.positions || typeof value.positions !== "object" || Array.isArray(value.positions) || !Array.isArray(value.orders)) return false;
+  if (Object.keys(value.positions).length > 100 || value.orders.length > 5000) return false;
+  return Object.keys(value.positions).every(symbol => /^\d{6}$/.test(symbol));
+}
+
+async function createPaperAccount(env) {
+  if (!env.PAPER_DB) return json({detail:"모의투자 저장소가 연결되지 않았습니다."}, 503);
+  const token = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  const tokenHash = await sha256(token);
+  const accountId = tokenHash.slice(0, 24);
+  const now = new Date().toISOString();
+  const payload = {version:1,initialCash:100000000,cash:100000000,realized:0,positions:{},orders:[],watchlist:[]};
+  await env.PAPER_DB.prepare("INSERT INTO paper_portfolios(account_id,token_hash,payload,created_at,updated_at) VALUES(?,?,?,?,?)")
+    .bind(accountId, tokenHash, JSON.stringify(payload), now, now).run();
+  return json({account_id:accountId, token, payload, warning:"복구키를 잃으면 모의계좌를 복구할 수 없습니다."}, 201);
+}
+
+async function paperAccount(request, env) {
+  if (!env.PAPER_DB) return json({detail:"모의투자 저장소가 연결되지 않았습니다."}, 503);
+  const credentials = paperCredentials(request);
+  if (!credentials) return json({detail:"유효한 모의계좌 복구키가 필요합니다."}, 401);
+  const tokenHash = await sha256(credentials.token);
+  const row = await env.PAPER_DB.prepare("SELECT payload,updated_at FROM paper_portfolios WHERE account_id=? AND token_hash=?")
+    .bind(credentials.accountId, tokenHash).first();
+  if (!row) return json({detail:"모의계좌를 찾을 수 없습니다."}, 401);
+  if (request.method === "GET") return json({payload:JSON.parse(row.payload),updated_at:row.updated_at});
+  if (request.method === "DELETE") {
+    await env.PAPER_DB.prepare("DELETE FROM paper_portfolios WHERE account_id=? AND token_hash=?").bind(credentials.accountId, tokenHash).run();
+    return json({deleted:true});
+  }
+  if (request.method !== "PUT") return json({detail:"지원하지 않는 요청입니다."}, 405, {allow:"GET, PUT, DELETE"});
+  const length = Number(request.headers.get("content-length") || 0);
+  if (length > PAPER_MAX_BYTES) return json({detail:"저장 데이터가 너무 큽니다."}, 413);
+  let body;
+  try { body = await request.json(); } catch (_error) { return json({detail:"JSON 형식이 아닙니다."}, 400); }
+  const encoded = JSON.stringify(body?.payload);
+  if (encoded.length > PAPER_MAX_BYTES || !validPaperPayload(body?.payload)) return json({detail:"유효하지 않은 모의투자 데이터입니다."}, 400);
+  const now = new Date().toISOString();
+  await env.PAPER_DB.prepare("UPDATE paper_portfolios SET payload=?,updated_at=? WHERE account_id=? AND token_hash=?")
+    .bind(encoded, now, credentials.accountId, tokenHash).run();
+  return json({saved:true,updated_at:now});
+}
+
+function yahooSymbol(symbol) { return `${symbol}.KS`; }
+
+async function fetchYahooQuote(symbol) {
+  const load = async suffix => {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol + suffix)}?interval=1m&range=1d`;
+    const response = await fetch(url, {headers:{"user-agent":"Mozilla/5.0 KoreanRealEstatePaper/1.0"}});
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return payload?.chart?.result?.[0] || null;
+  };
+  const result = await load(".KS") || await load(".KQ");
+  if (!result) return {symbol,error:"시세 없음"};
+  const meta = result.meta || {};
+  const price = Number(meta.regularMarketPrice || meta.previousClose || 0);
+  const previous = Number(meta.chartPreviousClose || meta.previousClose || 0);
+  return {symbol,name:meta.shortName || meta.longName || symbol,price,change:price-previous,change_pct:previous ? (price/previous-1)*100 : 0,currency:meta.currency || "KRW",exchange:meta.exchangeName || "",observed_at:new Date((meta.regularMarketTime || Date.now()/1000)*1000).toISOString(),delayed:true};
+}
+
+async function paperQuotes(incoming) {
+  const symbols = [...new Set((incoming.searchParams.get("symbols") || "").split(",").map(value => value.trim()).filter(Boolean))];
+  if (!symbols.length || symbols.length > PAPER_MAX_SYMBOLS || symbols.some(value => !/^\d{6}$/.test(value))) return json({detail:`종목코드는 숫자 6자리, 최대 ${PAPER_MAX_SYMBOLS}개입니다.`}, 400);
+  return json({available:true,items:await Promise.all(symbols.map(fetchYahooQuote)),limit:PAPER_MAX_SYMBOLS,refresh_seconds:15,read_only:true,source:"Yahoo Finance 공개 지연시세"});
+}
+
+async function paperSearch(incoming) {
+  const query = (incoming.searchParams.get("q") || "").trim().slice(0, 40);
+  if (query.length < 1) return json({items:[]});
+  const response = await fetch(new URL("data/stock_catalog.json", PUBLIC_SITE), {headers:{"user-agent":"korean-real-estate-paper-search/1.0"}});
+  if (!response.ok) return json({detail:"종목 카탈로그를 불러올 수 없습니다."}, 502);
+  const payload = await response.json();
+  const needle = query.replace(/\s+/g, "").toLowerCase();
+  const items = (payload.items || []).filter(row => String(row.symbol || "").includes(needle) || String(row.name || "").replace(/\s+/g, "").toLowerCase().includes(needle)).slice(0, 10);
+  return json({items});
+}
+
+async function paperApi(request, env, incoming) {
+  if (incoming.pathname === "/api/paper/account" && request.method === "POST") return createPaperAccount(env);
+  if (incoming.pathname === "/api/paper/account") return paperAccount(request, env);
+  if (incoming.pathname === "/api/paper/quotes" && request.method === "GET") return paperQuotes(incoming);
+  if (incoming.pathname === "/api/paper/search" && request.method === "GET") return paperSearch(incoming);
+  return json({detail:"모의투자 API를 찾을 수 없습니다."}, 404);
 }
 
 async function readSmallJson(bucket, key, maxBytes = 1024 * 1024) {
@@ -111,6 +227,7 @@ async function localRealEstateApi(request, env, incoming) {
 export default {
   async fetch(request, env) {
     const incoming = new URL(request.url);
+    if (incoming.pathname.startsWith("/api/paper/")) return paperApi(request, env, incoming);
     if (incoming.pathname.startsWith("/api/")) return localRealEstateApi(request, env, incoming);
 
     const target = publicTarget(request.url);

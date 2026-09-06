@@ -2,3 +2,13 @@ name = "korean-real-estate"
 main = "worker.js"
 compatibility_date = "2026-09-07"
 workers_dev = true
+
+[[d1_databases]]
+binding = "PAPER_DB"
+database_name = "korean-real-estate-paper"
+database_id = "7748e8a5-2aaf-497f-a62d-5d94945e5a25"
+migrations_dir = "migrations"
+
+[observability]
+enabled = true
+head_sampling_rate = 0.1
