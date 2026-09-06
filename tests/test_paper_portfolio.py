@@ -35,6 +35,7 @@ def test_manual_paper_portfolio_is_local_and_requires_confirmation() -> None:
     assert "/api/paper/search" in script
     assert "/api/paper/account" in script
     assert "paper-account-recovery.json" in script
+    assert "data-remove-symbol" in script
 
 
 def test_cloud_paper_api_is_read_only_for_quotes_and_hashes_recovery_tokens() -> None:

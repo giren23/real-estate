@@ -81,7 +81,11 @@
   }
 
   const renderQuotes = items => {
-    $("#paperQuoteGrid").innerHTML = items.length ? items.map(item => item.error ? `<article><span>${escapeHtml(quoteNames[item.symbol] || item.symbol)}</span><b>조회 실패</b><small>${escapeHtml(item.symbol)}</small></article>` : `<article><span>${escapeHtml(item.name || quoteNames[item.symbol] || item.symbol)}</span><b>${money(item.price)}</b><small class="${item.change_pct >= 0 ? "paper-positive" : "paper-negative"}">${item.change_pct >= 0 ? "+" : ""}${Number(item.change_pct).toFixed(2)}% · ${escapeHtml(item.symbol)}</small></article>`).join("") : "<p>표시할 현재가가 없습니다.</p>";
+    $("#paperQuoteGrid").innerHTML = items.length ? items.map(item => item.error ? `<article><button class="paper-quote-remove" data-remove-symbol="${escapeHtml(item.symbol)}" type="button" aria-label="목록에서 삭제">×</button><span>${escapeHtml(quoteNames[item.symbol] || item.symbol)}</span><b>조회 실패</b><small>${escapeHtml(item.symbol)}</small></article>` : `<article><button class="paper-quote-remove" data-remove-symbol="${escapeHtml(item.symbol)}" type="button" aria-label="목록에서 삭제">×</button><span>${escapeHtml(item.name || quoteNames[item.symbol] || item.symbol)}</span><b>${money(item.price)}</b><small class="${item.change_pct >= 0 ? "paper-positive" : "paper-negative"}">${item.change_pct >= 0 ? "+" : ""}${Number(item.change_pct).toFixed(2)}% · ${escapeHtml(item.symbol)}</small></article>`).join("") : "<p>표시할 현재가가 없습니다.</p>";
+    document.querySelectorAll("[data-remove-symbol]").forEach(button => button.addEventListener("click", () => {
+      quoteSymbols = quoteSymbols.filter(symbol => symbol !== button.dataset.removeSymbol);
+      localStorage.setItem(QUOTE_KEY, quoteSymbols.join(",")); $("#paperQuoteSymbols").value = quoteSymbols.join(","); save(); refreshQuotes();
+    }));
   };
   async function refreshQuotes() {
     if (quoteLoading || !quoteSymbols.length || document.hidden) return;
