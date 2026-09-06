@@ -69,13 +69,33 @@
 
   function sectionHtml(section) {
     const more = section.more_url ? `<a class="editorial-more" href="${safeUrl(section.more_url)}">더보기 →</a>` : "";
+    const search = section.id === "news" ? `<div class="editorial-news-search"><label for="integratedNewsSearch">경제 통합 뉴스 검색</label><input id="integratedNewsSearch" type="search" inputmode="search" autocomplete="off" placeholder="기사 제목·발행사·요약 검색"><button id="integratedNewsSearchReset" type="button">지우기</button><small id="integratedNewsSearchCount">최신 기사 ${(section.items || []).length}건 표시</small></div>` : "";
     return `<section class="editorial-section editorial-${escapeHtml(section.id)}">
       <div class="editorial-section-title">
         <div><span aria-hidden="true">${escapeHtml(section.icon)}</span><h3>${escapeHtml(section.title)}</h3></div>
         <span class="editorial-section-tools"><small>${escapeHtml(section.description)}</small>${more}</span>
       </div>
-      <div class="editorial-list">${(section.items || []).map(cardHtml).join("")}</div>
+      ${search}<div class="editorial-list">${(section.items || []).map(cardHtml).join("")}</div>
     </section>`;
+  }
+
+  function bindIntegratedNewsSearch(section) {
+    const input = document.getElementById("integratedNewsSearch");
+    const reset = document.getElementById("integratedNewsSearchReset");
+    const count = document.getElementById("integratedNewsSearchCount");
+    const list = hub.querySelector(".editorial-news .editorial-list");
+    if (!input || !reset || !count || !list) return;
+    const searchable = section.search_items || section.items || [];
+    const render = () => {
+      const query = input.value.trim().toLocaleLowerCase("ko-KR");
+      const matched = query ? searchable.filter(item => [item.title, item.publisher, item.summary, item.eyebrow, ...(item.tags || [])].join(" ").toLocaleLowerCase("ko-KR").includes(query)) : section.items || [];
+      const shown = matched.slice(0, query ? 30 : 10);
+      list.innerHTML = shown.length ? shown.map(cardHtml).join("") : '<p class="editorial-loading">검색 조건에 맞는 기사가 없습니다.</p>';
+      count.textContent = query ? `검색 결과 ${matched.length.toLocaleString()}건${matched.length > shown.length ? ` · 상위 ${shown.length}건 표시` : ""}` : `최신 기사 ${shown.length}건 표시`;
+      list.querySelectorAll("[data-editorial-id]").forEach(button => button.addEventListener("click", () => openArticle(button.dataset.editorialId)));
+    };
+    input.addEventListener("input", render);
+    reset.addEventListener("click", () => { input.value = ""; render(); input.focus(); });
   }
 
   function metricsHtml(metrics) {
@@ -161,7 +181,8 @@
       if (newsSection && news && Array.isArray(news.latest_items)) {
         newsSection.title = "경제 통합 뉴스";
         newsSection.description = `${news.total_articles || 0}건 · 경제·금융·증시·산업·부동산`;
-        newsSection.items = (news.items || news.latest_items).filter(canShowNewsDetail).filter(item => !importantIds.has(item.id)).slice(0, 10);
+        newsSection.search_items = (news.items || news.latest_items).filter(canShowNewsDetail).filter(item => !importantIds.has(item.id));
+        newsSection.items = newsSection.search_items.slice(0, 10);
         newsSection.more_url = "news.html";
       }
       importantHtml(importantItems);
@@ -177,10 +198,11 @@
         mergeSection("company", automatic.company_items, "기업분석", "analysis.html?type=company");
         mergeSection("analysis", automatic.analysis_items, "심층분석", "analysis.html?type=analysis");
       }
-      contentById = new Map([...sections.flatMap(section => section.items || []), ...importantItems].map(item => [item.id, item]));
+      contentById = new Map([...sections.flatMap(section => [...(section.items || []), ...(section.search_items || [])]), ...importantItems].map(item => [item.id, item]));
       hub.innerHTML = sections.map(sectionHtml).join("");
       updated.textContent = `기준 ${formatDate(data.as_of)} · 원문 링크 포함`;
       hub.querySelectorAll("[data-editorial-id]").forEach(button => button.addEventListener("click", () => openArticle(button.dataset.editorialId)));
+      if (newsSection) bindIntegratedNewsSearch(newsSection);
       importantList?.querySelectorAll("[data-editorial-id]").forEach(button => button.addEventListener("click", () => openArticle(button.dataset.editorialId)));
     })
     .catch(error => {

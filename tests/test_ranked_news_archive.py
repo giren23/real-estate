@@ -31,6 +31,13 @@ def test_news_report_prefers_verified_direct_link_and_hides_aggregator_link() ->
     assert 'source.link_status === "unresolved_aggregator"' in script
 
 
+def test_home_integrated_news_section_has_search() -> None:
+    script = (ROOT / "web" / "editorial.js").read_text(encoding="utf-8")
+    assert 'id="integratedNewsSearch"' in script
+    assert "item.publisher" in script
+    assert "bindIntegratedNewsSearch(newsSection)" in script
+
+
 def sample(title: str, category: str, reports: int = 2, sources: int = 2) -> dict:
     return {
         "title": title,
@@ -113,7 +120,8 @@ def test_news_archive_has_two_paginations_and_clickable_filters() -> None:
     assert "isRateDecision" in script
     assert "important_items" in editorial
     assert "importantIds" in editorial
-    assert ".filter(item => !importantIds.has(item.id)).slice(0, 10)" in editorial
+    assert ".filter(item => !importantIds.has(item.id))" in editorial
+    assert "newsSection.search_items.slice(0, 10)" in editorial
     assert "filter(item=>canShow(item)||isImportant(item))" in script
     assert index["important_items"]
     assert index["importance_method"]
