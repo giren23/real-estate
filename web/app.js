@@ -432,12 +432,13 @@ async function load(){
       initMap();
       return;
     }
-    const [rows,complexes,historyPayload,economic,publicMeta]=await Promise.all([
+    const [rows,complexes,historyPayload,economic,publicMeta,localSnapshot]=await Promise.all([
       fetchJson("data/latest_trades.json"),
       fetchJson("data/complexes.json"),
       fetchJson("data/apartment_history.json"),
       fetchJson("data/economic_context.json"),
-      fetchJson("data/meta.json")
+      fetchJson("data/meta.json"),
+      fetchJson("data/local_meta.json").catch(()=>null)
     ]);
     const history=expandHistory(historyPayload);
     economicContext=economic&&Array.isArray(economic.exchange_rates)?economic:economicContext;
@@ -487,7 +488,7 @@ async function load(){
       g.build_year=Number([...g.trades].reverse().find(row=>Number(row.build_year)>0)?.build_year)||g.build_year||null;
       return g;
     }).sort((a,b)=>(b.latest?.trade_date||"").localeCompare(a.latest?.trade_date||""));
-    const representedTrades=Number(publicMeta?.trade_count)||history.reduce((sum,row)=>sum+Number(row.trade_count||0),0)||allTrades.length;
+    const representedTrades=Number(localSnapshot?.represented_trades||localSnapshot?.trade_count)||Number(publicMeta?.trade_count)||history.reduce((sum,row)=>sum+Number(row.trade_count||0),0)||allTrades.length;
     byId("dataCount").textContent=fmt(representedTrades)+"건 · "+fmt(apartmentGroups.length)+"단지";
     rebuildGroupIndexes();
     renderQuickSearch();
