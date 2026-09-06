@@ -1,6 +1,4 @@
 const PUBLIC_SITE = "https://giren23.github.io/real-estate/";
-const PRIVATE_ACCESS_COOKIE = "kre_private_access";
-const PRIVATE_ACCESS_MAX_AGE = 60 * 60 * 24 * 180;
 const PAPER_MAX_BYTES = 200000;
 const PAPER_MAX_SYMBOLS = 20;
 const PUBLIC_REAL_ESTATE_APIS = new Set([
@@ -52,77 +50,6 @@ function base64url(bytes) {
 async function sha256(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function constantTimeEqual(left, right) {
-  const leftBytes = new TextEncoder().encode(left);
-  const rightBytes = new TextEncoder().encode(right);
-  if (leftBytes.length !== rightBytes.length) return false;
-  let difference = 0;
-  for (let index = 0; index < leftBytes.length; index += 1) {
-    difference |= leftBytes[index] ^ rightBytes[index];
-  }
-  return difference === 0;
-}
-
-function cookieValue(request, name) {
-  const cookie = request.headers.get("cookie") || "";
-  for (const part of cookie.split(";")) {
-    const separator = part.indexOf("=");
-    if (separator < 0) continue;
-    if (part.slice(0, separator).trim() === name) return part.slice(separator + 1).trim();
-  }
-  return "";
-}
-
-function privateHeaders(contentType = "text/html; charset=utf-8") {
-  return {
-    "content-type": contentType,
-    "cache-control": "private, no-store",
-    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-    "referrer-policy": "no-referrer",
-    "x-content-type-options": "nosniff",
-    "x-frame-options": "DENY",
-  };
-}
-
-function developmentPage(status = 200) {
-  const body = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>개발 중</title><style>html{color-scheme:dark}body{min-height:100vh;margin:0;display:grid;place-items:center;background:#07111f;color:#e8eef8;font-family:system-ui,-apple-system,sans-serif}.card{width:min(84vw,420px);padding:38px 28px;border:1px solid #263750;border-radius:18px;background:#0d1a2b;text-align:center;box-shadow:0 18px 60px #0006}h1{margin:0 0 12px;font-size:1.55rem}p{margin:0;color:#aebed3;line-height:1.7}</style></head><body><main class="card"><h1>아직 개발 중입니다.</h1><p>서비스 준비가 완료되면 공개하겠습니다.</p></main></body></html>`;
-  return new Response(body, {status, headers: privateHeaders()});
-}
-
-async function hasPrivateAccess(request, env) {
-  const expected = String(env.PRIVATE_ACCESS_HASH || "");
-  const supplied = cookieValue(request, PRIVATE_ACCESS_COOKIE);
-  return /^[a-f0-9]{64}$/.test(expected) && constantTimeEqual(supplied, expected);
-}
-
-async function unlockPrivateAccess(request, env, incoming) {
-  if (request.method !== "GET") return developmentPage(404);
-  const key = incoming.searchParams.get("key") || "";
-  if (key.length < 32 || key.length > 128) return developmentPage(404);
-  const candidate = await sha256(key);
-  const expected = String(env.PRIVATE_ACCESS_HASH || "");
-  if (!/^[a-f0-9]{64}$/.test(expected) || !constantTimeEqual(candidate, expected)) return developmentPage(404);
-  return new Response(null, {
-    status: 303,
-    headers: {
-      location: "/index.html",
-      "set-cookie": `${PRIVATE_ACCESS_COOKIE}=${candidate}; Path=/; Max-Age=${PRIVATE_ACCESS_MAX_AGE}; HttpOnly; Secure; SameSite=Strict`,
-      ...privateHeaders(),
-    },
-  });
-}
-
-function logoutPrivateAccess() {
-  return new Response(null, {
-    status: 303,
-    headers: {
-      location: "/index.html",
-      "set-cookie": `${PRIVATE_ACCESS_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`,
-      ...privateHeaders(),
-    },
-  });
 }
 
 function paperCredentials(request) {
@@ -300,12 +227,6 @@ async function localRealEstateApi(request, env, incoming) {
 export default {
   async fetch(request, env) {
     const incoming = new URL(request.url);
-    if (incoming.pathname === "/private-access") return unlockPrivateAccess(request, env, incoming);
-    if (incoming.pathname === "/private-logout") return logoutPrivateAccess();
-    if (!(await hasPrivateAccess(request, env))) {
-      if (incoming.pathname.startsWith("/api/")) return json({detail:"찾을 수 없습니다."}, 404, privateHeaders("application/json; charset=utf-8"));
-      return developmentPage();
-    }
     if (incoming.pathname.startsWith("/api/paper/")) return paperApi(request, env, incoming);
     if (incoming.pathname.startsWith("/api/")) return localRealEstateApi(request, env, incoming);
 
@@ -318,9 +239,11 @@ export default {
     const responseHeaders = new Headers(upstream.headers);
     responseHeaders.delete("set-cookie");
     responseHeaders.set("x-content-type-options", "nosniff");
-    responseHeaders.set("referrer-policy", "no-referrer");
+    responseHeaders.set("referrer-policy", "strict-origin-when-cross-origin");
     responseHeaders.set("x-real-estate-version", "2026-09-05-hybrid-real-estate");
-    responseHeaders.set("cache-control", "private, no-store");
+    responseHeaders.set("cache-control", /\.(?:js|css|png|jpg|jpeg|svg|webp|woff2?)$/i.test(incoming.pathname)
+      ? "public, max-age=300"
+      : "public, max-age=60, must-revalidate");
     return new Response(upstream.body, {
       status: upstream.status,
       statusText: upstream.statusText,

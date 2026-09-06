@@ -95,10 +95,33 @@ US_ORIGIN_TERMS = ("미국", "연방준비제도", "연준", "Federal Reserve", 
 GLOBAL_ORIGIN_TERMS = ("중국", "China", "일본", "Japan", "유럽", "European Union", "EU ", "영국", "독일", "프랑스", "러시아", "우크라이나", "중동", "OPEC", "IMF", "세계은행", "World Bank", "글로벌")
 SUMMARY_SCHEMA_VERSION = 2
 STRUCTURED_KEYS = ("summary_title", "article_summary", "core_summary", "six_w_one_h", "key_figures", "fact_status", "uncertainties")
+CANONICAL_ARTICLE_OVERRIDES = {
+    "트럼프의연준압박,통할까": {
+        "publisher": "서울신문",
+        "url": "https://www.seoul.co.kr/news/economy/2026/09/06/20260906500069",
+    },
+}
 
 
 def clean_text(value: str) -> str:
     return SPACE_PATTERN.sub(" ", html.unescape(TAG_PATTERN.sub(" ", value or ""))).strip()
+
+
+def canonical_article_source(item: dict[str, object]) -> dict[str, str] | None:
+    normalized_title = SPACE_PATTERN.sub("", clean_text(str(item.get("title", ""))))
+    for title_fragment, override in CANONICAL_ARTICLE_OVERRIDES.items():
+        if title_fragment in normalized_title:
+            return {
+                "publisher": override["publisher"],
+                "title": clean_text(str(item.get("title", ""))),
+                "url": override["url"],
+                "published_at": str(item.get("date", "")),
+                "published_time": str(item.get("date", "")),
+                "description": "",
+                "region": "domestic",
+                "source_role": "canonical_article",
+            }
+    return None
 
 
 class ArticleParagraphParser(HTMLParser):
@@ -203,7 +226,10 @@ def sixw_summary_from_sentences(title: str, publisher: str, published_at: str, s
     if not sentences:
         return {}
     title_tokens = {token.lower() for token in TOKEN_PATTERN.findall(title) if len(token) >= 2 and token not in STOPWORDS}
-    article_start = next((index for index, sentence in enumerate(sentences) if len(title_tokens & {token.lower() for token in TOKEN_PATTERN.findall(sentence) if len(token) >= 2}) >= 2), 0)
+    matching_start = next((index for index, sentence in enumerate(sentences) if len(title_tokens & {token.lower() for token in TOKEN_PATTERN.findall(sentence) if len(token) >= 2}) >= 2), 0)
+    # A late title-like sentence is usually an in-body subheading, not the article start.
+    # Jumping to it silently discards the lead, background, and earlier numeric evidence.
+    article_start = matching_start if matching_start <= 3 else 0
     sentences = sentences[article_start:]
     ranked: list[tuple[int, int, str]] = []
     for index, sentence in enumerate(sentences):
@@ -944,6 +970,11 @@ def translate_foreign_sources(items: list[dict[str, object]]) -> None:
 def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dict[str, object]]:
     sources = list(item.get("sources") or [])
     sources.sort(key=lambda source: ("news.google.com" in str(source.get("url", "")), -representative_score(source)[0]))
+    canonical = canonical_article_source(item)
+    if canonical:
+        sources = [canonical, *[source for source in sources if source.get("url") != canonical["url"]]]
+        item["sources"] = sources
+        item["source_count"] = len(sources)
     last_error = ""
     for source in sources[:3]:
         url = str(source.get("url", ""))
@@ -961,7 +992,7 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
             str(item.get("title", "")), str(source.get("publisher") or item.get("publisher") or "원문"),
             str(source.get("published_at") or item.get("date") or ""), sentences,
         )
-        if item.get("region") in {"us", "global"}:
+        if source.get("region") in {"us", "global"}:
             fields = translate_summary_fields(fields)
         fields["article_source_url"] = final_url
         fields["title"] = str(source.get("title_ko") or source.get("title") or item.get("title") or "")[:78]
@@ -981,13 +1012,15 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         "summary_basis": "제목·RSS 공개요약",
         "article_body_attempts": int(item.get("article_body_attempts") or 0) + 1,
         "summary_schema_version": SUMMARY_SCHEMA_VERSION,
-        "next_body_retry_at": (date.today() + timedelta(days=7)).isoformat(),
+        "next_body_retry_at": (date.today() + timedelta(days=1 if item.get("important") else 7)).isoformat(),
     }
 
 
 def article_retry_due(item: dict[str, object]) -> bool:
     if item.get("article_body_status") in {"fetched", "full_text", "verified_reconstruction"}:
         return False
+    if canonical_article_source(item):
+        return True
     if int(item.get("summary_schema_version") or 0) < SUMMARY_SCHEMA_VERSION:
         return True
     retry_at = str(item.get("next_body_retry_at") or "")
