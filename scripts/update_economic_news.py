@@ -56,6 +56,13 @@ CAUSE_PATTERN = re.compile(r"때문|따라|영향|배경|이유|목적|위해|�
 METHOD_PATTERN = re.compile(r"통해|활용|설정|계획|방식|구조|계약|조치|추진|검토|절차|대응", re.I)
 TIME_PATTERN = re.compile(r"(?:\d{1,4}년|\d{1,2}월|\d{1,2}일|최근|현재|지난|올해|내년|상반기|하반기|분기|당시)")
 ARTICLE_NOISE_PATTERN = re.compile(r"(?:무단전재|재배포|저작권|기자\s*[\w.@-]+|구독|로그인|댓글|공감|관련기사|ADVERTISEMENT|Copyright|All rights reserved)", re.I)
+EDITORIAL_METADATA_PATTERNS = (
+    re.compile(r"\[?\s*재판매\s*및\s*DB\s*금지\s*\]?", re.I),
+    re.compile(r"\([^()\n]{1,30}=\s*연합뉴스\)"),
+    re.compile(r"\((?:사진|자료|그래픽)\s*=\s*연합뉴스\)"),
+    re.compile(r"(?:[가-힣]{2,5}\s*)?(?:기자|특파원)\s*=\s*"),
+    re.compile(r"[\w가-힣 .&'’-]{1,40}는\s+\d{4}-\d{2}-\d{2}\s+공개한\s+기사에서\s*"),
+)
 
 
 CATEGORY_RULES = (
@@ -116,6 +123,42 @@ SEARCH_EXCLUDED_HOSTS = AGGREGATOR_HOSTS | {"youtube.com", "www.youtube.com", "f
 
 def clean_text(value: str) -> str:
     return SPACE_PATTERN.sub(" ", html.unescape(TAG_PATTERN.sub(" ", value or ""))).strip()
+
+
+def strip_editorial_metadata(value: str) -> str:
+    text = clean_text(value)
+    for pattern in EDITORIAL_METADATA_PATTERNS:
+        text = pattern.sub(" ", text)
+    return SPACE_PATTERN.sub(" ", text).strip(" ]=-·,")
+
+
+def sanitize_archived_item(item: dict[str, object]) -> None:
+    """Remove redistribution notices, datelines and reporter bylines from generated prose."""
+    protected = {"title", "publisher", "url", "article_source_url", "resolved_from_url", "source_role", "link_status", "published_at", "published_time", "date", "id", "eyebrow", "tags"}
+
+    def cleanse(value: object, key: str = "") -> object:
+        if isinstance(value, str):
+            return value if key in protected else strip_editorial_metadata(value)
+        if isinstance(value, list):
+            return [cleanse(row, key) for row in value]
+        if isinstance(value, dict):
+            return {child_key: cleanse(child, child_key) for child_key, child in value.items()}
+        return value
+
+    cleaned = cleanse(item)
+    item.clear()
+    item.update(cleaned)
+    six_w = item.get("six_w_one_h") or {}
+    if isinstance(six_w, dict):
+        publisher = clean_text(str(item.get("publisher") or ""))
+        who = [str(row) for row in (six_w.get("who") or []) if clean_text(str(row)) not in {publisher, "연합뉴스"} and not re.search(r"(?:뉴스|신문|방송|일보)$", clean_text(str(row)))]
+        if not who:
+            paragraphs = item.get("article_summary") or item.get("narrative_paragraphs") or []
+            first = strip_editorial_metadata(str(paragraphs[0])) if paragraphs else ""
+            actor_match = re.match(r"(.{2,50}?)(?:은|는|이|가)\s", first)
+            if actor_match:
+                who = [actor_match.group(1).strip()]
+        six_w["who"] = who
 
 
 def is_aggregator_url(value: str) -> bool:
@@ -275,9 +318,9 @@ def article_sentences(page: str) -> list[str]:
     seen: set[str] = set()
     for paragraph in parser.paragraphs:
         for sentence in SENTENCE_PATTERN.split(clean_text(paragraph)):
-            sentence = sentence.strip(" -•\t")
+            sentence = strip_editorial_metadata(sentence).strip(" -•\t")
             normalized = SPACE_PATTERN.sub("", sentence).lower()
-            if len(sentence) < 25 or len(sentence) > 700 or ARTICLE_NOISE_PATTERN.search(sentence) or normalized in seen:
+            if len(sentence) < 25 or len(sentence) > 700 or ARTICLE_NOISE_PATTERN.fullmatch(sentence) or normalized in seen:
                 continue
             if sentence.count("#") >= 2:
                 continue
@@ -398,8 +441,7 @@ def sixw_summary_from_sentences(title: str, publisher: str, published_at: str, s
     while len(" ".join(chosen)) > 8000 and len(chosen) > 8:
         chosen.pop()
     lead = chosen[0]
-    prefix = f"{publisher}는 {published_at} 공개한 기사에서 " if publisher or published_at else "기사에서는 "
-    narrative = prefix + lead[0].lower() + lead[1:] if lead[:1].isascii() and lead[:1].isupper() else prefix + lead
+    narrative = lead[0].lower() + lead[1:] if lead[:1].isascii() and lead[:1].isupper() else lead
     if not narrative.endswith((".", "다.", "요.")):
         narrative += "."
     if len(chosen) > 1:
@@ -454,7 +496,8 @@ def extract_number_facts(sources: list[dict[str, str]]) -> list[dict[str, str]]:
 
 def structured_summary_fields(title: str, publisher: str, published_at: str, paragraphs: list[str], core: str) -> dict[str, object]:
     """Create the stable, LLM-free JSON contract used by every new article."""
-    paragraphs = [clean_text(row) for row in paragraphs if clean_text(row)][:7]
+    paragraphs = [strip_editorial_metadata(row) for row in paragraphs if strip_editorial_metadata(row)][:7]
+    core = strip_editorial_metadata(core)
     if len(paragraphs) < 3:
         paragraphs.append("공개된 기사 범위에서 확인되는 배경·실행 방법·적용 대상은 원문 링크에서 추가 확인이 필요함.")
     if len(paragraphs) < 3:
@@ -476,12 +519,14 @@ def structured_summary_fields(title: str, publisher: str, published_at: str, par
         if len(fact_status) >= 12:
             break
     uncertain = [row for row in sentence_rows if re.search(r"미정|미확정|검토|예정|계획|전망|가능성|추정|주장|필요", row)][:5]
+    actor_match = re.match(r"(.{2,50}?)(?:은|는|이|가)\s", first)
+    actor = actor_match.group(1).strip() if actor_match else ""
     return {
         "summary_title": re.sub(r"\s*[-|·:]\s*[^-|·:]{1,30}$", "", clean_text(title)).strip() or clean_text(title),
         "article_summary": paragraphs,
         "core_summary": core,
         "six_w_one_h": {
-            "who": [publisher] if publisher else [],
+            "who": [actor] if actor else [],
             "when": times or ([published_at] if published_at else []),
             "where": locations,
             "what": [first[:500]] if first else [],
@@ -572,6 +617,7 @@ def has_verified_legacy_summary(item: dict[str, object]) -> bool:
 
 def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
     """Migrate archived cards to the single narrative format without network or GPT."""
+    sanitize_archived_item(item)
     promote_resolved_source(item)
     if item.get("article_body_status") == "fetched":
         item["article_body_status"] = "full_text"

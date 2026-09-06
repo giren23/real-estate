@@ -148,6 +148,30 @@ def test_google_web_results_exclude_google_and_social_targets() -> None:
     assert MODULE.extract_google_result_urls(page) == ["https://publisher.example/article/7"]
 
 
+def test_redistribution_dateline_and_reporter_byline_are_removed() -> None:
+    raw = "[재판매 및 DB 금지] (워싱턴=연합뉴스) 홍정규 특파원 = 도널드 트럼프 미국 대통령이 환율 문제를 제기했다."
+    assert MODULE.strip_editorial_metadata(raw) == "도널드 트럼프 미국 대통령이 환율 문제를 제기했다."
+
+
+def test_summary_who_is_article_subject_not_publisher() -> None:
+    fields = MODULE.structured_summary_fields(
+        "환율 기사", "연합뉴스", "2026-09-07",
+        ["도널드 트럼프 미국 대통령이 환율 문제를 제기했다.", "양국은 협상을 검토할 예정이다.", "후속 조치는 아직 정해지지 않았다."],
+        "도널드 트럼프 미국 대통령이 환율 문제를 제기했다.",
+    )
+    assert fields["six_w_one_h"]["who"] == ["도널드 트럼프 미국 대통령"]
+
+
+def test_archived_publisher_is_replaced_with_article_subject() -> None:
+    item = {
+        "publisher": "연합뉴스",
+        "article_summary": ["도널드 트럼프 미국 대통령이 환율 문제를 제기했다."],
+        "six_w_one_h": {"who": ["연합뉴스"]},
+    }
+    MODULE.sanitize_archived_item(item)
+    assert item["six_w_one_h"]["who"] == ["도널드 트럼프 미국 대통령"]
+
+
 def test_resolved_direct_url_replaces_visible_google_source() -> None:
     item = {
         "title": "기사", "publisher": "연합뉴스",
