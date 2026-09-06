@@ -142,6 +142,13 @@ def test_known_coinreaders_article_has_direct_canonical_source() -> None:
     assert source["url"] == "https://www.coinreaders.com/256759"
 
 
+def test_known_cbci_article_has_direct_canonical_source() -> None:
+    item = {"title": "뉴욕증시 운명 가를 美 8월 CPI 발표 임박… 연준 동결 vs 인상 기로", "date": "2026-09-06"}
+    source = MODULE.canonical_article_source(item)
+    assert source
+    assert source["url"] == "https://www.cbci.co.kr/news/articleView.html?idxno=604333"
+
+
 def test_google_web_results_exclude_google_and_social_targets() -> None:
     page = '''<a href="/url?q=https%3A%2F%2Fpublisher.example%2Farticle%2F7&sa=U">기사</a>
     <a href="https://news.google.com/articles/token">집계</a><a href="https://www.youtube.com/watch?v=1">영상</a>'''

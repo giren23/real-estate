@@ -6,6 +6,7 @@ import html
 import json
 import os
 import re
+import threading
 import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,6 +15,7 @@ from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, unquote, urlencode, urlparse
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 
@@ -115,10 +117,17 @@ CANONICAL_ARTICLE_OVERRIDES = {
         "publisher": "코인리더스",
         "url": "https://www.coinreaders.com/256759",
     },
+    "뉴욕증시운명가를美8월CPI발표임박": {
+        "publisher": "CBC뉴스",
+        "url": "https://www.cbci.co.kr/news/articleView.html?idxno=604333",
+    },
 }
 
 AGGREGATOR_HOSTS = {"news.google.com", "www.google.com", "google.com", "www.bing.com", "bing.com"}
 SEARCH_EXCLUDED_HOSTS = AGGREGATOR_HOSTS | {"youtube.com", "www.youtube.com", "facebook.com", "www.facebook.com", "x.com", "twitter.com"}
+GOOGLE_SEARCH_LOCK = threading.Lock()
+GOOGLE_SEARCH_NEXT_AT = 0.0
+GOOGLE_SEARCH_DISABLED_UNTIL = 0.0
 
 
 def clean_text(value: str) -> str:
@@ -200,10 +209,27 @@ def google_search_article_candidates(title: str, publisher: str) -> list[str]:
         with urlopen(request, timeout=25) as response:
             payload = json.loads(response.read().decode("utf-8"))
         return [str(item.get("link")) for item in payload.get("items", []) if item.get("link") and not is_aggregator_url(str(item.get("link")))][:8]
-    url = f"https://www.google.com/search?q={quote_plus(query)}&hl=ko"
-    request = Request(url, headers={"User-Agent": USER_AGENT, "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.6"})
-    with urlopen(request, timeout=20) as response:
-        page = decode_article_page(response.read(2_000_000), response.headers.get_content_charset())
+    global GOOGLE_SEARCH_NEXT_AT, GOOGLE_SEARCH_DISABLED_UNTIL
+    minimum_interval = max(5.0, float(os.environ.get("GOOGLE_SEARCH_INTERVAL_SECONDS", "12")))
+    with GOOGLE_SEARCH_LOCK:
+        now = time.monotonic()
+        if now < GOOGLE_SEARCH_DISABLED_UNTIL:
+            raise RuntimeError("Google 일반검색 429 중단 회로 활성화")
+        delay = GOOGLE_SEARCH_NEXT_AT - now
+        if delay > 0:
+            time.sleep(delay)
+        url = f"https://www.google.com/search?q={quote_plus(query)}&hl=ko"
+        request = Request(url, headers={"User-Agent": USER_AGENT, "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.6"})
+        try:
+            with urlopen(request, timeout=20) as response:
+                page = decode_article_page(response.read(2_000_000), response.headers.get_content_charset())
+        except HTTPError as error:
+            if error.code == 429:
+                GOOGLE_SEARCH_DISABLED_UNTIL = time.monotonic() + 3600
+                raise RuntimeError("Google 일반검색 HTTP 429: 이번 실행의 추가 검색 중단") from error
+            raise
+        finally:
+            GOOGLE_SEARCH_NEXT_AT = time.monotonic() + minimum_interval
     return extract_google_result_urls(page)[:8]
 
 
@@ -1162,6 +1188,7 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         item["sources"] = sources
         item["source_count"] = len(sources)
     last_error = ""
+    search_error = ""
     broken_encoding_detected = "\ufffd" in json.dumps(item, ensure_ascii=False)
     if sources and all(is_aggregator_url(str(source.get("url") or "")) for source in sources):
         primary = sources[0]
@@ -1169,7 +1196,7 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
             candidates = google_search_article_candidates(str(item.get("title") or primary.get("title") or ""), str(primary.get("publisher") or item.get("publisher") or ""))
         except Exception as error:
             candidates = []
-            last_error = f"Google 일반검색 실패: {error}"[:160]
+            search_error = f"Google 일반검색 실패: {error}"[:160]
         for candidate in candidates:
             try:
                 candidate_sentences, candidate_final_url = fetch_article_sentences(candidate)
@@ -1224,7 +1251,8 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
     failure = {
         "article_body_status": "unavailable",
         "publication_status": "statistics_only",
-        "article_body_error": last_error or "공개 원문 본문을 확보하지 못함",
+        "article_body_error": search_error or last_error or "공개 원문 본문을 확보하지 못함",
+        "source_resolution_error": search_error,
         "article_body_checked_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "summary_basis": "제목·RSS 공개요약",
         "article_body_attempts": int(item.get("article_body_attempts") or 0) + 1,
@@ -1301,10 +1329,12 @@ def enrich_archived_bodies(limit: int) -> int:
     return len(targets)
 
 
-def reprocess_all_archived_bodies(workers: int = 8) -> int:
+def reprocess_all_archived_bodies(workers: int = 8, from_date: str = "") -> int:
     """Revalidate every archived article and checkpoint each day independently."""
     processed = 0
     for path in sorted(NEWS_DIR.glob("20??-??-??.json"), reverse=True):
+        if from_date and path.stem < from_date:
+            continue
         payload = json.loads(path.read_text(encoding="utf-8"))
         items = payload.get("items", [])
         enrich_article_bodies(items, workers=workers, force=True)
@@ -1414,6 +1444,7 @@ def main() -> None:
     parser.add_argument("--archive-enrich-limit", type=int, default=60, help="한 실행에서 과거 원문 본문을 다시 처리할 최대 기사 수")
     parser.add_argument("--archive-only", action="store_true", help="새 뉴스 수집 없이 과거 기사 구조화만 실행")
     parser.add_argument("--reprocess-all-archives", action="store_true", help="모든 과거 기사를 현재 수집·번역·요약 규칙으로 다시 검증")
+    parser.add_argument("--reprocess-from-date", default="", help="전체 재검증 시 이 날짜(YYYY-MM-DD) 이후 보관분만 처리")
     args = parser.parse_args()
     days = max(1, min(args.backfill_days, 365))
     limit = max(6, min(args.limit_per_day, 60))
@@ -1427,7 +1458,7 @@ def main() -> None:
             if items:
                 write_day(target, items)
                 print(f"{target}: {len(items)}건 저장")
-    enriched = reprocess_all_archived_bodies() if args.reprocess_all_archives else enrich_archived_bodies(archive_limit)
+    enriched = reprocess_all_archived_bodies(from_date=args.reprocess_from_date) if args.reprocess_all_archives else enrich_archived_bodies(archive_limit)
     if enriched:
         print(f"과거 기사 원문 본문 재처리: {enriched}건")
     rebuild_index()
