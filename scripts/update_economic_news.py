@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.parse import parse_qs, quote, quote_plus, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -54,6 +54,9 @@ PUBLISHER_DAILY_SECTIONS = {
         ("publisher_archive_news", "https://kr.benzinga.com/news/"),
         ("publisher_archive_economy", "https://kr.benzinga.com/category/news/economy/"),
     ),
+}
+PUBLISHER_SEARCH_ENDPOINTS = {
+    "머니투데이": ("publisher_search_moneytoday", "https://www.mt.co.kr/search/{query}/news"),
 }
 TAG_PATTERN = re.compile(r"<[^>]+>")
 SPACE_PATTERN = re.compile(r"\s+")
@@ -450,8 +453,50 @@ def publisher_daily_candidates(title: str, publisher: str, target_day: str) -> l
     return [(candidate_title, candidate_url, method) for _score, candidate_title, candidate_url, method in ranked[:4]]
 
 
+def publisher_search_candidates(title: str, publisher: str) -> list[tuple[str, str, str]]:
+    """Search a publisher's own public search UI before scanning its sections."""
+    publisher_key = clean_text(publisher).lower()
+    endpoint: tuple[str, str] | None = None
+    for key, value in PUBLISHER_SEARCH_ENDPOINTS.items():
+        if key.lower() in publisher_key:
+            endpoint = value
+            break
+    if not endpoint:
+        return []
+    method, template = endpoint
+    try:
+        parser = PublisherListingParser()
+        parser.feed(_paced_public_request(template.format(query=quote(clean_text(title)[:240], safe=""))))
+    except Exception:
+        return []
+    ranked: list[tuple[float, str, str, str]] = []
+    seen: set[str] = set()
+    for candidate_title, raw_url in parser.links:
+        candidate_url = urljoin(template, raw_url).split("#", 1)[0]
+        if candidate_url in seen or not is_article_candidate_url(candidate_url):
+            continue
+        score = title_similarity(title, candidate_title)
+        if score < 0.5:
+            continue
+        seen.add(candidate_url)
+        ranked.append((score, candidate_title, candidate_url, method))
+    ranked.sort(key=lambda row: row[0], reverse=True)
+    return [(candidate_title, candidate_url, method) for _score, candidate_title, candidate_url, method in ranked[:4]]
+
+
 def discover_article_body(title: str, publisher: str, target_day: str = "") -> tuple[list[str], str, str, str] | None:
     """Use public publisher/portal search only when the feed URL did not yield a usable body."""
+    for candidate_title, candidate_url, discovery_method in publisher_search_candidates(title, publisher):
+        try:
+            sentences, final_url = fetch_article_sentences(candidate_url)
+        except Exception:
+            continue
+        joined = " ".join(sentences)
+        if len(sentences) < 3 or len(joined) < 350 or ARTICLE_NOISE_PATTERN.search(joined):
+            continue
+        if title_similarity(title, candidate_title) < 0.5 or not title_matches_sentences(title, sentences):
+            continue
+        return sentences, final_url, discovery_method, candidate_title
     for discovery_method, candidate_url in search_public_article_urls(title, publisher):
         try:
             sentences, final_url = fetch_article_sentences(candidate_url)

@@ -163,6 +163,20 @@ def test_verified_publisher_listing_replaces_feed_title(monkeypatch) -> None:
     assert fields["article_body_status"] == "full_text"
 
 
+def test_publisher_search_precedes_public_indexes_and_section_listing(monkeypatch) -> None:
+    title = "국제유가 또 급등 WTI 100달러 돌파 브렌트유 105달러"
+    sentences = [
+        "국제유가가 다시 급등하면서 WTI는 배럴당 100달러를 돌파했고 브렌트유는 105달러를 기록했다.",
+        "중동 공급 차질 우려가 원유 선물 가격 상승의 배경으로 지목됐다.",
+        "시장 참가자들은 향후 산유국 대응과 재고 지표를 주시하고 있다. " * 8,
+    ]
+    monkeypatch.setattr(MODULE, "publisher_search_candidates", lambda *_args: [(title, "https://www.mt.co.kr/article", "publisher_search_moneytoday")])
+    monkeypatch.setattr(MODULE, "search_public_article_urls", lambda *_args: (_ for _ in ()).throw(AssertionError("publisher search must run first")))
+    monkeypatch.setattr(MODULE, "fetch_article_sentences", lambda _url: (sentences, "https://www.mt.co.kr/article"))
+    result = MODULE.discover_article_body(title, "머니투데이", "2026-09-10")
+    assert result and result[2] == "publisher_search_moneytoday"
+
+
 def test_search_and_navigation_urls_are_not_article_candidates() -> None:
     assert not MODULE.is_article_candidate_url("https://www.melon.com/search/total/index.htm?q=test")
     assert not MODULE.is_article_candidate_url("https://search.shopping.naver.com/search/all?query=test")
