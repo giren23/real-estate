@@ -24,8 +24,8 @@ def test_investment_briefing_page_has_top_and_bottom_pagination() -> None:
     assert 'href="index.html"' in market
     assert 'href="market.html"' in market
     assert index.index('href="market.html"') < index.index('href="briefing.html"')
-    assert "briefing-outline" in script and "GPT-FREE" in script
-    assert '["core", "events", "risk", "us", "kr", "hynix", "world"]' in script
+    assert "briefing-outline" in script and "CHAT BRIEFING FORMAT" in script
+    assert '["verdict", "us", "kr", "sectors", "risk", "action"' in script
 
 
 def test_daily_generator_archives_by_date_and_reorders_pages() -> None:
@@ -35,9 +35,9 @@ def test_daily_generator_archives_by_date_and_reorders_pages() -> None:
     index = json.loads((output_dir / "index.json").read_text(encoding="utf-8"))
 
     assert payload["date"] == "2026-09-09"
-    assert payload["schema_version"] == 3
+    assert payload["schema_version"] == 4
     assert payload["title"] == "2026년 9월 9일 수요일 아침 투자 브리핑"
-    assert [section["id"] for section in payload["sections"]] == ["core", "events", "risk"]
+    assert [section["id"] for section in payload["sections"]] == ["verdict", "us", "kr", "sectors", "risk", "action"]
     assert all(section["summary"] for section in payload["sections"])
     assert index["pages"][0]["date"] == "2026-09-10"
     assert index["pages"][0]["file"] == "2026-09-10.json"

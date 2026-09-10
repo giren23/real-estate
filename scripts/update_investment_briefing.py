@@ -172,10 +172,18 @@ def build_payload(day: str) -> dict:
         return [metric(items.get(key)) for key in keys]
 
     sp500, kospi, kosdaq = metric(items.get("sp500")), metric(items.get("kospi")), metric(items.get("kosdaq"))
+    # This mirrors the report order used in the "아침 저녁 투자 브리핑" chat.
+    # Every statement is derived from the market snapshot or selected news; no
+    # price target, ranking, or forecast is fabricated by this static job.
+    us10y, wti, krw = metric(items.get("us10y")), metric(items.get("wti")), metric(items.get("krw_usd"))
     sections = [
         {
-            "id": "core", "title": "07:00 한 줄 결론", "subtitle": "오늘 아침 가장 먼저 볼 시장 신호",
-            "summary": f"{regime}. {stance} 미국 S&P 500은 {sp500['value']} ({sp500['change']}), KOSPI는 {kospi['value']} ({kospi['change']})입니다.",
+            "id": "verdict", "title": "1. 오늘 한 줄 결론", "subtitle": "아침 브리핑의 핵심 판단",
+            "summary": f"{regime}. {stance}",
+            "details": [
+                f"간밤 S&P 500은 {sp500['value']} ({sp500['change']}), NASDAQ은 {metric(items.get('nasdaq'))['value']} ({metric(items.get('nasdaq'))['change']})로 마감했습니다.",
+                f"국내 기준점인 KOSPI는 {kospi['value']} ({kospi['change']})입니다. 오늘은 지수보다 금리·유가·환율 변화가 업종별 방향을 가를 가능성을 먼저 점검합니다.",
+            ],
             "metrics": metrics(("sp500", "kospi", "krw_usd", "us10y", "wti", "gold")), "checks": checks,
             "scenarios": [
                 {"label": "상방", "title": "위험선호 확산", "body": "주요 지수 상승과 원화 안정이 함께 이어지는지 확인합니다."},
@@ -184,26 +192,65 @@ def build_payload(day: str) -> dict:
             ], "news": [news_card(row) for row in selected[:4]],
         },
         {
-            "id": "events", "title": "밤사이 미국장 · 글로벌 변화", "subtitle": "지수·금리·유가와 연결된 뉴스",
-            "summary": f"미국장 마감 방향과 미국 10년물 금리, 국제유가를 함께 확인합니다. {stance}",
+            "id": "us", "title": "2. 미국시장 핵심", "subtitle": "지수·금리·유가·물가 경로",
+            "summary": "미국 주가지수만 보지 않고 장기금리와 원유 가격을 함께 읽습니다.",
+            "details": [
+                f"미국 10년물 국채금리는 {us10y['value']} ({us10y['change']})입니다. 금리가 오르면 미래 이익 비중이 큰 성장주의 할인율 부담이 커질 수 있습니다.",
+                f"WTI 원유는 {wti['value']} ({wti['change']})입니다. 유가 변화는 물가와 미국 연방준비제도(Fed·연준)의 금리 경로에 연결되므로 단독으로 해석하지 않습니다.",
+            ],
             "metrics": metrics(("sp500", "nasdaq", "dow", "us10y", "gold", "wti")),
             "checks": [checks[1], f"WTI {metric(items.get('wti'))['value']} ({metric(items.get('wti'))['change']}) — 유가 급등은 물가·금리 경로를 다시 자극할 수 있습니다."],
             "scenarios": [], "news": section_news(rows, ("미국", "연준", "fomc", "나스닥", "s&p", "금리"), 0),
         },
         {
-            "id": "risk", "title": "오늘 한국장 전 체크포인트", "subtitle": "개장 전 확인할 환율·수급·업종 변수",
-            "summary": f"KOSPI {kospi['value']} ({kospi['change']}), KOSDAQ {kosdaq['value']}입니다. 원·달러와 외국인 수급을 함께 점검합니다.",
+            "id": "kr", "title": "3. 오늘 한국시장", "subtitle": "개장 전 환율·수급·업종 점검",
+            "summary": f"KOSPI {kospi['value']} ({kospi['change']}), KOSDAQ {kosdaq['value']}입니다.",
+            "details": [
+                f"원·달러는 {krw['value']} ({krw['change']})입니다. 원화 약세가 이어지는지와 외국인 현물·선물 수급을 함께 확인합니다.",
+                "개장 직후 등락만으로 결론을 내리지 않고, 반도체·수출주·금융 등 주요 업종으로 거래가 확산되는지 확인한 뒤 판단합니다.",
+            ],
             "metrics": metrics(("kospi", "kosdaq", "krw_usd", "kr_10y")),
             "checks": [checks[0], "반도체·수출주 뉴스가 지수 상승을 실제 거래 확산으로 연결하는지 확인합니다."],
             "scenarios": [], "news": section_news(rows, ("한국", "코스피", "코스닥", "삼성", "하이닉스", "수출"), 3),
         },
+        {
+            "id": "sectors", "title": "4. 섹터·기업 체크", "subtitle": "뉴스로 확인된 업종별 촉매와 위험",
+            "summary": "기사 원문이 확인된 사실과 수치만으로 섹터의 촉매·위험을 정리합니다.",
+            "details": [
+                "반도체, 에너지, 금융 등은 같은 지수 안에서도 금리·유가·환율에 대한 민감도가 다릅니다. 기사 제목만으로 실적이나 목표주가를 추정하지 않습니다.",
+                "기업이 등장할 때는 사업과 주력 제품을 함께 표기하고, HBM(고대역폭메모리)·CPI(미국 소비자물가지수)처럼 약어는 첫 등장 시 뜻을 풀어 씁니다.",
+            ],
+            "metrics": [], "checks": ["개별 기업 이슈는 원문 본문과 공시·실적 자료가 확인된 경우에만 투자 판단의 근거로 사용합니다."],
+            "scenarios": [], "news": [news_card(row) for row in selected[:5]],
+        },
+        {
+            "id": "risk", "title": "5. 오늘 가장 중요한 위험", "subtitle": "우선순위대로 보는 경보 신호",
+            "summary": "유가, 장기금리, 환율, 주요 경제지표 발표, 수급을 같은 순서로 추적합니다.",
+            "details": [
+                f"현재 수치에서는 유가 {wti['value']}, 미국 10년물 {us10y['value']}, 원·달러 {krw['value']}의 동반 변화를 우선 확인합니다.",
+                "세 지표가 동시에 위험회피 방향으로 움직이면 고평가 성장주와 변동성이 큰 종목의 손실 한도를 먼저 점검합니다.",
+            ],
+            "metrics": metrics(("wti", "us10y", "krw_usd", "gold")),
+            "checks": ["경제지표 발표 전후에는 가격 급변을 추격하지 않고, 실제 발표치와 시장 반응을 분리해서 확인합니다."],
+            "scenarios": [], "news": section_news(rows, ("유가", "원유", "물가", "cpi", "ppi", "금리"), 0),
+        },
+        {
+            "id": "action", "title": "6. 오늘의 실행 체크리스트", "subtitle": "브리핑을 매매 전 점검으로 바꾸는 순서",
+            "summary": "예측보다 조건 확인을 우선합니다. 아래 항목은 투자 권유가 아닌 일일 점검 기준입니다.",
+            "details": [
+                "① 유가 → ② 미국 10년물 → ③ NASDAQ·반도체 지수 → ④ 원·달러 → ⑤ 외국인 수급 순서로 확인합니다.",
+                "상방에서는 거래 확산과 환율 안정을, 하방에서는 금리·유가 동반 상승과 지지선 이탈을 확인합니다. 어느 경우에도 한 번의 장중 움직임만으로 비중을 크게 바꾸지 않습니다.",
+            ],
+            "metrics": [], "checks": ["보유 종목의 실적·공시·손실 한도를 먼저 확인합니다.", "원문이 미확인된 뉴스는 제목이나 2차 보도만으로 매매 근거로 사용하지 않습니다."],
+            "scenarios": [], "news": [],
+        },
     ]
     return {
-        "schema_version": 3, "date": day,
+        "schema_version": 4, "date": day,
         "generated_at": datetime.now(SEOUL).isoformat(timespec="seconds"),
         "title": f"{observed.year}년 {observed.month}월 {observed.day}일 {weekdays[observed.weekday()]} 아침 투자 브리핑",
-        "format": "deterministic-morning",
-        "summary": "출근 전 3분 안에 시장의 방향·밤사이 변화·오늘 확인할 위험을 훑도록 정리한 오전 브리핑입니다.",
+        "format": "chat-briefing-compatible-morning",
+        "summary": "ChatGPT ‘아침 저녁 투자 브리핑’의 보고 순서(결론·미국·한국·섹터·위험·실행)를 공개 시장 데이터로 자동 작성한 오전 브리핑입니다.",
         "sections": sections,
         "disclaimer": "공개 데이터의 기준일·시차에 따라 값이 다를 수 있습니다. 자동 생성 참고자료이며 투자 권유가 아닙니다.",
     }
