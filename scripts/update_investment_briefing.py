@@ -189,7 +189,7 @@ def build_payload(day: str) -> dict:
                 {"label": "상방", "title": "위험선호 확산", "body": "주요 지수 상승과 원화 안정이 함께 이어지는지 확인합니다."},
                 {"label": "중립", "title": "지수별 차별화", "body": "지수보다 실적·수급이 강한 종목만 선별합니다."},
                 {"label": "하방", "title": "금리·유가 부담", "body": "금리와 유가 동반 상승 시 변동성 확대에 대비합니다."},
-            ], "news": [news_card(row) for row in selected[:4]],
+            ], "news": [],
         },
         {
             "id": "us", "title": "2. 미국시장 핵심", "subtitle": "지수·금리·유가·물가 경로",
@@ -200,7 +200,7 @@ def build_payload(day: str) -> dict:
             ],
             "metrics": metrics(("sp500", "nasdaq", "dow", "us10y", "gold", "wti")),
             "checks": [checks[1], f"WTI {metric(items.get('wti'))['value']} ({metric(items.get('wti'))['change']}) — 유가 급등은 물가·금리 경로를 다시 자극할 수 있습니다."],
-            "scenarios": [], "news": section_news(rows, ("미국", "연준", "fomc", "나스닥", "s&p", "금리"), 0),
+            "scenarios": [], "news": section_news(rows, ("미국", "연준", "fomc", "나스닥", "s&p", "금리"), 0)[:2],
         },
         {
             "id": "kr", "title": "3. 오늘 한국시장", "subtitle": "개장 전 환율·수급·업종 점검",
@@ -211,7 +211,7 @@ def build_payload(day: str) -> dict:
             ],
             "metrics": metrics(("kospi", "kosdaq", "krw_usd", "kr_10y")),
             "checks": [checks[0], "반도체·수출주 뉴스가 지수 상승을 실제 거래 확산으로 연결하는지 확인합니다."],
-            "scenarios": [], "news": section_news(rows, ("한국", "코스피", "코스닥", "삼성", "하이닉스", "수출"), 3),
+            "scenarios": [], "news": section_news(rows, ("한국", "코스피", "코스닥", "삼성", "하이닉스", "수출"), 3)[:2],
         },
         {
             "id": "sectors", "title": "4. 섹터·기업 체크", "subtitle": "뉴스로 확인된 업종별 촉매와 위험",
@@ -221,7 +221,7 @@ def build_payload(day: str) -> dict:
                 "기업이 등장할 때는 사업과 주력 제품을 함께 표기하고, HBM(고대역폭메모리)·CPI(미국 소비자물가지수)처럼 약어는 첫 등장 시 뜻을 풀어 씁니다.",
             ],
             "metrics": [], "checks": ["개별 기업 이슈는 원문 본문과 공시·실적 자료가 확인된 경우에만 투자 판단의 근거로 사용합니다."],
-            "scenarios": [], "news": [news_card(row) for row in selected[:5]],
+            "scenarios": [], "news": [news_card(row) for row in selected[:3]],
         },
         {
             "id": "risk", "title": "5. 오늘 가장 중요한 위험", "subtitle": "우선순위대로 보는 경보 신호",
@@ -232,7 +232,7 @@ def build_payload(day: str) -> dict:
             ],
             "metrics": metrics(("wti", "us10y", "krw_usd", "gold")),
             "checks": ["경제지표 발표 전후에는 가격 급변을 추격하지 않고, 실제 발표치와 시장 반응을 분리해서 확인합니다."],
-            "scenarios": [], "news": section_news(rows, ("유가", "원유", "물가", "cpi", "ppi", "금리"), 0),
+            "scenarios": [], "news": [],
         },
         {
             "id": "action", "title": "6. 오늘의 실행 체크리스트", "subtitle": "브리핑을 매매 전 점검으로 바꾸는 순서",
