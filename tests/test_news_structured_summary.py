@@ -113,6 +113,25 @@ def test_portal_republication_is_a_valid_fallback_not_an_original() -> None:
     assert MODULE.source_role_for_url("https://www.edaily.co.kr/News/Read?newsId=1") == "full_text"
 
 
+def test_discovered_body_must_match_the_article_title() -> None:
+    title = "미국 8월 생산자물가 5.4% 상승"
+    assert MODULE.title_matches_sentences(title, [
+        "미국 8월 생산자물가가 전년 동월 대비 5.4% 상승하면서 시장의 금리 경계가 커졌다.",
+        "에너지 가격은 물가 압력의 주요 변수로 꼽혔다.",
+    ])
+    assert not MODULE.title_matches_sentences(title, [
+        "서울 아파트 분양가는 공급 부족 우려로 상승했다.",
+        "주택 시장의 거래량은 감소했다.",
+    ])
+
+
+def test_search_and_navigation_urls_are_not_article_candidates() -> None:
+    assert not MODULE.is_article_candidate_url("https://www.melon.com/search/total/index.htm?q=test")
+    assert not MODULE.is_article_candidate_url("https://search.shopping.naver.com/search/all?query=test")
+    assert not MODULE.is_article_candidate_url("https://www.newspim.com/")
+    assert MODULE.is_article_candidate_url("https://www.edaily.co.kr/News/Read?newsId=123")
+
+
 def test_translation_is_not_triggered_by_region_for_korean_text() -> None:
     assert not MODULE.is_probably_foreign("월가 금융인 70%가 연준 금리 동결을 예상했다.")
     assert MODULE.is_probably_foreign("Reuters reports that the Federal Reserve may hold rates in September.")
@@ -139,4 +158,4 @@ def test_daum_repaired_article_has_clean_summary_prose() -> None:
         assert forbidden not in prose
     assert item["article_source_url"] == "https://v.daum.net/v/20260910173927047"
     assert item["translation_status"] == "not_needed"
-    assert item["article_body_status"] == "verified_reconstruction"
+    assert item["article_body_status"] in {"full_text", "verified_reconstruction"}

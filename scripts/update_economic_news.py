@@ -6,6 +6,7 @@ import html
 import json
 import os
 import re
+import threading
 import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -13,7 +14,7 @@ from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import parse_qs, quote_plus, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -72,6 +73,9 @@ CATEGORY_RULES = (
     ("증시", ("코스피", "코스닥", "나스닥", "다우", "S&P", "증시", "주가")),
 )
 PORTAL_HOSTS = {"v.daum.net", "news.daum.net", "news.naver.com", "n.news.naver.com"}
+DISCOVERY_SEARCH_HOSTS = {"search.naver.com", "search.daum.net"}
+DISCOVERY_LOCK = threading.Lock()
+LAST_DISCOVERY_REQUEST_AT = 0.0
 
 
 MARKET_COMMENTS = {
@@ -241,6 +245,127 @@ def source_role_for_url(url: str) -> str:
     return "portal_republication" if host in PORTAL_HOSTS else "full_text"
 
 
+class PublicLinkParser(HTMLParser):
+    """Collect public HTTP(S) links from a search-result page without scripts."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.links: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "a":
+            return
+        href = dict(attrs).get("href") or ""
+        if href:
+            self.links.append(html.unescape(href))
+
+
+def _paced_public_request(url: str) -> str:
+    """Request public search pages slowly; this is reliability/rate etiquette, not bypassing access controls."""
+    global LAST_DISCOVERY_REQUEST_AT
+    with DISCOVERY_LOCK:
+        elapsed = time.monotonic() - LAST_DISCOVERY_REQUEST_AT
+        if elapsed < 1.2:
+            time.sleep(1.2 - elapsed)
+        request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml", "Accept-Language": "ko-KR,ko;q=0.9"})
+        with urlopen(request, timeout=18) as response:
+            page = response.read(1_500_000).decode(response.headers.get_content_charset() or "utf-8", errors="replace")
+        LAST_DISCOVERY_REQUEST_AT = time.monotonic()
+    return page
+
+
+def _unwrap_search_url(url: str, base_url: str) -> str:
+    candidate = urljoin(base_url, url)
+    parsed = urlparse(candidate)
+    if parsed.netloc.lower().split(":", 1)[0] == "search.naver.com":
+        values = parse_qs(parsed.query)
+        for key in ("u", "url", "redirect"):
+            if values.get(key):
+                candidate = unquote(values[key][0])
+                break
+    return candidate
+
+
+def is_article_candidate_url(url: str) -> bool:
+    """Reject portal navigation/search pages that repeat the query but are not articles."""
+    parsed = urlparse(url)
+    host = parsed.netloc.lower().split(":", 1)[0]
+    path = parsed.path.lower()
+    query = parse_qs(parsed.query)
+    if host in {"www.melon.com", "map.kakao.com", "shoppinghow.kakao.com", "search.shopping.naver.com"}:
+        return False
+    if any(segment in path for segment in ("/search", "/total", "/shopping", "/map")):
+        return False
+    if path in {"", "/"} or path.endswith(("/index.do", "/index.html", "/index.htm")):
+        return False
+    return not any(key in query for key in ("q", "query", "search"))
+
+
+def search_public_article_urls(title: str, publisher: str) -> list[tuple[str, str]]:
+    """Find candidate publisher/portal URLs using public Naver and Daum search pages."""
+    # The title is the stable identifier. Adding a publisher string can hide
+    # valid results when the portal labels that publisher differently.
+    query = clean_text(title)[:240]
+    endpoints = (
+        ("naver_search", f"https://search.naver.com/search.naver?where=news&query={quote_plus(query)}"),
+        ("daum_search", f"https://search.daum.net/search?w=news&q={quote_plus(query)}"),
+    )
+    candidates: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for discovery_method, endpoint in endpoints:
+        try:
+            parser = PublicLinkParser()
+            parser.feed(_paced_public_request(endpoint))
+        except Exception:
+            continue
+        for raw_url in parser.links:
+            candidate = _unwrap_search_url(raw_url, endpoint)
+            parsed = urlparse(candidate)
+            host = parsed.netloc.lower().split(":", 1)[0]
+            naver_internal = host.endswith(".naver.com") and host not in {"news.naver.com", "n.news.naver.com", "blog.naver.com"}
+            daum_internal = host.endswith(".daum.net") and host not in PORTAL_HOSTS
+            navigation_host = host in {"www.navercorp.com", "map.kakao.com", "shoppinghow.kakao.com"}
+            if parsed.scheme not in {"http", "https"} or not host or host in DISCOVERY_SEARCH_HOSTS or host == "news.google.com" or naver_internal or daum_internal or navigation_host or not is_article_candidate_url(candidate):
+                continue
+            normalized = candidate.split("#", 1)[0]
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            candidates.append((discovery_method, normalized))
+    publisher_host = clean_text(publisher).lower()
+    candidates.sort(key=lambda row: (publisher_host not in row[1].lower(), source_role_for_url(row[1]) != "full_text"))
+    # A title search can expose many navigation/related links.  Checking a
+    # small ordered set keeps archive repair bounded and respectful of hosts.
+    return candidates[:2]
+
+
+def title_matches_sentences(title: str, sentences: list[str]) -> bool:
+    title_tokens = {token.lower() for token in TOKEN_PATTERN.findall(title) if len(token) >= 2 and token.lower() not in STOPWORDS}
+    if not title_tokens:
+        return False
+    body_tokens = {token.lower() for token in TOKEN_PATTERN.findall(" ".join(sentences[:12])) if len(token) >= 2}
+    required = 1 if len(title_tokens) <= 2 else 2
+    matches = {
+        title_token for title_token in title_tokens
+        if any(title_token == body_token or title_token.startswith(body_token) or body_token.startswith(title_token) for body_token in body_tokens)
+    }
+    return len(matches) >= required
+
+
+def discover_article_body(title: str, publisher: str) -> tuple[list[str], str, str] | None:
+    """Use public publisher/portal search only when the feed URL did not yield a usable body."""
+    for discovery_method, candidate_url in search_public_article_urls(title, publisher):
+        try:
+            sentences, final_url = fetch_article_sentences(candidate_url)
+        except Exception:
+            continue
+        if len(sentences) < 3 or len(" ".join(sentences)) < 350 or ARTICLE_NOISE_PATTERN.search(" ".join(sentences)):
+            continue
+        if title_matches_sentences(title, sentences):
+            return sentences, final_url, discovery_method
+    return None
+
+
 def fetch_article_sentences(url: str) -> tuple[list[str], str]:
     if "news.google.com" in urlparse(url).netloc.lower():
         try:
@@ -256,7 +381,7 @@ def fetch_article_sentences(url: str) -> tuple[list[str], str]:
         if match:
             url = f"https://blog.naver.com/PostView.naver?blogId={quote_plus(match.group(1))}&logNo={match.group(2)}"
     request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml", "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.7"})
-    with urlopen(request, timeout=18) as response:
+    with urlopen(request, timeout=12) as response:
         final_url = response.geturl()
         content_type = response.headers.get("Content-Type", "")
         if "html" not in content_type.lower():
@@ -476,6 +601,10 @@ def has_verified_legacy_summary(item: dict[str, object]) -> bool:
 
 def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
     """Migrate archived cards to the single narrative format without network or GPT."""
+    if item.get("discovery_method") and not is_article_candidate_url(str(item.get("article_source_url") or "")):
+        item["article_body_status"] = "unavailable"
+        item["article_body_error"] = "기사 URL 형식 불일치"
+        item["next_body_retry_at"] = date.today().isoformat()
     strip_summary_provenance(item)
     if item.get("article_body_status") == "unavailable":
         # Never present contaminated portal/RSS text as an article summary when
@@ -1050,7 +1179,8 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
     last_error = ""
     for source in sources[:3]:
         url = str(source.get("url", ""))
-        if not url:
+        if not url or not is_article_candidate_url(url):
+            last_error = "기사 URL 형식 불일치"
             continue
         try:
             sentences, final_url = fetch_article_sentences(url)
@@ -1063,6 +1193,9 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
             continue
         if ARTICLE_NOISE_PATTERN.search(joined_sentences):
             last_error = "본문 UI 오염 감지"
+            continue
+        if not title_matches_sentences(str(item.get("title", "")), sentences):
+            last_error = "기사 제목과 본문 불일치"
             continue
         fields = sixw_summary_from_sentences(
             str(item.get("title", "")), str(source.get("publisher") or item.get("publisher") or "원문"),
@@ -1083,6 +1216,29 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         fields["article_body_attempts"] = int(item.get("article_body_attempts") or 0) + 1
         fields["summary_schema_version"] = SUMMARY_SCHEMA_VERSION
         fields["next_body_retry_at"] = ""
+        return item, fields
+    discovered = discover_article_body(str(item.get("title", "")), str(item.get("publisher", "")))
+    if discovered:
+        sentences, final_url, discovery_method = discovered
+        fields = sixw_summary_from_sentences(
+            str(item.get("title", "")), str(item.get("publisher") or "원문"), str(item.get("date") or ""), sentences,
+        )
+        if item.get("region") in {"us", "global"} and is_probably_foreign(" ".join(sentences)):
+            fields = translate_summary_fields(fields)
+        source_role = source_role_for_url(final_url)
+        fields.update({
+            "article_source_url": final_url,
+            "canonical_source_url": final_url,
+            "primary_source_role": source_role,
+            "discovery_method": discovery_method,
+            "statistics_only_source_count": max(0, len(sources) - 1),
+            "article_body_checked_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "article_body_attempts": int(item.get("article_body_attempts") or 0) + 1,
+            "summary_schema_version": SUMMARY_SCHEMA_VERSION,
+            "next_body_retry_at": "",
+        })
+        if source_role == "portal_republication":
+            fields["summary_basis"] = "공개 포털 재전재 본문"
         return item, fields
     return item, {
         "article_body_status": "unavailable",
@@ -1145,7 +1301,9 @@ def enrich_archived_bodies(limit: int, force_retry: bool = False) -> int:
         payload = json.loads(path.read_text(encoding="utf-8"))
         payloads[path] = payload
         for item in payload.get("items", []):
-            if force_retry or article_retry_due(item):
+            stale_discovery = bool(item.get("discovery_method")) and not is_article_candidate_url(str(item.get("article_source_url") or ""))
+            should_retry = (item.get("article_body_status") == "unavailable" or stale_discovery) if force_retry else article_retry_due(item)
+            if should_retry:
                 targets.append((path, payload, item))
                 if len(targets) >= limit:
                     break
