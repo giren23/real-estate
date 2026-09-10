@@ -125,6 +125,34 @@ def test_discovered_body_must_match_the_article_title() -> None:
     ])
 
 
+def test_publisher_listing_similarity_requires_key_numbers_and_topic() -> None:
+    original = "미국 8월 생산자물가 5.4% 상승, 연준 금리 인상 경계"
+    verified_similar = "미국 8월 생산자물가 5.4% 올라…연준 금리 인상 우려"
+    wrong_indicator = "미국 8월 소비자물가 상승…연준 정책 주목"
+    assert MODULE.title_similarity(original, verified_similar) >= 0.5
+    assert MODULE.title_similarity(original, wrong_indicator) == 0.0
+
+
+def test_verified_publisher_listing_replaces_feed_title(monkeypatch) -> None:
+    original = "미국 8월 생산자물가 5.4% 상승, 연준 금리 인상 경계"
+    discovered = "미국 8월 생산자물가 5.4% 올라…연준 금리 인상 우려"
+    sentences = [
+        "미국의 8월 생산자물가가 전년 동월 대비 5.4% 상승하며 연준의 금리 인상 경계가 커졌다. 기업들은 비용 증가가 소비자 가격으로 전가될 수 있다고 우려했다.",
+        "에너지 가격 상승은 기업의 비용 부담과 소비자 물가 압력으로 이어질 수 있다. 시장은 원자재 가격과 서비스 물가가 향후 지표에 미칠 영향을 점검하고 있다.",
+        "시장 참가자들은 다음 연방공개시장위원회에서 물가와 고용 지표를 함께 확인할 전망이다. 금리 경로는 향후 발표될 소비와 고용 데이터에 따라 달라질 수 있다.",
+        "전문가들은 이번 생산자물가 수치가 소매가격에 반영되는 시점과 범위를 추가로 확인해야 한다고 설명했다. 중앙은행은 단일 지표보다 여러 달의 추세를 기준으로 정책을 판단한다.",
+    ]
+    monkeypatch.setattr(MODULE, "search_public_article_urls", lambda *_args: [])
+    monkeypatch.setattr(MODULE, "publisher_daily_candidates", lambda *_args: [(discovered, "https://example.com/article", "publisher_archive_economy")])
+    monkeypatch.setattr(MODULE, "fetch_article_sentences", lambda _url: (sentences, "https://example.com/article"))
+    item, fields = MODULE._article_enrichment({"title": original, "publisher": "Benzinga", "date": "2026-09-10", "sources": []})
+    assert item["title"] == original
+    assert fields["title"] == discovered
+    assert fields["feed_title"] == original
+    assert fields["title_match_status"] == "similar_article_verified"
+    assert fields["article_body_status"] == "full_text"
+
+
 def test_search_and_navigation_urls_are_not_article_candidates() -> None:
     assert not MODULE.is_article_candidate_url("https://www.melon.com/search/total/index.htm?q=test")
     assert not MODULE.is_article_candidate_url("https://search.shopping.naver.com/search/all?query=test")

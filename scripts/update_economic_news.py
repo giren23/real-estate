@@ -45,6 +45,16 @@ DIRECT_RSS_FEEDS = (
     ("https://www.theguardian.com/business/rss", "The Guardian", "global"),
     ("https://www.cnbc.com/id/10001147/device/rss/rss.html", "CNBC", "us"),
 )
+# Public, publisher-owned listing pages used only after the feed URL and the
+# two public news indexes could not verify an article.  This deliberately is a
+# small allow-list: it is a normal daily archive read, not broad crawling or a
+# way to evade a publisher's access controls.
+PUBLISHER_DAILY_SECTIONS = {
+    "benzinga": (
+        ("publisher_archive_news", "https://kr.benzinga.com/news/"),
+        ("publisher_archive_economy", "https://kr.benzinga.com/category/news/economy/"),
+    ),
+}
 TAG_PATTERN = re.compile(r"<[^>]+>")
 SPACE_PATTERN = re.compile(r"\s+")
 TOKEN_PATTERN = re.compile(r"[가-힣A-Za-z0-9]+")
@@ -260,6 +270,33 @@ class PublicLinkParser(HTMLParser):
             self.links.append(html.unescape(href))
 
 
+class PublisherListingParser(HTMLParser):
+    """Collect visible article labels from a publisher's public daily listing."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.links: list[tuple[str, str]] = []
+        self._href = ""
+        self._text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "a":
+            self._href = dict(attrs).get("href") or ""
+            self._text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._href:
+            self._text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "a" and self._href:
+            label = clean_text(" ".join(self._text))
+            if label:
+                self.links.append((label, html.unescape(self._href)))
+            self._href = ""
+            self._text = []
+
+
 def _paced_public_request(url: str) -> str:
     """Request public search pages slowly; this is reliability/rate etiquette, not bypassing access controls."""
     global LAST_DISCOVERY_REQUEST_AT
@@ -352,7 +389,57 @@ def title_matches_sentences(title: str, sentences: list[str]) -> bool:
     return len(matches) >= required
 
 
-def discover_article_body(title: str, publisher: str) -> tuple[list[str], str, str] | None:
+def title_similarity(title: str, candidate_title: str) -> float:
+    """Conservative lexical similarity for same-day publisher-listing repair."""
+    left = {token.lower() for token in TOKEN_PATTERN.findall(title) if len(token) >= 2 and token.lower() not in STOPWORDS}
+    right = {token.lower() for token in TOKEN_PATTERN.findall(candidate_title) if len(token) >= 2 and token.lower() not in STOPWORDS}
+    if not left or not right:
+        return 0.0
+    overlap = len(left & right)
+    ratio = overlap / min(len(left), len(right))
+    left_numbers = {re.sub(r"[^0-9.]", "", value) for value in NUMBER_PATTERN.findall(title)} - {""}
+    right_numbers = {re.sub(r"[^0-9.]", "", value) for value in NUMBER_PATTERN.findall(candidate_title)} - {""}
+    # A changed key number (for example CPI versus PPI) is not a safe repair.
+    required_numbers = 2 if len(left_numbers) >= 2 else 1
+    if left_numbers and len(left_numbers & right_numbers) < required_numbers:
+        return 0.0
+    return ratio if overlap >= 2 else 0.0
+
+
+def publisher_daily_candidates(title: str, publisher: str, target_day: str) -> list[tuple[str, str, str]]:
+    """Read allow-listed public publisher sections and rank same-day-like titles.
+
+    A refusal (403), changed layout, or unavailable archive simply produces no
+    candidate. The caller must never attempt to bypass that restriction.
+    """
+    publisher_key = clean_text(publisher).lower()
+    sections: tuple[tuple[str, str], ...] = ()
+    for key, values in PUBLISHER_DAILY_SECTIONS.items():
+        if key in publisher_key:
+            sections = values
+            break
+    ranked: list[tuple[float, str, str, str]] = []
+    seen: set[str] = set()
+    for method, listing_url in sections:
+        try:
+            parser = PublisherListingParser()
+            parser.feed(_paced_public_request(listing_url))
+        except Exception:
+            continue
+        for candidate_title, raw_url in parser.links:
+            candidate_url = urljoin(listing_url, raw_url).split("#", 1)[0]
+            if candidate_url in seen or not is_article_candidate_url(candidate_url):
+                continue
+            score = title_similarity(title, candidate_title)
+            if score < 0.5:
+                continue
+            seen.add(candidate_url)
+            ranked.append((score, candidate_title, candidate_url, method))
+    ranked.sort(key=lambda row: row[0], reverse=True)
+    return [(candidate_title, candidate_url, method) for _score, candidate_title, candidate_url, method in ranked[:4]]
+
+
+def discover_article_body(title: str, publisher: str, target_day: str = "") -> tuple[list[str], str, str, str] | None:
     """Use public publisher/portal search only when the feed URL did not yield a usable body."""
     for discovery_method, candidate_url in search_public_article_urls(title, publisher):
         try:
@@ -362,7 +449,20 @@ def discover_article_body(title: str, publisher: str) -> tuple[list[str], str, s
         if len(sentences) < 3 or len(" ".join(sentences)) < 350 or ARTICLE_NOISE_PATTERN.search(" ".join(sentences)):
             continue
         if title_matches_sentences(title, sentences):
-            return sentences, final_url, discovery_method
+            return sentences, final_url, discovery_method, title
+    # Search indexes can miss a just-published or retitled article. In that
+    # case inspect the publisher's normal public section list for that day.
+    for candidate_title, candidate_url, discovery_method in publisher_daily_candidates(title, publisher, target_day):
+        try:
+            sentences, final_url = fetch_article_sentences(candidate_url)
+        except Exception:
+            continue
+        joined = " ".join(sentences)
+        if len(sentences) < 3 or len(joined) < 350 or ARTICLE_NOISE_PATTERN.search(joined):
+            continue
+        if title_similarity(title, candidate_title) < 0.5 or not title_matches_sentences(title, sentences):
+            continue
+        return sentences, final_url, discovery_method, candidate_title
     return None
 
 
@@ -1217,11 +1317,11 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         fields["summary_schema_version"] = SUMMARY_SCHEMA_VERSION
         fields["next_body_retry_at"] = ""
         return item, fields
-    discovered = discover_article_body(str(item.get("title", "")), str(item.get("publisher", "")))
+    discovered = discover_article_body(str(item.get("title", "")), str(item.get("publisher", "")), str(item.get("date", "")))
     if discovered:
-        sentences, final_url, discovery_method = discovered
+        sentences, final_url, discovery_method, discovered_title = discovered
         fields = sixw_summary_from_sentences(
-            str(item.get("title", "")), str(item.get("publisher") or "원문"), str(item.get("date") or ""), sentences,
+            discovered_title, str(item.get("publisher") or "원문"), str(item.get("date") or ""), sentences,
         )
         if item.get("region") in {"us", "global"} and is_probably_foreign(" ".join(sentences)):
             fields = translate_summary_fields(fields)
@@ -1237,6 +1337,13 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
             "summary_schema_version": SUMMARY_SCHEMA_VERSION,
             "next_body_retry_at": "",
         })
+        if clean_text(discovered_title) != clean_text(str(item.get("title", ""))):
+            # Preserve the feed label for auditability, but publish the
+            # verified same-day publisher title rather than pretending it was
+            # an exact match.
+            fields["feed_title"] = str(item.get("title", ""))
+            fields["title"] = discovered_title[:160]
+            fields["title_match_status"] = "similar_article_verified"
         if source_role == "portal_republication":
             fields["summary_basis"] = "공개 포털 재전재 본문"
         return item, fields
