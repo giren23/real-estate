@@ -70,7 +70,8 @@ TIME_PATTERN = re.compile(r"(?:\d{1,4}년|\d{1,2}월|\d{1,2}일|최근|현재|�
 ARTICLE_NOISE_PATTERN = re.compile(
     r"(?:무단전재|재배포|저작권|기자\s*[\w.@-]+|구독|로그인|댓글|공감|관련기사|ADVERTISEMENT|Copyright|All rights reserved|"
     r"요약보기|자동요약|전체 맥락을 이해|음성으로 듣기|음성재생|음성 재생|글자 수|번역 설정|번역 beta|Translated by|"
-    r"번역중|Now in translation|글씨크기|글자크기|닫기|인쇄하기|페이스북|Facebook|Twitter|LinkedIn|Pinterest|공유)", re.I)
+    r"번역중|Now in translation|글씨크기|글자크기|닫기|인쇄하기|페이스북|Facebook|Twitter|LinkedIn|Pinterest|공유|"
+    r"주소\s*:\s*서울특별시|일간신문등록번호|인터넷신문등록번호|등록\s*\(발행\)일자|발행\s*/\s*편집인)", re.I)
 
 
 CATEGORY_RULES = (
@@ -123,7 +124,7 @@ def clean_text(value: str) -> str:
 
 SUMMARY_PROVENANCE_PATTERN = re.compile(
     r"(?:v\.daum\.net|news\.daum\.net|news\.naver\.com|n\.news\.naver\.com|연합뉴스|로이터(?:\s*통신)?|블룸버그(?:\s*통신)?|Bloomberg|Reuters|Associated Press|AP News|디지털타임스|이데일리|매일경제|한국경제|뉴스1|뉴시스|머니투데이|문화일보|조선비즈|Chosunbiz|연합인포맥스)"
-    r"|(?:\b[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+\b)"
+    r"|(?:\b[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)+\b)"
     r"|(?:\b\d{4}[./]\s*\d{1,2}[.:]\s*\d{1,2}(?::\s*\d{2})?\b)"
     r"|(?:\b[가-힣]{2,10}\s*(?:기자|특파원)\b)"
     r"|(?:같은 사안을 다룬 관련 보도(?:에서는)?|보도에 따르면|기사에 따르면|전하면|통신에 따르면|신문에 따르면)", re.I)
@@ -232,12 +233,10 @@ class ArticleParagraphParser(HTMLParser):
                 self._collect_json(child)
 
 
-def article_sentences(page: str) -> list[str]:
-    parser = ArticleParagraphParser()
-    parser.feed(page)
+def sentences_from_paragraphs(paragraphs: list[str]) -> list[str]:
     sentences: list[str] = []
     seen: set[str] = set()
-    for paragraph in parser.paragraphs:
+    for paragraph in paragraphs:
         for sentence in SENTENCE_PATTERN.split(clean_text(paragraph)):
             sentence = sentence.strip(" -•\t")
             normalized = SPACE_PATTERN.sub("", sentence).lower()
@@ -248,6 +247,17 @@ def article_sentences(page: str) -> list[str]:
             seen.add(normalized)
             sentences.append(sentence)
     return sentences
+
+
+def article_sentences(page: str) -> list[str]:
+    # 매일경제의 refId 문단은 실제 기사 본문 경계다. 이후에 붙는 종목
+    # 카드·AI 해설·푸터는 같은 p 태그를 쓰므로 일반 파서에 맡기면 섞인다.
+    mk_body = [clean_text(part) for part in re.findall(r"<p\b[^>]*\brefId\s*=\s*['\"]?\d+['\"]?[^>]*>(.*?)</p>", page, re.I | re.S)]
+    if len(mk_body) >= 2:
+        return sentences_from_paragraphs(mk_body)
+    parser = ArticleParagraphParser()
+    parser.feed(page)
+    return sentences_from_paragraphs(parser.paragraphs)
 
 
 def source_role_for_url(url: str) -> str:

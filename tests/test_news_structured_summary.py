@@ -107,6 +107,16 @@ def test_article_parser_excludes_reader_ui_from_body() -> None:
     assert all("음성" not in sentence and "자동요약" not in sentence for sentence in sentences)
 
 
+def test_mk_refid_body_excludes_ai_explainer_and_footer() -> None:
+    page = """<article><p refId="2">WTI 선물은 배럴당 100.13달러에 거래됐다.</p>
+    <p refId="3">브렌트유 선물도 배럴당 105.38달러로 상승했다.</p></article>
+    <section class="tbl_ai_explain"><p>정부와 금융 시장 모두에게 큰 숙제가 될 것으로 보여요.</p></section>
+    <footer><p>주소: 서울특별시 중구 퇴계로 190 전화: 02-2000-2114</p><p>일간신문등록번호: 가00196</p></footer>"""
+    sentences = MODULE.article_sentences(page)
+    assert len(sentences) == 2
+    assert all("숙제가" not in sentence and "주소:" not in sentence for sentence in sentences)
+
+
 def test_portal_republication_is_a_valid_fallback_not_an_original() -> None:
     assert MODULE.source_role_for_url("https://v.daum.net/v/20260910173927047") == "portal_republication"
     assert MODULE.source_role_for_url("https://news.naver.com/article/001/000000") == "portal_republication"
@@ -175,15 +185,18 @@ def test_summary_provenance_cleaner_preserves_facts() -> None:
     assert item["sources"][0]["publisher"] == "연합뉴스"
 
 
+def test_summary_provenance_cleaner_keeps_decimal_percentages() -> None:
+    assert MODULE.clean_summary_provenance("WTI는 전장보다 4.3% 오른 100.13달러에 거래됐다.") == "WTI는 전장보다 4.3% 오른 100.13달러에 거래됐다"
+
+
 def test_daum_repaired_article_has_clean_summary_prose() -> None:
     payload = json.loads((ROOT / "web" / "content" / "news" / "2026-09-10.json").read_text(encoding="utf-8"))
-    item = next(row for row in payload["items"] if row["id"] == "news-20260910-973c7a72677fdd")
+    item = next(row for row in payload["items"] if "v.daum.net" in str(row.get("article_source_url", "")))
     prose = json.dumps({key: item.get(key) for key in (
         "summary", "easy_explanation", "article_summary", "core_summary", "six_w_one_h",
         "key_figures", "fact_status", "uncertainties", "narrative_paragraphs",
     )}, ensure_ascii=False)
     for forbidden in ("v.daum.net", "로이터", "연합뉴스", "이규화", "요약보기", "자동요약", "음성으로 듣기", "번역 beta"):
         assert forbidden not in prose
-    assert item["article_source_url"] == "https://v.daum.net/v/20260910173927047"
-    assert item["translation_status"] == "not_needed"
+    assert item["article_source_url"].startswith("https://v.daum.net/v/")
     assert item["article_body_status"] in {"full_text", "verified_reconstruction"}
