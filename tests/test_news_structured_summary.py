@@ -1,4 +1,5 @@
 from importlib.util import module_from_spec, spec_from_file_location
+import json
 from pathlib import Path
 
 
@@ -109,3 +110,27 @@ def test_article_parser_excludes_reader_ui_from_body() -> None:
 def test_translation_is_not_triggered_by_region_for_korean_text() -> None:
     assert not MODULE.is_probably_foreign("월가 금융인 70%가 연준 금리 동결을 예상했다.")
     assert MODULE.is_probably_foreign("Reuters reports that the Federal Reserve may hold rates in September.")
+
+
+def test_summary_provenance_cleaner_preserves_facts() -> None:
+    item = {
+        "summary": "연합뉴스 홍길동 기자 2026. 09:30 보도에 따르면 금리 동결 전망은 70%다.",
+        "sources": [{"publisher": "연합뉴스", "url": "https://example.com"}],
+    }
+    MODULE.strip_summary_provenance(item)
+    assert item["summary"] == "금리 동결 전망은 70%다"
+    assert item["sources"][0]["publisher"] == "연합뉴스"
+
+
+def test_daum_repaired_article_has_clean_summary_prose() -> None:
+    payload = json.loads((ROOT / "web" / "content" / "news" / "2026-09-10.json").read_text(encoding="utf-8"))
+    item = next(row for row in payload["items"] if row["id"] == "news-20260910-973c7a72677fdd")
+    prose = json.dumps({key: item.get(key) for key in (
+        "summary", "easy_explanation", "article_summary", "core_summary", "six_w_one_h",
+        "key_figures", "fact_status", "uncertainties", "narrative_paragraphs",
+    )}, ensure_ascii=False)
+    for forbidden in ("v.daum.net", "로이터", "연합뉴스", "이규화", "요약보기", "자동요약", "음성으로 듣기", "번역 beta"):
+        assert forbidden not in prose
+    assert item["article_source_url"] == "https://v.daum.net/v/20260910173927047"
+    assert item["translation_status"] == "not_needed"
+    assert item["article_body_status"] == "verified_reconstruction"

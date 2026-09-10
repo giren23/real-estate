@@ -105,6 +105,42 @@ def clean_text(value: str) -> str:
     return SPACE_PATTERN.sub(" ", html.unescape(TAG_PATTERN.sub(" ", value or ""))).strip()
 
 
+SUMMARY_PROVENANCE_PATTERN = re.compile(
+    r"(?:v\.daum\.net|news\.daum\.net|news\.naver\.com|n\.news\.naver\.com|연합뉴스|로이터통신?|Reuters|Associated Press|AP News|디지털타임스|이데일리|매일경제|한국경제|뉴스1|뉴시스)"
+    r"|(?:\b\d{4}[./]\s*\d{1,2}[.:]\s*\d{1,2}(?::\s*\d{2})?\b)"
+    r"|(?:\b[가-힣]{2,5}\s*(?:기자|특파원)\b)", re.I)
+
+
+def clean_summary_provenance(value: str) -> str:
+    """Remove publisher/byline/UI boilerplate from prose while preserving facts."""
+    text = clean_text(value)
+    text = ARTICLE_NOISE_PATTERN.sub(" ", text)
+    text = SUMMARY_PROVENANCE_PATTERN.sub(" ", text)
+    text = re.sub(r"(?:^|\s)(?:\d{4}-\d{2}-\d{2}\s+)?[^,.]{1,40}\s+(?:보도에 따르면|기사에 따르면|전하면),?\s*", " ", text)
+    text = re.sub(r"\s+([,.。;:])", r"\1", text)
+    return SPACE_PATTERN.sub(" ", text).strip(" ,.;:·")
+
+
+def strip_summary_provenance(item: dict[str, object]) -> dict[str, object]:
+    """Sanitize all user-facing summary prose; source URLs remain in metadata."""
+    prose_keys = {"summary", "easy_explanation", "core_summary", "article_summary", "narrative_paragraphs", "uncertainties", "fact_status", "six_w_one_h", "key_figures", "news_charts", "metrics"}
+    preserve_keys = {"value", "period", "status", "type", "importance", "wiki_query"}
+
+    def walk(value: object, key: str = "") -> object:
+        if isinstance(value, str):
+            return value if key in preserve_keys else clean_summary_provenance(value)
+        if isinstance(value, list):
+            return [walk(row, key) for row in value]
+        if isinstance(value, dict):
+            return {name: (child if name in preserve_keys else walk(child, name)) for name, child in value.items()}
+        return value
+
+    for key in prose_keys:
+        if key in item:
+            item[key] = walk(item[key], key)
+    return item
+
+
 def is_probably_foreign(text: str) -> bool:
     """Detect source language from text, not the publisher's region label."""
     sample = clean_text(text)
@@ -426,6 +462,7 @@ def has_verified_legacy_summary(item: dict[str, object]) -> bool:
 
 def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
     """Migrate archived cards to the single narrative format without network or GPT."""
+    strip_summary_provenance(item)
     if item.get("article_body_status") == "fetched":
         item["article_body_status"] = "full_text"
     if not item.get("article_body_status") and has_verified_legacy_summary(item):
@@ -436,12 +473,14 @@ def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
         item["publication_status"] = "detail"
         for obsolete in ("sections", "expert_analysis", "timeline", "fact_ledger", "coverage_status", "coverage_note", "causal_path"):
             item.pop(obsolete, None)
+        strip_summary_provenance(item)
         return item
     if item.get("article_body_status") in {"full_text", "verified_reconstruction"} and item.get("narrative_paragraphs"):
         paragraphs = [str(row) for row in item.get("narrative_paragraphs") or [] if str(row).strip()]
         item.update(structured_summary_fields(str(item.get("title", "")), str(item.get("publisher", "원문")), str(item.get("date", "")), paragraphs, str(item.get("core_summary") or item.get("summary") or "")))
         item["summary_schema_version"] = SUMMARY_SCHEMA_VERSION
         item["publication_status"] = "detail"
+        strip_summary_provenance(item)
         return item
     sources = item.get("sources") or []
     prepared: list[dict[str, str]] = []
@@ -465,6 +504,7 @@ def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
     item["region"] = classify_topic_region(" ".join(f"{row.get('title', '')} {row.get('description', '')}" for row in prepared), prepared)
     for obsolete in ("sections", "expert_analysis", "timeline", "fact_ledger", "coverage_status", "coverage_note", "causal_path"):
         item.pop(obsolete, None)
+    strip_summary_provenance(item)
     return item
 
 
