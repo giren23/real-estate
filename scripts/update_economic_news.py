@@ -71,6 +71,7 @@ CATEGORY_RULES = (
     ("산업·기업", ("반도체", "기업", "실적", "수출", "자동차", "배터리", "조선")),
     ("증시", ("코스피", "코스닥", "나스닥", "다우", "S&P", "증시", "주가")),
 )
+PORTAL_HOSTS = {"v.daum.net", "news.daum.net", "news.naver.com", "n.news.naver.com"}
 
 
 MARKET_COMMENTS = {
@@ -234,6 +235,12 @@ def article_sentences(page: str) -> list[str]:
     return sentences
 
 
+def source_role_for_url(url: str) -> str:
+    """Distinguish a publisher original from a verified portal republication."""
+    host = urlparse(url).netloc.lower().split(":", 1)[0]
+    return "portal_republication" if host in PORTAL_HOSTS else "full_text"
+
+
 def fetch_article_sentences(url: str) -> tuple[list[str], str]:
     if "news.google.com" in urlparse(url).netloc.lower():
         try:
@@ -256,11 +263,6 @@ def fetch_article_sentences(url: str) -> tuple[list[str], str]:
             return [], final_url
         page = response.read(3_000_000).decode(response.headers.get_content_charset() or "utf-8", errors="replace")
     sentences = article_sentences(page)
-    # Reject portal/redirect pages as a primary source even when they expose a long body.
-    # A Google News or Daum URL is discovery metadata, not the publisher's canonical article.
-    final_host = urlparse(final_url).netloc.lower().split(":", 1)[0]
-    if final_host in {"news.google.com", "v.daum.net", "news.naver.com", "n.news.naver.com"}:
-        return [], final_url
     return sentences, final_url
 
 
@@ -1068,11 +1070,14 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         )
         if item.get("region") in {"us", "global"} and is_probably_foreign(" ".join(sentences)):
             fields = translate_summary_fields(fields)
+        source_role = source_role_for_url(final_url)
         fields["article_source_url"] = final_url
         fields["canonical_source_url"] = final_url
         fields["title"] = str(source.get("title_ko") or source.get("title") or item.get("title") or "")[:78]
         fields["publisher"] = str(source.get("publisher") or item.get("publisher") or "원문")[:40]
-        fields["primary_source_role"] = "full_text"
+        fields["primary_source_role"] = source_role
+        if source_role == "portal_republication":
+            fields["summary_basis"] = "공개 포털 재전재 본문"
         fields["statistics_only_source_count"] = max(0, len(sources) - 1)
         fields["article_body_checked_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
         fields["article_body_attempts"] = int(item.get("article_body_attempts") or 0) + 1
@@ -1100,9 +1105,9 @@ def article_retry_due(item: dict[str, object]) -> bool:
     return bool(retry_at and retry_at <= date.today().isoformat())
 
 
-def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = None, workers: int = 6) -> None:
+def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = None, workers: int = 6, force_retry: bool = False) -> None:
     """Fetch representative public bodies concurrently, then replace feed-only summaries."""
-    pending = [item for item in items if article_retry_due(item)]
+    pending = [item for item in items if force_retry or article_retry_due(item)]
     if limit is not None:
         pending = pending[: max(0, limit)]
     if not pending:
@@ -1130,7 +1135,7 @@ def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = No
             strip_summary_provenance(item)
 
 
-def enrich_archived_bodies(limit: int) -> int:
+def enrich_archived_bodies(limit: int, force_retry: bool = False) -> int:
     """Gradually migrate past archives so each scheduled run makes bounded progress."""
     if limit <= 0:
         return 0
@@ -1140,7 +1145,7 @@ def enrich_archived_bodies(limit: int) -> int:
         payload = json.loads(path.read_text(encoding="utf-8"))
         payloads[path] = payload
         for item in payload.get("items", []):
-            if article_retry_due(item):
+            if force_retry or article_retry_due(item):
                 targets.append((path, payload, item))
                 if len(targets) >= limit:
                     break
@@ -1148,7 +1153,7 @@ def enrich_archived_bodies(limit: int) -> int:
             break
     if not targets:
         return 0
-    enrich_article_bodies([item for _path, _payload, item in targets], workers=6)
+    enrich_article_bodies([item for _path, _payload, item in targets], workers=6, force_retry=force_retry)
     touched = {path for path, _payload, _item in targets}
     for path in touched:
         path.write_text(json.dumps(payloads[path], ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
@@ -1253,6 +1258,7 @@ def main() -> None:
     parser.add_argument("--limit-per-day", type=int, default=24)
     parser.add_argument("--archive-enrich-limit", type=int, default=60, help="한 실행에서 과거 원문 본문을 다시 처리할 최대 기사 수")
     parser.add_argument("--archive-only", action="store_true", help="새 뉴스 수집 없이 과거 기사 구조화만 실행")
+    parser.add_argument("--force-retry-unavailable", action="store_true", help="원문 미확인 기사도 즉시 다시 원문 경로를 확인")
     args = parser.parse_args()
     days = max(1, min(args.backfill_days, 365))
     limit = max(6, min(args.limit_per_day, 60))
@@ -1266,7 +1272,7 @@ def main() -> None:
             if items:
                 write_day(target, items)
                 print(f"{target}: {len(items)}건 저장")
-    enriched = enrich_archived_bodies(archive_limit)
+    enriched = enrich_archived_bodies(archive_limit, force_retry=args.force_retry_unavailable)
     if enriched:
         print(f"과거 기사 원문 본문 재처리: {enriched}건")
     rebuild_index()

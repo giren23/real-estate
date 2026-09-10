@@ -107,6 +107,12 @@ def test_article_parser_excludes_reader_ui_from_body() -> None:
     assert all("음성" not in sentence and "자동요약" not in sentence for sentence in sentences)
 
 
+def test_portal_republication_is_a_valid_fallback_not_an_original() -> None:
+    assert MODULE.source_role_for_url("https://v.daum.net/v/20260910173927047") == "portal_republication"
+    assert MODULE.source_role_for_url("https://news.naver.com/article/001/000000") == "portal_republication"
+    assert MODULE.source_role_for_url("https://www.edaily.co.kr/News/Read?newsId=1") == "full_text"
+
+
 def test_translation_is_not_triggered_by_region_for_korean_text() -> None:
     assert not MODULE.is_probably_foreign("월가 금융인 70%가 연준 금리 동결을 예상했다.")
     assert MODULE.is_probably_foreign("Reuters reports that the Federal Reserve may hold rates in September.")
