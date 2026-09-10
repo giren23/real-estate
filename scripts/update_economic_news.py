@@ -106,9 +106,11 @@ def clean_text(value: str) -> str:
 
 
 SUMMARY_PROVENANCE_PATTERN = re.compile(
-    r"(?:v\.daum\.net|news\.daum\.net|news\.naver\.com|n\.news\.naver\.com|연합뉴스|로이터통신?|Reuters|Associated Press|AP News|디지털타임스|이데일리|매일경제|한국경제|뉴스1|뉴시스)"
+    r"(?:v\.daum\.net|news\.daum\.net|news\.naver\.com|n\.news\.naver\.com|연합뉴스|로이터(?:\s*통신)?|블룸버그(?:\s*통신)?|Bloomberg|Reuters|Associated Press|AP News|디지털타임스|이데일리|매일경제|한국경제|뉴스1|뉴시스|머니투데이|문화일보|조선비즈|Chosunbiz|연합인포맥스)"
+    r"|(?:\b[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+\b)"
     r"|(?:\b\d{4}[./]\s*\d{1,2}[.:]\s*\d{1,2}(?::\s*\d{2})?\b)"
-    r"|(?:\b[가-힣]{2,5}\s*(?:기자|특파원)\b)", re.I)
+    r"|(?:\b[가-힣]{2,10}\s*(?:기자|특파원)\b)"
+    r"|(?:같은 사안을 다룬 관련 보도(?:에서는)?|보도에 따르면|기사에 따르면|전하면|통신에 따르면|신문에 따르면)", re.I)
 
 
 def clean_summary_provenance(value: str) -> str:
@@ -128,7 +130,16 @@ def strip_summary_provenance(item: dict[str, object]) -> dict[str, object]:
 
     def walk(value: object, key: str = "") -> object:
         if isinstance(value, str):
-            return value if key in preserve_keys else clean_summary_provenance(value)
+            if key in preserve_keys:
+                return value
+            cleaned = clean_summary_provenance(value)
+            publishers = {str(item.get("publisher") or "")}
+            publishers.update(str(source.get("publisher") or "") for source in item.get("sources") or [] if isinstance(source, dict))
+            for publisher in sorted((token.strip() for token in publishers), key=len, reverse=True):
+                if len(publisher) >= 2:
+                    cleaned = re.sub(re.escape(publisher), " ", cleaned, flags=re.I)
+            cleaned = re.sub(r"(?:[A-Za-z0-9가-힣._-]{2,40})(?:은|는)?\s*(?:\d{4}-\d{2}-\d{2}\s+)?공개한 기사에서", " ", cleaned)
+            return SPACE_PATTERN.sub(" ", cleaned).strip(" ,.;:·")
         if isinstance(value, list):
             return [walk(row, key) for row in value]
         if isinstance(value, dict):
@@ -463,6 +474,30 @@ def has_verified_legacy_summary(item: dict[str, object]) -> bool:
 def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
     """Migrate archived cards to the single narrative format without network or GPT."""
     strip_summary_provenance(item)
+    if item.get("article_body_status") == "unavailable":
+        # Never present contaminated portal/RSS text as an article summary when
+        # the representative source could not be opened. Keep the card visible
+        # for statistics and schedule a later retry instead of inventing prose.
+        title = clean_text(str(item.get("title") or "제목 미확인"))
+        item.update({
+            "summary": title,
+            "summary_title": title,
+            "core_summary": title,
+            "article_summary": ["공개 원문 본문을 확인하지 못해 상세 요약을 보류했습니다."],
+            "narrative_paragraphs": ["공개 원문 본문을 확인하지 못해 상세 요약을 보류했습니다."],
+            "easy_explanation": "원문 링크가 확인되면 본문을 다시 수집해 상세 요약으로 전환합니다.",
+            "six_w_one_h": {"who": [], "when": [str(item.get("date") or "")], "where": [], "what": [title], "why": [], "how": [], "result": []},
+            "key_figures": [],
+            "fact_status": [{"statement": "공개 원문 본문 미확인", "status": "미확인"}],
+            "uncertainties": ["원문 본문 확인 전에는 세부 수치와 인과관계를 확정할 수 없습니다."],
+            "news_charts": [],
+            "metrics": [],
+            "publication_status": "statistics_only",
+            "summary_basis": "제목·공개요약(원문 미확인)",
+            "summary_schema_version": SUMMARY_SCHEMA_VERSION,
+        })
+        strip_summary_provenance(item)
+        return item
     if item.get("article_body_status") == "fetched":
         item["article_body_status"] = "full_text"
     if not item.get("article_body_status") and has_verified_legacy_summary(item):
