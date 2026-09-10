@@ -116,8 +116,9 @@ SUMMARY_PROVENANCE_PATTERN = re.compile(
 def clean_summary_provenance(value: str) -> str:
     """Remove publisher/byline/UI boilerplate from prose while preserving facts."""
     text = clean_text(value)
-    text = ARTICLE_NOISE_PATTERN.sub(" ", text)
     text = SUMMARY_PROVENANCE_PATTERN.sub(" ", text)
+    text = ARTICLE_NOISE_PATTERN.sub(" ", text)
+    text = re.sub(r"\b\d{1,2}:\d{2}\b", " ", text)
     text = re.sub(r"(?:^|\s)(?:\d{4}-\d{2}-\d{2}\s+)?[^,.]{1,40}\s+(?:보도에 따르면|기사에 따르면|전하면),?\s*", " ", text)
     text = re.sub(r"\s+([,.。;:])", r"\1", text)
     return SPACE_PATTERN.sub(" ", text).strip(" ,.;:·")
