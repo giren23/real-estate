@@ -13,6 +13,7 @@ NEWS_DIR = ROOT / "web" / "content" / "news"
 OUTPUT_DIR = ROOT / "web" / "content" / "investment-briefing"
 INDEX_PATH = OUTPUT_DIR / "index.json"
 SEOUL = ZoneInfo("Asia/Seoul")
+ARCHIVE_START_DATE = "2026-09-09"
 
 INVESTMENT_TAGS = {"증시", "주식", "금리·채권", "환율", "원자재", "가상자산", "산업", "기업", "반도체", "경제정책"}
 INVESTMENT_KEYWORDS = (
@@ -173,8 +174,8 @@ def build_payload(day: str) -> dict:
     sp500, kospi, kosdaq = metric(items.get("sp500")), metric(items.get("kospi")), metric(items.get("kosdaq"))
     sections = [
         {
-            "id": "world", "title": "세계 정세 약식 총평", "subtitle": "위험선호·환율·원자재 동시 점검",
-            "summary": f"{regime}. 미국 S&P 500은 {sp500['value']} ({sp500['change']}), KOSPI는 {kospi['value']} ({kospi['change']})로 확인됩니다.",
+            "id": "core", "title": "07:00 한 줄 결론", "subtitle": "오늘 아침 가장 먼저 볼 시장 신호",
+            "summary": f"{regime}. {stance} 미국 S&P 500은 {sp500['value']} ({sp500['change']}), KOSPI는 {kospi['value']} ({kospi['change']})입니다.",
             "metrics": metrics(("sp500", "kospi", "krw_usd", "us10y", "wti", "gold")), "checks": checks,
             "scenarios": [
                 {"label": "상방", "title": "위험선호 확산", "body": "주요 지수 상승과 원화 안정이 함께 이어지는지 확인합니다."},
@@ -183,15 +184,15 @@ def build_payload(day: str) -> dict:
             ], "news": [news_card(row) for row in selected[:4]],
         },
         {
-            "id": "us", "title": "미국장", "subtitle": "미국장 주요 핵심 총평",
-            "summary": f"S&P 500과 NASDAQ의 전일 방향, 미국 10년물 금리와 유가를 함께 확인합니다. {stance}",
+            "id": "events", "title": "밤사이 미국장 · 글로벌 변화", "subtitle": "지수·금리·유가와 연결된 뉴스",
+            "summary": f"미국장 마감 방향과 미국 10년물 금리, 국제유가를 함께 확인합니다. {stance}",
             "metrics": metrics(("sp500", "nasdaq", "dow", "us10y", "gold", "wti")),
             "checks": [checks[1], f"WTI {metric(items.get('wti'))['value']} ({metric(items.get('wti'))['change']}) — 유가 급등은 물가·금리 경로를 다시 자극할 수 있습니다."],
             "scenarios": [], "news": section_news(rows, ("미국", "연준", "fomc", "나스닥", "s&p", "금리"), 0),
         },
         {
-            "id": "kr", "title": "한국장", "subtitle": "한국장 주요 핵심 총평",
-            "summary": f"KOSPI {kospi['value']} ({kospi['change']}), KOSDAQ {kosdaq['value']} — 원·달러와 외국인 수급을 함께 점검합니다.",
+            "id": "risk", "title": "오늘 한국장 전 체크포인트", "subtitle": "개장 전 확인할 환율·수급·업종 변수",
+            "summary": f"KOSPI {kospi['value']} ({kospi['change']}), KOSDAQ {kosdaq['value']}입니다. 원·달러와 외국인 수급을 함께 점검합니다.",
             "metrics": metrics(("kospi", "kosdaq", "krw_usd", "kr_10y")),
             "checks": [checks[0], "반도체·수출주 뉴스가 지수 상승을 실제 거래 확산으로 연결하는지 확인합니다."],
             "scenarios": [], "news": section_news(rows, ("한국", "코스피", "코스닥", "삼성", "하이닉스", "수출"), 3),
@@ -200,16 +201,16 @@ def build_payload(day: str) -> dict:
     return {
         "schema_version": 3, "date": day,
         "generated_at": datetime.now(SEOUL).isoformat(timespec="seconds"),
-        "title": f"{observed.year}년 {observed.month}월 {observed.day}일 {weekdays[observed.weekday()]} 아침 — 전수 스캔 투자 브리핑",
+        "title": f"{observed.year}년 {observed.month}월 {observed.day}일 {weekdays[observed.weekday()]} 아침 투자 브리핑",
         "format": "deterministic-morning",
-        "summary": "시장 스냅샷과 당일 뉴스 보관본을 규칙 기반으로 결합한 오전 브리핑입니다. 생성 과정에 GPT 호출을 사용하지 않습니다.",
+        "summary": "출근 전 3분 안에 시장의 방향·밤사이 변화·오늘 확인할 위험을 훑도록 정리한 오전 브리핑입니다.",
         "sections": sections,
         "disclaimer": "공개 데이터의 기준일·시차에 따라 값이 다를 수 있습니다. 자동 생성 참고자료이며 투자 권유가 아닙니다.",
     }
 
 
 def rebuild_index() -> dict:
-    files = sorted(OUTPUT_DIR.glob("????-??-??.json"), reverse=True)
+    files = sorted((path for path in OUTPUT_DIR.glob("????-??-??.json") if path.stem >= ARCHIVE_START_DATE), reverse=True)
     pages = []
     for path in files:
         payload = read_json(path, {})
@@ -220,6 +221,16 @@ def rebuild_index() -> dict:
     return index
 
 
+def prune_old_archives() -> int:
+    """Keep the user-requested briefing history only from the archive start."""
+    removed = 0
+    for path in OUTPUT_DIR.glob("????-??-??.json"):
+        if path.stem < ARCHIVE_START_DATE:
+            path.unlink()
+            removed += 1
+    return removed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="GPT 호출 없이 날짜별 오전 투자 브리핑 생성")
     parser.add_argument("--date", help="YYYY-MM-DD, 기본값은 한국시간 오늘")
@@ -227,10 +238,11 @@ def main() -> None:
     day = args.date or datetime.now(SEOUL).strftime("%Y-%m-%d")
     datetime.strptime(day, "%Y-%m-%d")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    removed = prune_old_archives()
     payload = build_payload(day)
     (OUTPUT_DIR / f"{day}.json").write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     index = rebuild_index()
-    print(f"오늘의 투자 브리핑 생성 완료: {day}, 보관 {len(index['pages'])}일, GPT 호출 없음")
+    print(f"오늘의 투자 브리핑 생성 완료: {day}, 보관 {len(index['pages'])}일, 이전 보관 정리 {removed}개, GPT 호출 없음")
 
 
 if __name__ == "__main__":
