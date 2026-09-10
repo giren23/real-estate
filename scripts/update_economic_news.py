@@ -6,7 +6,6 @@ import html
 import json
 import os
 import re
-import threading
 import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,8 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import parse_qs, quote_plus, unquote, urlencode, urlparse
-from urllib.error import HTTPError
+from urllib.parse import parse_qs, quote_plus, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -38,6 +36,7 @@ GLOBAL_FEEDS = (
     ("(site:economist.com OR site:asia.nikkei.com OR site:lemonde.fr OR site:theguardian.com OR site:dw.com OR site:aljazeera.com) (economy OR markets OR rates OR trade)", "en-GB", "GB", "GB:en", "global"),
 )
 DIRECT_RSS_FEEDS = (
+    ("https://www.dt.co.kr/rss/rss_economy.html", "디지털타임스", "domestic"),
     ("https://rss.blog.naver.com/dealsite.xml", "딜사이트", "domestic"),
     ("https://nypost.com/business/feed/", "New York Post", "us"),
     ("https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "The New York Times", "us"),
@@ -57,14 +56,10 @@ SENTENCE_PATTERN = re.compile(r"(?<=[.!?。])\s+")
 CAUSE_PATTERN = re.compile(r"때문|따라|영향|배경|이유|목적|위해|으로 인해|기인|전망|예상", re.I)
 METHOD_PATTERN = re.compile(r"통해|활용|설정|계획|방식|구조|계약|조치|추진|검토|절차|대응", re.I)
 TIME_PATTERN = re.compile(r"(?:\d{1,4}년|\d{1,2}월|\d{1,2}일|최근|현재|지난|올해|내년|상반기|하반기|분기|당시)")
-ARTICLE_NOISE_PATTERN = re.compile(r"(?:무단전재|재배포|저작권|기자\s*[\w.@-]+|구독|로그인|댓글|공감|관련기사|ADVERTISEMENT|Copyright|All rights reserved)", re.I)
-EDITORIAL_METADATA_PATTERNS = (
-    re.compile(r"\[?\s*재판매\s*및\s*DB\s*금지\s*\]?", re.I),
-    re.compile(r"\([^()\n]{1,30}=\s*연합뉴스\)"),
-    re.compile(r"\((?:사진|자료|그래픽)\s*=\s*연합뉴스\)"),
-    re.compile(r"(?:[가-힣]{2,5}\s*)?(?:기자|특파원)\s*=\s*"),
-    re.compile(r"[\w가-힣 .&'’-]{1,40}는\s+\d{4}-\d{2}-\d{2}\s+공개한\s+기사에서\s*"),
-)
+ARTICLE_NOISE_PATTERN = re.compile(
+    r"(?:무단전재|재배포|저작권|기자\s*[\w.@-]+|구독|로그인|댓글|공감|관련기사|ADVERTISEMENT|Copyright|All rights reserved|"
+    r"요약보기|자동요약|전체 맥락을 이해|음성으로 듣기|음성재생|음성 재생|글자 수|번역 설정|번역 beta|Translated by|"
+    r"번역중|Now in translation|글씨크기|글자크기|닫기|인쇄하기|페이스북|Facebook|Twitter|LinkedIn|Pinterest|공유)", re.I)
 
 
 CATEGORY_RULES = (
@@ -102,184 +97,20 @@ MARKET_QUOTE_NOISE = ("check out", "stock price", "share price", "etf price", "p
 RATE_DECISION_PATTERN = re.compile(r"(?:기준금리|정책금리|연준|한은|한국은행).{0,28}(?:인상|인하|동결|올렸|내렸)|(?:금리).{0,18}(?:인상 결정|인하 결정|동결 결정|올렸다|내렸다)", re.I)
 US_ORIGIN_TERMS = ("미국", "연방준비제도", "연준", "Federal Reserve", "Fed ", "트럼프", "Trump", "백악관", "White House", "월가", "Wall Street", "나스닥", "NASDAQ", "S&P 500", "뉴욕증시")
 GLOBAL_ORIGIN_TERMS = ("중국", "China", "일본", "Japan", "유럽", "European Union", "EU ", "영국", "독일", "프랑스", "러시아", "우크라이나", "중동", "OPEC", "IMF", "세계은행", "World Bank", "글로벌")
-SUMMARY_SCHEMA_VERSION = 2
+SUMMARY_SCHEMA_VERSION = 3
 STRUCTURED_KEYS = ("summary_title", "article_summary", "core_summary", "six_w_one_h", "key_figures", "fact_status", "uncertainties")
-CANONICAL_ARTICLE_OVERRIDES = {
-    "트럼프의연준압박,통할까": {
-        "publisher": "서울신문",
-        "url": "https://www.seoul.co.kr/news/economy/2026/09/06/20260906500069",
-    },
-    "美-캐나다달러불균형": {
-        "publisher": "연합뉴스",
-        "url": "https://www.yna.co.kr/amp/view/AKR20260907001200071",
-    },
-    "비트코인(BTC)'폭풍전야'": {
-        "publisher": "코인리더스",
-        "url": "https://www.coinreaders.com/256759",
-    },
-    "뉴욕증시운명가를美8월CPI발표임박": {
-        "publisher": "CBC뉴스",
-        "url": "https://www.cbci.co.kr/news/articleView.html?idxno=604333",
-    },
-}
-
-AGGREGATOR_HOSTS = {"news.google.com", "www.google.com", "google.com", "www.bing.com", "bing.com"}
-SEARCH_EXCLUDED_HOSTS = AGGREGATOR_HOSTS | {"youtube.com", "www.youtube.com", "facebook.com", "www.facebook.com", "x.com", "twitter.com"}
-GOOGLE_SEARCH_LOCK = threading.Lock()
-GOOGLE_SEARCH_NEXT_AT = 0.0
-GOOGLE_SEARCH_DISABLED_UNTIL = 0.0
 
 
 def clean_text(value: str) -> str:
     return SPACE_PATTERN.sub(" ", html.unescape(TAG_PATTERN.sub(" ", value or ""))).strip()
 
 
-def strip_editorial_metadata(value: str) -> str:
-    text = clean_text(value)
-    for pattern in EDITORIAL_METADATA_PATTERNS:
-        text = pattern.sub(" ", text)
-    return SPACE_PATTERN.sub(" ", text).strip(" ]=-·,")
-
-
-def sanitize_archived_item(item: dict[str, object]) -> None:
-    """Remove redistribution notices, datelines and reporter bylines from generated prose."""
-    protected = {"title", "publisher", "url", "article_source_url", "resolved_from_url", "source_role", "link_status", "published_at", "published_time", "date", "id", "eyebrow", "tags"}
-
-    def cleanse(value: object, key: str = "") -> object:
-        if isinstance(value, str):
-            return value if key in protected else strip_editorial_metadata(value)
-        if isinstance(value, list):
-            return [cleanse(row, key) for row in value]
-        if isinstance(value, dict):
-            return {child_key: cleanse(child, child_key) for child_key, child in value.items()}
-        return value
-
-    cleaned = cleanse(item)
-    item.clear()
-    item.update(cleaned)
-    six_w = item.get("six_w_one_h") or {}
-    if isinstance(six_w, dict):
-        publisher = clean_text(str(item.get("publisher") or ""))
-        who = [str(row) for row in (six_w.get("who") or []) if clean_text(str(row)) not in {publisher, "연합뉴스"} and not re.search(r"(?:뉴스|신문|방송|일보)$", clean_text(str(row)))]
-        if not who:
-            paragraphs = item.get("article_summary") or item.get("narrative_paragraphs") or []
-            first = strip_editorial_metadata(str(paragraphs[0])) if paragraphs else ""
-            actor_match = re.match(r"(.{2,50}?)(?:은|는|이|가)\s", first)
-            if actor_match:
-                who = [actor_match.group(1).strip()]
-        six_w["who"] = who
-
-
-def is_aggregator_url(value: str) -> bool:
-    try:
-        host = urlparse(str(value or "")).hostname or ""
-    except ValueError:
-        return True
-    return host.lower() in AGGREGATOR_HOSTS
-
-
-def extract_google_result_urls(page: str) -> list[str]:
-    """Extract ordinary web-result targets without accepting Google-owned links."""
-    candidates: list[str] = []
-    for raw in re.findall(r'href=["\']([^"\']+)', page or "", re.I):
-        value = html.unescape(raw)
-        if value.startswith("/url?"):
-            value = parse_qs(urlparse(value).query).get("q", [""])[0]
-        value = unquote(value)
-        try:
-            parsed = urlparse(value)
-        except ValueError:
-            continue
-        host = (parsed.hostname or "").lower()
-        if parsed.scheme not in {"http", "https"} or not host or host in SEARCH_EXCLUDED_HOSTS:
-            continue
-        if value not in candidates:
-            candidates.append(value)
-    return candidates
-
-
-def google_search_article_candidates(title: str, publisher: str) -> list[str]:
-    """Use ordinary Google web search only after a News RSS target cannot be decoded."""
-    query = f'"{clean_text(title)}" "{clean_text(publisher)}"'
-    api_key = os.environ.get("GOOGLE_SEARCH_API_KEY", "").strip()
-    search_engine_id = os.environ.get("GOOGLE_SEARCH_CX", "").strip()
-    if api_key and search_engine_id:
-        api_url = "https://customsearch.googleapis.com/customsearch/v1?" + urlencode({"key": api_key, "cx": search_engine_id, "q": query, "num": 10})
-        request = Request(api_url, headers={"User-Agent": USER_AGENT})
-        with urlopen(request, timeout=25) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        return [str(item.get("link")) for item in payload.get("items", []) if item.get("link") and not is_aggregator_url(str(item.get("link")))][:8]
-    global GOOGLE_SEARCH_NEXT_AT, GOOGLE_SEARCH_DISABLED_UNTIL
-    minimum_interval = max(5.0, float(os.environ.get("GOOGLE_SEARCH_INTERVAL_SECONDS", "12")))
-    with GOOGLE_SEARCH_LOCK:
-        now = time.monotonic()
-        if now < GOOGLE_SEARCH_DISABLED_UNTIL:
-            raise RuntimeError("Google 일반검색 429 중단 회로 활성화")
-        delay = GOOGLE_SEARCH_NEXT_AT - now
-        if delay > 0:
-            time.sleep(delay)
-        url = f"https://www.google.com/search?q={quote_plus(query)}&hl=ko"
-        request = Request(url, headers={"User-Agent": USER_AGENT, "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.6"})
-        try:
-            with urlopen(request, timeout=20) as response:
-                page = decode_article_page(response.read(2_000_000), response.headers.get_content_charset())
-        except HTTPError as error:
-            if error.code == 429:
-                GOOGLE_SEARCH_DISABLED_UNTIL = time.monotonic() + 3600
-                raise RuntimeError("Google 일반검색 HTTP 429: 이번 실행의 추가 검색 중단") from error
-            raise
-        finally:
-            GOOGLE_SEARCH_NEXT_AT = time.monotonic() + minimum_interval
-    return extract_google_result_urls(page)[:8]
-
-
-def title_matches_article(title: str, sentences: list[str]) -> bool:
-    expected = {token.lower() for token in TOKEN_PATTERN.findall(title) if len(token) >= 2 and token not in STOPWORDS and not token.isdigit()}
-    actual = {token.lower() for token in TOKEN_PATTERN.findall(" ".join(sentences[:12])) if len(token) >= 2}
-    overlap = len(expected & actual)
-    return overlap >= min(3, max(2, len(expected))) or overlap / max(1, len(expected)) >= 0.45
-
-
-def promote_resolved_source(item: dict[str, object]) -> None:
-    """Make a previously resolved publisher URL the visible primary source."""
-    direct = str(item.get("article_source_url") or "").strip()
-    sources = [dict(source) for source in (item.get("sources") or [])]
-    if direct and not is_aggregator_url(direct):
-        matched = next((i for i, source in enumerate(sources) if source.get("url") == direct), None)
-        if matched is not None:
-            source = sources.pop(matched)
-        elif sources:
-            source = sources.pop(0)
-            old_url = str(source.get("url") or "")
-            if old_url and old_url != direct:
-                source["resolved_from_url"] = old_url
-        else:
-            source = {"publisher": item.get("publisher", "원문"), "title": item.get("title", "")}
-        source.update({"url": direct, "link_status": "verified_direct", "source_role": "canonical_article"})
-        sources.insert(0, source)
-    for source in sources:
-        if is_aggregator_url(str(source.get("url") or "")):
-            source["link_status"] = "unresolved_aggregator"
-    if sources:
-        item["sources"] = sources
-        item["source_count"] = len(sources)
-
-
-def canonical_article_source(item: dict[str, object]) -> dict[str, str] | None:
-    normalized_title = SPACE_PATTERN.sub("", clean_text(str(item.get("title", ""))))
-    for title_fragment, override in CANONICAL_ARTICLE_OVERRIDES.items():
-        if title_fragment in normalized_title:
-            return {
-                "publisher": override["publisher"],
-                "title": clean_text(str(item.get("title", ""))),
-                "url": override["url"],
-                "published_at": str(item.get("date", "")),
-                "published_time": str(item.get("date", "")),
-                "description": "",
-                "region": "domestic",
-                "source_role": "canonical_article",
-            }
-    return None
+def is_probably_foreign(text: str) -> bool:
+    """Detect source language from text, not the publisher's region label."""
+    sample = clean_text(text)
+    korean = len(re.findall(r"[가-힣]", sample))
+    latin = len(re.findall(r"[A-Za-z]", sample))
+    return latin >= 24 and latin > max(12, korean * 1.25)
 
 
 class ArticleParagraphParser(HTMLParser):
@@ -295,7 +126,7 @@ class ArticleParagraphParser(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = {key.lower(): value or "" for key, value in attrs}
-        if tag.lower() in {"p", "article", "blockquote"}:
+        if tag.lower() in {"p", "blockquote"}:
             self._capture += 1
             if self._capture == 1:
                 self._buffer = []
@@ -304,7 +135,7 @@ class ArticleParagraphParser(HTMLParser):
             self._json_buffer = []
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.lower() in {"p", "article", "blockquote"} and self._capture:
+        if tag.lower() in {"p", "blockquote"} and self._capture:
             self._capture -= 1
             if self._capture == 0:
                 text = clean_text(" ".join(self._buffer))
@@ -344,64 +175,15 @@ def article_sentences(page: str) -> list[str]:
     seen: set[str] = set()
     for paragraph in parser.paragraphs:
         for sentence in SENTENCE_PATTERN.split(clean_text(paragraph)):
-            sentence = strip_editorial_metadata(sentence).strip(" -•\t")
+            sentence = sentence.strip(" -•\t")
             normalized = SPACE_PATTERN.sub("", sentence).lower()
-            if len(sentence) < 25 or len(sentence) > 700 or ARTICLE_NOISE_PATTERN.fullmatch(sentence) or normalized in seen:
+            if len(sentence) < 25 or len(sentence) > 700 or ARTICLE_NOISE_PATTERN.search(sentence) or normalized in seen:
                 continue
             if sentence.count("#") >= 2:
                 continue
             seen.add(normalized)
             sentences.append(sentence)
     return sentences
-
-
-def decode_article_page(raw: bytes, declared_charset: str | None) -> str:
-    """Choose the least-corrupted decoding for Korean and UTF-8 news pages."""
-    candidates: list[tuple[int, int, str]] = []
-    encodings = list(dict.fromkeys(filter(None, (declared_charset, "utf-8", "cp949", "euc-kr"))))
-    for priority, encoding in enumerate(encodings):
-        try:
-            page = raw.decode(encoding, errors="replace")
-        except LookupError:
-            continue
-        replacement_count = page.count("\ufffd")
-        hangul_count = len(re.findall(r"[가-힣]", page))
-        candidates.append((replacement_count * 1_000_000 - hangul_count, priority, page))
-    return min(candidates, key=lambda row: (row[0], row[1]))[2] if candidates else raw.decode("utf-8", errors="replace")
-
-
-def has_broken_article_encoding(sentences: list[str]) -> bool:
-    return "\ufffd" in " ".join(sentences)
-
-
-def broken_article_fallback(item: dict[str, object], error: str) -> dict[str, object]:
-    title = clean_text(str(item.get("title", "")))
-    publisher = clean_text(str(item.get("publisher", "원문")))
-    source_texts = [clean_text(str(source.get("description") or source.get("title") or "")) for source in item.get("sources") or []]
-    source_texts = [text for text in source_texts if text and "\ufffd" not in text]
-    lead = next((text for text in source_texts if len(text) >= 25), title)
-    fields = structured_summary_fields(title, publisher, str(item.get("date", "")), [lead], lead)
-    fields.update({
-        "summary": lead[:500],
-        "easy_explanation": lead,
-        "narrative_paragraphs": fields["article_summary"],
-        "article_body_status": "unavailable",
-        "publication_status": "statistics_only",
-        "article_body_error": error,
-        "summary_basis": "제목·RSS 공개요약",
-        "news_charts": [],
-    })
-    return fields
-
-
-def article_requires_korean_translation(source: dict[str, object], sentences: list[str]) -> bool:
-    """Use the body language, never the event's geography, to decide translation."""
-    text = " ".join(sentences)
-    hangul = len(re.findall(r"[가-힣]", text))
-    latin = len(re.findall(r"[A-Za-z]", text))
-    if hangul >= 20 and hangul >= latin * 0.2:
-        return False
-    return source.get("region") in {"us", "global"} and latin > hangul
 
 
 def fetch_article_sentences(url: str) -> tuple[list[str], str]:
@@ -424,8 +206,14 @@ def fetch_article_sentences(url: str) -> tuple[list[str], str]:
         content_type = response.headers.get("Content-Type", "")
         if "html" not in content_type.lower():
             return [], final_url
-        page = decode_article_page(response.read(3_000_000), response.headers.get_content_charset())
-    return article_sentences(page), final_url
+        page = response.read(3_000_000).decode(response.headers.get_content_charset() or "utf-8", errors="replace")
+    sentences = article_sentences(page)
+    # Reject portal/redirect pages as a primary source even when they expose a long body.
+    # A Google News or Daum URL is discovery metadata, not the publisher's canonical article.
+    final_host = urlparse(final_url).netloc.lower().split(":", 1)[0]
+    if final_host in {"news.google.com", "v.daum.net", "news.naver.com", "n.news.naver.com"}:
+        return [], final_url
+    return sentences, final_url
 
 
 def sixw_summary_from_sentences(title: str, publisher: str, published_at: str, sentences: list[str]) -> dict[str, object]:
@@ -433,10 +221,7 @@ def sixw_summary_from_sentences(title: str, publisher: str, published_at: str, s
     if not sentences:
         return {}
     title_tokens = {token.lower() for token in TOKEN_PATTERN.findall(title) if len(token) >= 2 and token not in STOPWORDS}
-    matching_start = next((index for index, sentence in enumerate(sentences) if len(title_tokens & {token.lower() for token in TOKEN_PATTERN.findall(sentence) if len(token) >= 2}) >= 2), 0)
-    # A late title-like sentence is usually an in-body subheading, not the article start.
-    # Jumping to it silently discards the lead, background, and earlier numeric evidence.
-    article_start = matching_start if matching_start <= 3 else 0
+    article_start = next((index for index, sentence in enumerate(sentences) if len(title_tokens & {token.lower() for token in TOKEN_PATTERN.findall(sentence) if len(token) >= 2}) >= 2), 0)
     sentences = sentences[article_start:]
     ranked: list[tuple[int, int, str]] = []
     for index, sentence in enumerate(sentences):
@@ -467,7 +252,8 @@ def sixw_summary_from_sentences(title: str, publisher: str, published_at: str, s
     while len(" ".join(chosen)) > 8000 and len(chosen) > 8:
         chosen.pop()
     lead = chosen[0]
-    narrative = lead[0].lower() + lead[1:] if lead[:1].isascii() and lead[:1].isupper() else lead
+    prefix = f"{publisher}는 {published_at} 공개한 기사에서 " if publisher or published_at else "기사에서는 "
+    narrative = prefix + lead[0].lower() + lead[1:] if lead[:1].isascii() and lead[:1].isupper() else prefix + lead
     if not narrative.endswith((".", "다.", "요.")):
         narrative += "."
     if len(chosen) > 1:
@@ -522,8 +308,7 @@ def extract_number_facts(sources: list[dict[str, str]]) -> list[dict[str, str]]:
 
 def structured_summary_fields(title: str, publisher: str, published_at: str, paragraphs: list[str], core: str) -> dict[str, object]:
     """Create the stable, LLM-free JSON contract used by every new article."""
-    paragraphs = [strip_editorial_metadata(row) for row in paragraphs if strip_editorial_metadata(row)][:7]
-    core = strip_editorial_metadata(core)
+    paragraphs = [clean_text(row) for row in paragraphs if clean_text(row)][:7]
     if len(paragraphs) < 3:
         paragraphs.append("공개된 기사 범위에서 확인되는 배경·실행 방법·적용 대상은 원문 링크에서 추가 확인이 필요함.")
     if len(paragraphs) < 3:
@@ -545,14 +330,12 @@ def structured_summary_fields(title: str, publisher: str, published_at: str, par
         if len(fact_status) >= 12:
             break
     uncertain = [row for row in sentence_rows if re.search(r"미정|미확정|검토|예정|계획|전망|가능성|추정|주장|필요", row)][:5]
-    actor_match = re.match(r"(.{2,50}?)(?:은|는|이|가)\s", first)
-    actor = actor_match.group(1).strip() if actor_match else ""
     return {
         "summary_title": re.sub(r"\s*[-|·:]\s*[^-|·:]{1,30}$", "", clean_text(title)).strip() or clean_text(title),
         "article_summary": paragraphs,
         "core_summary": core,
         "six_w_one_h": {
-            "who": [actor] if actor else [],
+            "who": [publisher] if publisher else [],
             "when": times or ([published_at] if published_at else []),
             "where": locations,
             "what": [first[:500]] if first else [],
@@ -643,8 +426,6 @@ def has_verified_legacy_summary(item: dict[str, object]) -> bool:
 
 def upgrade_existing_item(item: dict[str, object]) -> dict[str, object]:
     """Migrate archived cards to the single narrative format without network or GPT."""
-    sanitize_archived_item(item)
-    promote_resolved_source(item)
     if item.get("article_body_status") == "fetched":
         item["article_body_status"] = "full_text"
     if not item.get("article_body_status") and has_verified_legacy_summary(item):
@@ -703,22 +484,27 @@ def classify_region(publisher: str, hinted: str = "") -> str:
 
 
 def translate_to_korean(texts: list[str]) -> list[str] | None:
-    """Translate with DeepL, then a keyless fallback; never invent missing content."""
-    key = os.environ.get("DEEPL_API_KEY", "").strip()
+    """Translate without an LLM or paid service.
+
+    Prefer an optional locally installed Argos Translate model.  The existing
+    keyless GoogleTranslator fallback is retained for machines that do not
+    have the offline model yet; it is bounded, one request per text, and its
+    result is explicitly marked as machine-translated.
+    """
     if not texts:
         return None
-    if key:
-        try:
-            endpoint = os.environ.get("DEEPL_API_URL", "").strip() or ("https://api-free.deepl.com/v2/translate" if key.endswith(":fx") else "https://api.deepl.com/v2/translate")
-            payload = json.dumps({"text": texts, "target_lang": "KO"}, ensure_ascii=False).encode("utf-8")
-            request = Request(endpoint, data=payload, headers={"User-Agent": USER_AGENT, "Authorization": f"DeepL-Auth-Key {key}", "Content-Type": "application/json", "Accept": "application/json"}, method="POST")
-            with urlopen(request, timeout=45) as response:
-                rows = json.loads(response.read().decode("utf-8")).get("translations", [])
-            translated = [clean_text(row.get("text", "")) for row in rows]
+    try:
+        import argostranslate.translate as argos_translate
+        languages = argos_translate.get_installed_languages()
+        source = next((language for language in languages if language.code == "en"), None)
+        target = next((language for language in languages if language.code == "ko"), None)
+        if source and target:
+            translator = source.get_translation(target)
+            translated = [clean_text(translator.translate(text[:4500])) for text in texts]
             if len(translated) == len(texts) and all(translated):
                 return translated
-        except Exception:
-            pass
+    except Exception:
+        pass
     try:
         from deep_translator import GoogleTranslator
         translated = [clean_text(GoogleTranslator(source="auto", target="ko").translate(text[:4500])) for text in texts]
@@ -1151,6 +937,8 @@ def translate_foreign_sources(items: list[dict[str, object]]) -> None:
             if source.get("region") not in {"us", "global"}:
                 continue
             title, summary = str(source.get("title", "")), str(source.get("summary_original", ""))
+            if not is_probably_foreign(f"{title} {summary}"):
+                continue
             pending.append((source, title, summary))
             texts.extend([title, summary or title])
     if not texts:
@@ -1179,36 +967,9 @@ def translate_foreign_sources(items: list[dict[str, object]]) -> None:
 
 
 def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dict[str, object]]:
-    promote_resolved_source(item)
     sources = list(item.get("sources") or [])
     sources.sort(key=lambda source: ("news.google.com" in str(source.get("url", "")), -representative_score(source)[0]))
-    canonical = canonical_article_source(item)
-    if canonical:
-        sources = [canonical, *[source for source in sources if source.get("url") != canonical["url"]]]
-        item["sources"] = sources
-        item["source_count"] = len(sources)
     last_error = ""
-    search_error = ""
-    broken_encoding_detected = "\ufffd" in json.dumps(item, ensure_ascii=False)
-    if sources and all(is_aggregator_url(str(source.get("url") or "")) for source in sources):
-        primary = sources[0]
-        try:
-            candidates = google_search_article_candidates(str(item.get("title") or primary.get("title") or ""), str(primary.get("publisher") or item.get("publisher") or ""))
-        except Exception as error:
-            candidates = []
-            search_error = f"Google 일반검색 실패: {error}"[:160]
-        for candidate in candidates:
-            try:
-                candidate_sentences, candidate_final_url = fetch_article_sentences(candidate)
-            except Exception:
-                continue
-            if len(candidate_sentences) >= 3 and len(" ".join(candidate_sentences)) >= 350 and title_matches_article(str(item.get("title") or ""), candidate_sentences):
-                recovered = dict(primary)
-                recovered.update({"url": candidate_final_url, "resolved_from_url": primary.get("url", ""), "link_status": "verified_direct", "source_role": "google_web_search_recovery"})
-                sources.insert(0, recovered)
-                item["sources"] = sources
-                item["source_count"] = len(sources)
-                break
     for source in sources[:3]:
         url = str(source.get("url", ""))
         if not url:
@@ -1218,27 +979,21 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         except Exception as error:
             last_error = str(error)[:160]
             continue
-        if has_broken_article_encoding(sentences):
-            last_error = "원문 문자 인코딩 손상"
-            broken_encoding_detected = True
-            continue
-        if len(sentences) < 3 or len(" ".join(sentences)) < 350:
+        joined_sentences = " ".join(sentences)
+        if len(sentences) < 3 or len(joined_sentences) < 350:
             last_error = "공개 본문 분량 부족"
             continue
-        if final_url and not is_aggregator_url(final_url):
-            original_url = str(source.get("url") or "")
-            if original_url and original_url != final_url:
-                source["resolved_from_url"] = original_url
-            source.update({"url": final_url, "link_status": "verified_direct", "source_role": "canonical_article"})
-            item["sources"] = sources
-            item["source_count"] = len(sources)
+        if ARTICLE_NOISE_PATTERN.search(joined_sentences):
+            last_error = "본문 UI 오염 감지"
+            continue
         fields = sixw_summary_from_sentences(
             str(item.get("title", "")), str(source.get("publisher") or item.get("publisher") or "원문"),
             str(source.get("published_at") or item.get("date") or ""), sentences,
         )
-        if article_requires_korean_translation(source, sentences):
+        if item.get("region") in {"us", "global"} and is_probably_foreign(" ".join(sentences)):
             fields = translate_summary_fields(fields)
-        fields["article_source_url"] = final_url if final_url and not is_aggregator_url(final_url) else ""
+        fields["article_source_url"] = final_url
+        fields["canonical_source_url"] = final_url
         fields["title"] = str(source.get("title_ko") or source.get("title") or item.get("title") or "")[:78]
         fields["publisher"] = str(source.get("publisher") or item.get("publisher") or "원문")[:40]
         fields["primary_source_role"] = "full_text"
@@ -1248,40 +1003,30 @@ def _article_enrichment(item: dict[str, object]) -> tuple[dict[str, object], dic
         fields["summary_schema_version"] = SUMMARY_SCHEMA_VERSION
         fields["next_body_retry_at"] = ""
         return item, fields
-    failure = {
+    return item, {
         "article_body_status": "unavailable",
         "publication_status": "statistics_only",
-        "article_body_error": search_error or last_error or "공개 원문 본문을 확보하지 못함",
-        "source_resolution_error": search_error,
+        "article_body_error": last_error or "공개 원문 본문을 확보하지 못함",
         "article_body_checked_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "summary_basis": "제목·RSS 공개요약",
         "article_body_attempts": int(item.get("article_body_attempts") or 0) + 1,
         "summary_schema_version": SUMMARY_SCHEMA_VERSION,
-        "next_body_retry_at": (date.today() + timedelta(days=1 if item.get("important") else 7)).isoformat(),
+        "next_body_retry_at": (date.today() + timedelta(days=7)).isoformat(),
     }
-    for source in sources:
-        if is_aggregator_url(str(source.get("url") or "")):
-            source["link_status"] = "unresolved_aggregator"
-    item["sources"] = sources
-    if broken_encoding_detected:
-        failure.update(broken_article_fallback(item, last_error))
-    return item, failure
 
 
 def article_retry_due(item: dict[str, object]) -> bool:
-    if item.get("article_body_status") in {"fetched", "full_text", "verified_reconstruction"}:
+    if item.get("article_body_status") in {"fetched", "full_text", "verified_reconstruction"} and int(item.get("summary_schema_version") or 0) >= SUMMARY_SCHEMA_VERSION:
         return False
-    if canonical_article_source(item):
-        return True
     if int(item.get("summary_schema_version") or 0) < SUMMARY_SCHEMA_VERSION:
         return True
     retry_at = str(item.get("next_body_retry_at") or "")
     return bool(retry_at and retry_at <= date.today().isoformat())
 
 
-def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = None, workers: int = 6, force: bool = False) -> None:
+def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = None, workers: int = 6) -> None:
     """Fetch representative public bodies concurrently, then replace feed-only summaries."""
-    pending = list(items) if force else [item for item in items if article_retry_due(item)]
+    pending = [item for item in items if article_retry_due(item)]
     if limit is not None:
         pending = pending[: max(0, limit)]
     if not pending:
@@ -1294,10 +1039,14 @@ def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = No
             except Exception as error:
                 print(f"기사 원문 본문 처리 실패: {error}")
                 continue
-            succeeded = fields.get("article_body_status") in {"full_text", "verified_reconstruction"}
-            if succeeded or item.get("article_body_status") not in {"fetched", "full_text", "verified_reconstruction"}:
-                item.update(fields)
-            if succeeded:
+            item.update(fields)
+            if fields.get("article_body_status") in {"full_text", "verified_reconstruction"}:
+                if fields.get("article_source_url"):
+                    for source in item.get("sources") or []:
+                        if source.get("url") and "news.google.com" in str(source.get("url")):
+                            source["discovery_url"] = source["url"]
+                            source["url"] = fields["article_source_url"]
+                        source["canonical_url"] = fields.get("canonical_source_url", fields.get("article_source_url"))
                 item["summary"] = str(fields.get("core_summary", item.get("summary", "")))[:900]
                 item["easy_explanation"] = str(fields.get("narrative_paragraphs", [item.get("summary", "")])[0])
                 prepared = [{"title": str(item.get("title", "")), "description": str(item.get("easy_explanation", "")), "publisher": str(item.get("publisher", "원문")), "published_at": str(item.get("date", "")), "published_time": str(item.get("date", ""))}]
@@ -1327,22 +1076,6 @@ def enrich_archived_bodies(limit: int) -> int:
     for path in touched:
         path.write_text(json.dumps(payloads[path], ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     return len(targets)
-
-
-def reprocess_all_archived_bodies(workers: int = 8, from_date: str = "") -> int:
-    """Revalidate every archived article and checkpoint each day independently."""
-    processed = 0
-    for path in sorted(NEWS_DIR.glob("20??-??-??.json"), reverse=True):
-        if from_date and path.stem < from_date:
-            continue
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        items = payload.get("items", [])
-        enrich_article_bodies(items, workers=workers, force=True)
-        payload["items"] = mark_important([upgrade_existing_item(item) for item in items])
-        path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-        processed += len(items)
-        print(f"{path.name}: 기존 기사 {len(items)}건 재검증 완료", flush=True)
-    return processed
 
 
 def collect_day(target: date, limit: int) -> list[dict[str, object]]:
@@ -1443,8 +1176,6 @@ def main() -> None:
     parser.add_argument("--limit-per-day", type=int, default=24)
     parser.add_argument("--archive-enrich-limit", type=int, default=60, help="한 실행에서 과거 원문 본문을 다시 처리할 최대 기사 수")
     parser.add_argument("--archive-only", action="store_true", help="새 뉴스 수집 없이 과거 기사 구조화만 실행")
-    parser.add_argument("--reprocess-all-archives", action="store_true", help="모든 과거 기사를 현재 수집·번역·요약 규칙으로 다시 검증")
-    parser.add_argument("--reprocess-from-date", default="", help="전체 재검증 시 이 날짜(YYYY-MM-DD) 이후 보관분만 처리")
     args = parser.parse_args()
     days = max(1, min(args.backfill_days, 365))
     limit = max(6, min(args.limit_per_day, 60))
@@ -1458,7 +1189,7 @@ def main() -> None:
             if items:
                 write_day(target, items)
                 print(f"{target}: {len(items)}건 저장")
-    enriched = reprocess_all_archived_bodies(from_date=args.reprocess_from_date) if args.reprocess_all_archives else enrich_archived_bodies(archive_limit)
+    enriched = enrich_archived_bodies(archive_limit)
     if enriched:
         print(f"과거 기사 원문 본문 재처리: {enriched}건")
     rebuild_index()

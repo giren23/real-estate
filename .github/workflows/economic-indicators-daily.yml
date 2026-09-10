@@ -42,7 +42,6 @@ jobs:
         continue-on-error: true
         env:
           NYT_API_KEY: ${{ secrets.NYT_API_KEY }}
-          DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
         run: python scripts/update_economic_news.py --backfill-days 2 --limit-per-day 60 --archive-enrich-limit 60
 
       - name: Refresh company and deep-dive analysis
@@ -51,11 +50,11 @@ jobs:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: python scripts/update_editorial_analysis.py --lookback-days 45 --company-limit 20 --analysis-limit 20
 
-      - name: Refresh listed-company search catalog
-        continue-on-error: true
-        env:
-          DART_API_KEY: ${{ secrets.DART_API_KEY }}
-        run: python scripts/update_stock_catalog.py
+      - name: Build the archived morning investment briefing
+        # 시장 스냅샷·뉴스 파일만 사용하므로 GPT/API 키 없이 예약 실행마다 안전하게 갱신한다.
+        # 같은 날짜에는 파일을 원자적으로 덮어써 8회 스케줄에서도 최신 기준값을 유지한다.
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        run: python scripts/update_investment_briefing.py
 
       - name: Verify generated data and chart freshness wiring
         id: test
@@ -66,7 +65,7 @@ jobs:
         run: |
           git config user.name "economic-indicator-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/public/economic_context.json data/public/market_snapshot.json web/content/news web/content/analysis web/content/investment-briefing web/data/stock_catalog.json
+          git add data/public/economic_context.json data/public/market_snapshot.json web/content/news web/content/analysis web/content/investment-briefing
           git commit -m "Frequent economic information update" || exit 0
           git pull --rebase origin main
           git push

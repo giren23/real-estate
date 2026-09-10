@@ -23,58 +23,6 @@ def test_automatic_body_summary_has_stable_json_contract() -> None:
     assert set(result["six_w_one_h"]) == {"who", "when", "where", "what", "why", "how", "result"}
 
 
-def test_late_title_match_does_not_discard_article_lead_and_numbers() -> None:
-    sentences = [
-        "미국 연방준비제도가 기준금리 인상을 검토하자 백악관이 공개 압박에 나섰습니다.",
-        "시장에서는 0.25%포인트 인상 확률을 59.4%, 동결 확률을 40.6%로 보고 있습니다.",
-        "트럼프 대통령은 금리를 내리지 않으면 무역을 중단할 수 있다고 밝혔습니다.",
-        "연준 내부에서는 물가 상승에 대한 우려가 여전히 크다는 의견이 이어졌습니다.",
-        "참가자들은 향후 발표될 물가와 고용 자료도 함께 지켜보고 있습니다.",
-        "트럼프의 연준 압박이 통할지는 11일 발표될 소비자물가지수에 달렸습니다.",
-    ]
-    result = MODULE.sixw_summary_from_sentences("트럼프의 연준 압박, 통할까", "서울신문", "2026-09-06", sentences)
-    combined = " ".join(result["article_summary"])
-    assert "백악관이 공개 압박" in combined
-    assert "59.4%" in combined
-    assert "40.6%" in combined
-
-
-def test_translation_uses_body_language_not_event_region() -> None:
-    korean = ["미국 연방준비제도가 기준금리를 검토했고 서울신문이 관련 내용을 보도했습니다."] * 4
-    english = ["The Federal Reserve reviewed interest rates after the latest inflation report."] * 4
-    foreign_source = {"region": "us", "publisher": "서울신문"}
-    assert not MODULE.article_requires_korean_translation(foreign_source, korean)
-    assert MODULE.article_requires_korean_translation(foreign_source, english)
-
-
-def test_article_decoder_recovers_cp949_and_rejects_replacement_characters() -> None:
-    original = "국토교통부가 주택공급 계획과 향후 일정을 발표했습니다."
-    decoded = MODULE.decode_article_page(original.encode("cp949"), "utf-8")
-    assert original in decoded
-    assert not MODULE.has_broken_article_encoding([decoded])
-    assert MODULE.has_broken_article_encoding(["손상된 원문 � 문장"])
-
-
-def test_broken_article_fallback_removes_corrupted_derived_text() -> None:
-    item = {
-        "title": "정상 한글 제목",
-        "publisher": "언론사",
-        "date": "2026-09-02",
-        "article_summary": ["깨진 � 본문"],
-        "sources": [{"title": "정상 한글 제목", "description": "정상적으로 수집된 RSS 공개요약 문장입니다."}],
-    }
-    result = MODULE.broken_article_fallback(item, "원문 문자 인코딩 손상")
-    assert result["publication_status"] == "statistics_only"
-    assert result["summary_basis"] == "제목·RSS 공개요약"
-    assert "�" not in str(result)
-
-
-def test_full_reprocessing_is_supported_and_preserves_good_article_on_transient_failure() -> None:
-    collector = (ROOT / "scripts" / "update_economic_news.py").read_text(encoding="utf-8")
-    assert 'parser.add_argument("--reprocess-all-archives"' in collector
-    assert "succeeded or item.get(\"article_body_status\") not in" in collector
-
-
 def test_number_highlights_are_not_wiki_keywords() -> None:
     result = MODULE.narrative_fields(
         [{"title": "재산 신고", "description": "2026년 재산 3,093만원을 신고했고 한국은행이 확인함.", "publisher": "연합뉴스", "published_at": "2026-09-05"}],
@@ -111,86 +59,6 @@ def test_failed_old_article_gets_one_new_schema_retry_then_cooldown() -> None:
     assert not MODULE.article_retry_due(updated)
 
 
-def test_known_canonical_article_bypasses_google_news_retry_cooldown() -> None:
-    item = {
-        "title": '“美금리 오르면 내 주식은 어떡해?”…트럼프의 연준 압박, 통할까 [재테크+]',
-        "date": "2026-09-06",
-        "region": "us",
-        "article_body_status": "unavailable",
-        "next_body_retry_at": "2999-01-01",
-    }
-    source = MODULE.canonical_article_source(item)
-    assert source
-    assert source["publisher"] == "서울신문"
-    assert source["url"] == "https://www.seoul.co.kr/news/economy/2026/09/06/20260906500069"
-    assert source["region"] == "domestic"
-    assert MODULE.article_retry_due(item)
-
-
-def test_known_yna_article_has_direct_canonical_source() -> None:
-    item = {"title": '트럼프 "美-캐나다 달러 불균형"…관세 이어 환율 건드리나', "date": "2026-09-07"}
-    source = MODULE.canonical_article_source(item)
-    assert source
-    assert source["publisher"] == "연합뉴스"
-    assert source["url"] == "https://www.yna.co.kr/amp/view/AKR20260907001200071"
-
-
-def test_known_coinreaders_article_has_direct_canonical_source() -> None:
-    item = {"title": "비트코인(BTC) '폭풍 전야'...연준 금리 인상 확률 58.4%", "date": "2026-09-07"}
-    source = MODULE.canonical_article_source(item)
-    assert source
-    assert source["url"] == "https://www.coinreaders.com/256759"
-
-
-def test_known_cbci_article_has_direct_canonical_source() -> None:
-    item = {"title": "뉴욕증시 운명 가를 美 8월 CPI 발표 임박… 연준 동결 vs 인상 기로", "date": "2026-09-06"}
-    source = MODULE.canonical_article_source(item)
-    assert source
-    assert source["url"] == "https://www.cbci.co.kr/news/articleView.html?idxno=604333"
-
-
-def test_google_web_results_exclude_google_and_social_targets() -> None:
-    page = '''<a href="/url?q=https%3A%2F%2Fpublisher.example%2Farticle%2F7&sa=U">기사</a>
-    <a href="https://news.google.com/articles/token">집계</a><a href="https://www.youtube.com/watch?v=1">영상</a>'''
-    assert MODULE.extract_google_result_urls(page) == ["https://publisher.example/article/7"]
-
-
-def test_redistribution_dateline_and_reporter_byline_are_removed() -> None:
-    raw = "[재판매 및 DB 금지] (워싱턴=연합뉴스) 홍정규 특파원 = 도널드 트럼프 미국 대통령이 환율 문제를 제기했다."
-    assert MODULE.strip_editorial_metadata(raw) == "도널드 트럼프 미국 대통령이 환율 문제를 제기했다."
-
-
-def test_summary_who_is_article_subject_not_publisher() -> None:
-    fields = MODULE.structured_summary_fields(
-        "환율 기사", "연합뉴스", "2026-09-07",
-        ["도널드 트럼프 미국 대통령이 환율 문제를 제기했다.", "양국은 협상을 검토할 예정이다.", "후속 조치는 아직 정해지지 않았다."],
-        "도널드 트럼프 미국 대통령이 환율 문제를 제기했다.",
-    )
-    assert fields["six_w_one_h"]["who"] == ["도널드 트럼프 미국 대통령"]
-
-
-def test_archived_publisher_is_replaced_with_article_subject() -> None:
-    item = {
-        "publisher": "연합뉴스",
-        "article_summary": ["도널드 트럼프 미국 대통령이 환율 문제를 제기했다."],
-        "six_w_one_h": {"who": ["연합뉴스"]},
-    }
-    MODULE.sanitize_archived_item(item)
-    assert item["six_w_one_h"]["who"] == ["도널드 트럼프 미국 대통령"]
-
-
-def test_resolved_direct_url_replaces_visible_google_source() -> None:
-    item = {
-        "title": "기사", "publisher": "연합뉴스",
-        "article_source_url": "https://www.yna.co.kr/view/example",
-        "sources": [{"url": "https://news.google.com/rss/articles/token", "publisher": "연합뉴스"}],
-    }
-    MODULE.promote_resolved_source(item)
-    assert item["sources"][0]["url"] == item["article_source_url"]
-    assert item["sources"][0]["resolved_from_url"].startswith("https://news.google.com/")
-    assert item["sources"][0]["link_status"] == "verified_direct"
-
-
 def test_feed_only_article_is_kept_for_statistics_not_detail_publication() -> None:
     result = MODULE.upgrade_existing_item({
         "title": "제목뿐인 기사",
@@ -225,3 +93,19 @@ def test_title_only_legacy_item_is_not_promoted() -> None:
 def test_dialog_backdrop_does_not_blur_or_dim_article_heavily() -> None:
     css = (ROOT / "web" / "style.css").read_text(encoding="utf-8")
     assert ".editorial-dialog::backdrop{background:transparent;backdrop-filter:none}" in css
+
+
+def test_article_parser_excludes_reader_ui_from_body() -> None:
+    page = """<html><article><p>요약보기 자동요약 기사 제목과 주요 문장을 기반으로 자동요약한 결과입니다.</p>
+    <p>중동전이 확산하면서 브렌트유는 배럴당 100달러를 넘어섰다.</p>
+    <p>로이터 조사에서 응답자 93명 중 70%가 9월 금리 동결을 예상했다.</p>
+    <p>닫기 음성으로 듣기 번역 beta 글자 수 10,000자</p>
+    <p>로이터 조사에서 금리 인상 전망은 전체 응답자의 30%로 집계됐다.</p></article></html>"""
+    sentences = MODULE.article_sentences(page)
+    assert len(sentences) == 3
+    assert all("음성" not in sentence and "자동요약" not in sentence for sentence in sentences)
+
+
+def test_translation_is_not_triggered_by_region_for_korean_text() -> None:
+    assert not MODULE.is_probably_foreign("월가 금융인 70%가 연준 금리 동결을 예상했다.")
+    assert MODULE.is_probably_foreign("Reuters reports that the Federal Reserve may hold rates in September.")

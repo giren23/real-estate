@@ -5,25 +5,16 @@
   const pageNumber = () => Math.max(1, Number(new URLSearchParams(location.search).get("page")) || 1);
   const pagesHtml = (pages, active) => pages.map((_page, index) => `<a href="?page=${index + 1}" class="${index + 1 === active ? "active" : ""}" aria-label="${index + 1}페이지${index + 1 === active ? " 현재" : ""}">${index + 1}</a>`).join("");
   const orderedSections = sections => {
-    const preferredOrder = ["core", "events", "risk", "us", "kr", "hynix"];
+    const preferredOrder = ["core", "events", "risk", "us", "kr", "hynix", "world"];
     const rank = new Map(preferredOrder.map((id, index) => [id, index]));
-    return [...(sections || [])].sort((left, right) =>
-      (rank.get(left.id) ?? preferredOrder.length) - (rank.get(right.id) ?? preferredOrder.length)
-    );
+    return [...(sections || [])].sort((left, right) => (rank.get(left.id) ?? preferredOrder.length) - (rank.get(right.id) ?? preferredOrder.length));
   };
-  const metricHtml = metrics => metrics?.length ? `<section class="brief-card"><div class="brief-card-head"><h2>시장 숫자</h2><p>기준일과 등락을 함께 표시합니다</p></div><div class="brief-metrics">${metrics.map(item => `<article class="brief-metric"><span>${esc(item.label)}</span><b>${esc(item.value)}</b><em class="${esc(item.tone || "flat")}">${esc(item.change)}</em><small>${esc(item.date)}</small></article>`).join("")}</div></section>` : "";
-  const sectionBody = section => {
-    const summary = section.summary ? `<p class="brief-section-summary">${esc(section.summary)}</p>` : "";
-    const bullets = section.bullets?.length ? `<ul class="brief-checks">${section.bullets.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : "";
-    const rankings = section.rankings?.length ? `<div class="brief-rankings">${section.rankings.map(group => `<article><b>${esc(group.label)}</b><ol>${group.items.map(item => `<li>${esc(item)}</li>`).join("")}</ol></article>`).join("")}</div>` : "";
-    const events = section.id === "events" && section.rows?.length ? `<ol class="brief-events">${section.rows.map((row, index) => `<li><b aria-label="${esc(row[0] || index + 1)}순위">${esc(row[0] || index + 1)}</b><div><strong>${esc(row[1])}</strong><span>${esc(row[2])}</span></div></li>`).join("")}</ol>` : "";
-    const rows = section.id !== "events" && section.rows?.length ? `<div class="brief-table-scroll"><table class="brief-table"><thead><tr>${section.columns.map(column => `<th>${esc(column)}</th>`).join("")}</tr></thead><tbody>${section.rows.map(row => `<tr>${row.map(value => `<td>${esc(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : "";
-    const news = section.news?.length ? `<div class="brief-news">${section.news.map(item => `<article><time>${esc(item.date)}</time><h3>${item.url ? `<a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.title)}</a>` : esc(item.title)}</h3><p>${esc(item.summary)}</p><div>${(item.tags || []).map(tag => `<span>${esc(tag)}</span>`).join("")}</div></article>`).join("")}</div>` : "";
-    return `${summary}${bullets}${rankings}${events}${rows}${news}`;
-  };
+  const metricHtml = metric => `<div class="brief-metric"><span>${esc(metric.label)}</span><b>${esc(metric.value)}</b><em class="${esc(metric.tone || "flat")}">${esc(metric.change)}</em><small>기준일 ${esc(metric.date)}</small></div>`;
+  const newsHtml = news => (news || []).map(item => `<article><time>${esc(item.publisher || "출처 미상")}${item.important ? " · [중요]" : ""}</time><h3>${item.url ? `<a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.title)}</a>` : esc(item.title)}</h3><p>${esc(item.summary || "원문 요약을 확인 중입니다.")}</p></article>`).join("");
+  const renderSection = section => `<section class="brief-card"><div class="brief-card-head"><div><h2>${esc(section.title)}</h2><p>${esc(section.subtitle || "핵심 총평")}</p></div></div><p class="brief-section-summary">${esc(section.summary || "자료 준비 중")}</p>${(section.metrics || []).length ? `<div class="brief-metrics">${section.metrics.map(metricHtml).join("")}</div>` : ""}${(section.checks || []).length ? `<ul class="brief-checks">${section.checks.map(check => `<li>${esc(check)}</li>`).join("")}</ul>` : ""}${(section.scenarios || []).length ? `<div class="brief-scenarios">${section.scenarios.map(scenario => `<article><span>${esc(scenario.label)}</span><b>${esc(scenario.title)}</b><p>${esc(scenario.body)}</p></article>`).join("")}</div>` : ""}${(section.news || []).length ? `<div class="brief-news">${newsHtml(section.news)}</div>` : ""}</section>`;
   const render = data => {
     $("#briefingDate").textContent = data.date;
-    $("#briefingContent").innerHTML = `<section class="brief-card brief-summary"><div><span>MORNING INVESTMENT BRIEF</span><h2>${esc(data.title)}</h2><p>${esc(data.lead || "확인 가능한 시장자료를 정리했습니다.")}</p>${data.stance ? `<p class="brief-stance">${esc(data.stance)}</p>` : ""}</div><strong>매일 오전 7시</strong></section>${metricHtml(data.metrics)}<div class="briefing-outline">${orderedSections(data.sections).map(section => `<section class="brief-card brief-outline-card"><div class="brief-card-head"><h2>${esc(section.title)}</h2><p>${esc(section.subtitle || "핵심 총평")}</p></div>${sectionBody(section)}</section>`).join("")}</div><p class="brief-disclaimer">${esc(data.disclaimer)}</p>`;
+    $("#briefingContent").innerHTML = `<section class="brief-card brief-summary"><div><span>GPT-FREE · MORNING</span><h2>${esc(data.title)}</h2><p>${esc(data.summary || "시장 스냅샷과 주요 뉴스를 결합한 오전 브리핑입니다.")}</p></div><strong>매일 자동 갱신</strong></section><div class="briefing-outline">${orderedSections(data.sections).map(renderSection).join("")}</div><p class="brief-disclaimer">${esc(data.disclaimer)}</p>`;
   };
   async function init() {
     const indexResponse = await fetch(`content/investment-briefing/index.json?v=${Date.now()}`, { cache: "no-store" });
