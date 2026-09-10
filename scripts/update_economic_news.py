@@ -1091,6 +1091,7 @@ def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = No
                 item["easy_explanation"] = str(fields.get("narrative_paragraphs", [item.get("summary", "")])[0])
                 prepared = [{"title": str(item.get("title", "")), "description": str(item.get("easy_explanation", "")), "publisher": str(item.get("publisher", "원문")), "published_at": str(item.get("date", "")), "published_time": str(item.get("date", ""))}]
                 item["news_charts"] = numeric_charts(extract_number_facts(prepared))
+            strip_summary_provenance(item)
 
 
 def enrich_archived_bodies(limit: int) -> int:
