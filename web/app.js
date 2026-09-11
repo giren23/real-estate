@@ -560,12 +560,17 @@ function matchingLocalityGroups(query){
   return [...buckets.values()].sort((a,b)=>b.length-a.length||a[0].region_name.localeCompare(b[0].region_name,"ko"))[0]||[];
 }
 
+function isKoreanMapCoordinate(coord){
+  const lat=Number(coord?.lat),lng=Number(coord?.lng);
+  return Number.isFinite(lat)&&Number.isFinite(lng)&&lat>=32&&lat<=39.5&&lng>=124&&lng<=132.5;
+}
+
 async function focusSearchLocality(query){
   const groups=matchingLocalityGroups(query);
   if(!map||!groups.length)return;
   const focusId=++localityFocusRunId;
   const label=[groups[0].region_name,groups[0].dong].filter(Boolean).join(" ");
-  const coordinates=groups.map(cachedCoordinate).filter(coord=>coord&&Number.isFinite(Number(coord.lat))&&Number.isFinite(Number(coord.lng)));
+  const coordinates=groups.map(cachedCoordinate).filter(isKoreanMapCoordinate);
   if(coordinates.length){
     if(focusId!==localityFocusRunId)return;
     map.fitBounds(L.latLngBounds(coordinates.map(coord=>[coord.lat,coord.lng])),{padding:[36,36],maxZoom:15});
@@ -2148,6 +2153,7 @@ async function geocode(query){
     ]);
     if(!rows.length) return null;
     const coord={lat:Number(rows[0].lat),lng:Number(rows[0].lon)};
+    if(!isKoreanMapCoordinate(coord))throw new Error("국내 지도 좌표가 아닙니다.");
     geoCache[query]=coord;
     localStorage.setItem("aptGeoCache",JSON.stringify(geoCache));
     return coord;
