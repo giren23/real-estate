@@ -97,7 +97,7 @@
     <button id="addGraphBtn" class="primary-action" type="button">그래프 추가</button>
     <button id="removeGraphBtn" class="danger-action" type="button" disabled>선택 그래프 제거</button>
     <button id="favoriteGraphBtn" class="favorite-action" type="button" disabled aria-pressed="false">☆ 즐겨찾기</button>
-    <button id="trackingRequestBtn" class="tracking-action" type="button" disabled>실거래 추적 요청 (임시)</button>
+    <button id="trackingRequestBtn" class="tracking-action" type="button" disabled hidden>실거래 추적 요청 (임시)</button>
     <span id="trackingStats" class="tracking-stats" hidden></span>
     <span class="save-state">즐겨찾기한 그래프만 자동 유지됩니다.</span>
   </div>
@@ -116,6 +116,18 @@
 -->
 
 </main>
-<script src="app.js?v=68"></script>
+<button id="adminModeBtn" class="admin-mode-button" type="button" aria-haspopup="dialog">관리자</button>
+<dialog id="adminDialog" class="admin-dialog" aria-labelledby="adminDialogTitle">
+  <form id="adminLoginForm" method="dialog">
+    <button id="adminDialogClose" class="admin-dialog-close" type="button" aria-label="닫기">×</button>
+    <h2 id="adminDialogTitle">관리자 모드</h2>
+    <p>개발용 비밀번호를 입력하면 추적 요청 관리 기능이 표시됩니다.</p>
+    <label for="adminPassword">비밀번호</label>
+    <input id="adminPassword" type="password" inputmode="numeric" autocomplete="current-password" maxlength="32" required>
+    <p id="adminLoginMessage" class="admin-login-message" role="status"></p>
+    <button class="admin-login-submit" type="submit">관리자 모드 열기</button>
+  </form>
+</dialog>
+<script src="app.js?v=69"></script>
 </body>
 </html>

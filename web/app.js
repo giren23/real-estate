@@ -43,9 +43,12 @@ const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const LEGACY_GRAPH_STORAGE_KEY = "realEstateGraphWorkspacesV1";
 const FAVORITE_GRAPH_STORAGE_KEY = "realEstateFavoriteGraphsV1";
 const TRACKING_REQUESTER_KEY="realEstateTrackingRequesterV1",TRACKING_API="/api/real-estate-tracking";
+const SIMPLE_ADMIN_SESSION_KEY="realEstateSimpleAdminModeV1",SIMPLE_ADMIN_PASSWORD="1212";
 let trackingStats=null;
 function trackingRequester(){let id=localStorage.getItem(TRACKING_REQUESTER_KEY);if(!id){id=[...crypto.getRandomValues(new Uint8Array(24))].map(value=>value.toString(16).padStart(2,"0")).join("");localStorage.setItem(TRACKING_REQUESTER_KEY,id);}return id;}
-function renderTrackingStats(){const element=byId("trackingStats");if(!element)return;if(!trackingStats){element.hidden=true;return;}element.hidden=false;element.textContent=`누적 요청 ${fmt(trackingStats.total_requests)}건 · ${fmt(trackingStats.unique_complexes)}개 단지`;}
+function isSimpleAdmin(){return sessionStorage.getItem(SIMPLE_ADMIN_SESSION_KEY)==="1";}
+function syncSimpleAdminMode(){const enabled=isSimpleAdmin(),button=byId("trackingRequestBtn"),stats=byId("trackingStats"),adminButton=byId("adminModeBtn");if(button)button.hidden=!enabled;if(stats)stats.hidden=!enabled||!trackingStats;if(adminButton){adminButton.classList.toggle("active",enabled);adminButton.textContent=enabled?"관리자 ON":"관리자";adminButton.title=enabled?"관리자 모드 종료":"관리자 모드 열기";}}
+function renderTrackingStats(){const element=byId("trackingStats");if(!element)return;element.hidden=!isSimpleAdmin()||!trackingStats;if(!element.hidden)element.textContent=`누적 요청 ${fmt(trackingStats.total_requests)}건 · ${fmt(trackingStats.unique_complexes)}개 단지`;}
 async function requestTrackingForBoard(board,button){
   const groups=[...new Map(board.series.map(series=>{const group=apartmentGroups.find(item=>item.key===series.key);return group?[group.key,group]:null;}).filter(Boolean)).values()];
   if(!groups.length)return;
@@ -1326,6 +1329,7 @@ function renderGraphBoards(){
   const trackingButton=byId("trackingRequestBtn");
   favoriteButton.disabled=!activeBoard();
   trackingButton.disabled=!activeBoard()||!activeBoard().series.length;
+  trackingButton.hidden=!isSimpleAdmin();
   renderTrackingStats();
 
   if(!graphBoards.length){
@@ -2283,6 +2287,10 @@ byId("map").addEventListener("click",async event=>{
 });
 load();
 fetch(TRACKING_API,{cache:"no-store"}).then(response=>response.ok?response.json():null).then(data=>{if(data){trackingStats=data;renderTrackingStats();}}).catch(()=>{});
+syncSimpleAdminMode();
+byId("adminModeBtn").addEventListener("click",()=>{if(isSimpleAdmin()){sessionStorage.removeItem(SIMPLE_ADMIN_SESSION_KEY);syncSimpleAdminMode();setStatus("관리자 모드를 종료했습니다.");return;}const dialog=byId("adminDialog");byId("adminPassword").value="";byId("adminLoginMessage").textContent="";dialog.showModal();byId("adminPassword").focus();});
+byId("adminDialogClose").addEventListener("click",()=>byId("adminDialog").close());
+byId("adminLoginForm").addEventListener("submit",event=>{event.preventDefault();const password=byId("adminPassword").value;if(password!==SIMPLE_ADMIN_PASSWORD){byId("adminLoginMessage").textContent="비밀번호가 맞지 않습니다.";return;}sessionStorage.setItem(SIMPLE_ADMIN_SESSION_KEY,"1");byId("adminDialog").close();syncSimpleAdminMode();renderGraphBoards();setStatus("관리자 모드를 열었습니다. 실거래 추적 요청 기능을 사용할 수 있습니다.");});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")refreshCatalogIfUpdated();});
 window.addEventListener("focus",refreshCatalogIfUpdated);
 setInterval(refreshCatalogIfUpdated,CATALOG_REFRESH_INTERVAL_MS);
