@@ -2127,16 +2127,18 @@ function renderBoardChart(board,container){
 }
 
 async function renderDetails(group,area){
+  const metrics=byId("metrics"),trades=byId("trades");
+  if(!metrics||!trades)return;
   if(localApi&&!group.hydrated) await hydrateGroup(group);
   if(!area&&group.areas.length) area=preferredArea(group);
   const rows=group.trades.filter(r=>Number(r.area_m2)===Number(area)).sort((a,b)=>b.trade_date.localeCompare(a.trade_date));
   const prices=rows.map(r=>r.price_eok), latest=rows[0];
-  byId("metrics").innerHTML=[
+  metrics.innerHTML=[
     ["선택 단지",group.apt_name],["선택 평형",area?areaComparisonLabel(area):"거래 평형 없음"],["최근 실거래",latest?fmt(latest.price_eok)+"억원":"—"],["최근 상세 거래",fmt(rows.length)+"건"]
   ].map(x=>'<div class="metric"><span>'+esc(x[0])+'</span><b>'+esc(x[1])+"</b></div>").join("");
   const displayRows=rows.map(row=>({...row,supply_m2:Number(row.area_m2)/.75,supply_pyeong:estimatedSupplyPyeong(row.area_m2),exclusive_pyeong:Number(row.area_m2)/3.3058}));
   const cols=[["trade_date","거래일"],["apt_name","단지"],["dong","법정동"],["supply_m2","공급㎡(추정)"],["supply_pyeong","공급평(추정)"],["area_m2","전용㎡"],["exclusive_pyeong","전용평"],["floor","층"],["price_eok","억원"],["price_per_pyeong_manwon","전용평당만원"]];
-  byId("trades").innerHTML="<thead><tr>"+cols.map(c=>"<th>"+c[1]+"</th>").join("")+"</tr></thead><tbody>"+displayRows.map(r=>"<tr>"+cols.map(c=>"<td>"+esc(typeof r[c[0]]==="number"?fmt(r[c[0]]):r[c[0]])+"</td>").join("")+"</tr>").join("")+"</tbody>";
+  trades.innerHTML="<thead><tr>"+cols.map(c=>"<th>"+c[1]+"</th>").join("")+"</tr></thead><tbody>"+displayRows.map(r=>"<tr>"+cols.map(c=>"<td>"+esc(typeof r[c[0]]==="number"?fmt(r[c[0]]):r[c[0]])+"</td>").join("")+"</tr>").join("")+"</tbody>";
 }
 
 function updateMarkerAvailability(){
