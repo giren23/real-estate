@@ -14,6 +14,9 @@
   try { state = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (_error) { state = null; }
   if (!state || state.version !== 1) state = emptyState(100000000);
   const quoteNames = {"005930":"삼성전자","000660":"SK하이닉스","005380":"현대차","035420":"NAVER","035720":"카카오","373220":"LG에너지솔루션","207940":"삼성바이오로직스","068270":"셀트리온","105560":"KB금융","005490":"POSCO홀딩스"};
+  // 현재가 목록은 한 칸에 바로 입력하는 방식이라, 대표 약칭은 모호한
+  // 부분검색 결과 대신 사용자가 기대하는 대표 종목으로 고정한다.
+  const quoteAliases = {"삼성":"005930","삼성전자":"005930","하이닉스":"000660","sk하이닉스":"000660","skhynix":"000660"};
   const essentialCatalog = Object.entries(quoteNames).map(([symbol, name]) => ({symbol,name,exchange:"KRX"}));
   let catalogPromise = null;
   const defaultQuoteSymbols = Object.keys(quoteNames);
@@ -121,6 +124,7 @@
     const symbols = values.map(value => {
       if (/^\d{6}$/.test(value)) return value;
       const needle = value.replace(/\s+/g, "").toLowerCase();
+      if (quoteAliases[needle]) return quoteAliases[needle];
       const exact = catalog.filter(item => String(item.name || "").replace(/\s+/g, "").toLowerCase() === needle);
       const matches = exact.length ? exact : catalog.filter(item => String(item.name || "").replace(/\s+/g, "").toLowerCase().includes(needle));
       if (matches.length === 1) { quoteNames[matches[0].symbol] = matches[0].name; return matches[0].symbol; }
