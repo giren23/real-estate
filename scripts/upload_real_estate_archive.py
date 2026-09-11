@@ -26,7 +26,7 @@ def sha256_file(path: Path) -> str:
 def wrangler(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     process = subprocess.run(
         [str(WRANGLER), *args], cwd=ROOT / "cloudflare-worker", text=True,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8", errors="replace",
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), check=False,
     )
     if check and process.returncode:

@@ -3,6 +3,10 @@ main = "worker.js"
 compatibility_date = "2026-09-06"
 workers_dev = true
 
+[[r2_buckets]]
+binding = "REAL_ESTATE_ARCHIVE"
+bucket_name = "korean-real-estate-archive"
+
 [[d1_databases]]
 binding = "PAPER_DB"
 database_name = "korean-real-estate-paper"
