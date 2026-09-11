@@ -74,7 +74,9 @@ ARTICLE_NOISE_PATTERN = re.compile(
     r"(?:무단전재|재배포|저작권|기자\s*[\w.@-]+|구독|로그인|댓글|공감|관련기사|ADVERTISEMENT|Copyright|All rights reserved|"
     r"요약보기|자동요약|전체 맥락을 이해|음성으로 듣기|음성재생|음성 재생|글자 수|번역 설정|번역 beta|Translated by|"
     r"번역중|Now in translation|글씨크기|글자크기|닫기|인쇄하기|페이스북|Facebook|Twitter|LinkedIn|Pinterest|공유|"
-    r"주소\s*:\s*서울특별시|일간신문등록번호|인터넷신문등록번호|등록\s*\(발행\)일자|발행\s*/\s*편집인)", re.I)
+    r"주소\s*:\s*서울특별시|일간신문등록번호|인터넷신문등록번호|등록\s*\(발행\)일자|발행\s*/\s*편집인|"
+    r"가장\s*빠른\s*뉴스가\s*있고[^.!?。]{0,160}(?:다음\s*뉴스|다음뉴스)를\s*만나보세요|"
+    r"(?:다음\s*뉴스|다음뉴스)를\s*만나보세요|다양한\s*정보[,· ]*쌍방향\s*소통[^.!?。]{0,120})", re.I)
 
 
 CATEGORY_RULES = (

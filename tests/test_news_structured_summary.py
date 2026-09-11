@@ -107,6 +107,15 @@ def test_article_parser_excludes_reader_ui_from_body() -> None:
     assert all("음성" not in sentence and "자동요약" not in sentence for sentence in sentences)
 
 
+def test_portal_promotion_is_removed_from_article_and_summary() -> None:
+    promo = "가장 빠른 뉴스가 있고 다양한 정보, 쌍방향 소통이 숨쉬는 다음뉴스를 만나보세요."
+    page = f"<article><p>국제유가 급등으로 원화 약세 우려가 커지면서 금융시장 변동성이 확대되고 있다.</p><p>{promo}</p><p>미국 국채금리 상승도 환율 변동성을 키우는 주요 요인으로 지목됐다.</p></article>"
+    sentences = MODULE.article_sentences(page)
+    assert len(sentences) == 2
+    assert all("다음뉴스" not in sentence and "쌍방향" not in sentence for sentence in sentences)
+    assert "다음뉴스" not in MODULE.clean_summary_provenance(f"기사 요약. {promo}")
+
+
 def test_mk_refid_body_excludes_ai_explainer_and_footer() -> None:
     page = """<article><p refId="2">WTI 선물은 배럴당 100.13달러에 거래됐다.</p>
     <p refId="3">브렌트유 선물도 배럴당 105.38달러로 상승했다.</p></article>
