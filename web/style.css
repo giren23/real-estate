@@ -171,13 +171,12 @@ main{max-width:1280px;margin:auto;padding:30px 22px 56px}.hero{display:flex;alig
 .chart-help{min-height:128px;padding-top:8px}
 
 /* Keep the shared timeline values in the gap below the price chart, never outside the card. */
-.timeline-guide-popup{top:var(--timeline-popup-top,9px);width:min(390px,calc(100vw - 46px));max-width:390px;max-height:236px;overflow:auto;padding:10px 12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 14px;font-size:10px}
-.timeline-guide-popup>b{grid-column:1/-1;display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding-bottom:4px;border-bottom:1px solid #eaecf0}
-.timeline-guide-popup>b small{color:#667085;font-size:10px;font-weight:700}
+.timeline-guide-popup{top:var(--timeline-popup-top,9px);width:min(520px,calc(100vw - 46px));max-width:520px;max-height:270px;overflow:auto;padding:10px 12px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px 14px;font-size:10px;pointer-events:auto;overscroll-behavior:contain;scrollbar-gutter:stable;touch-action:pan-y}
+.timeline-guide-popup:focus{outline:2px solid #7f67aa;outline-offset:2px}.timeline-guide-popup-title{grid-column:1/-1;display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding-bottom:4px;border-bottom:1px solid #eaecf0}.timeline-guide-popup-title b{display:block;margin:0;color:#101828;font-size:11px}.timeline-guide-popup-title small{color:#667085;font-size:10px;font-weight:700}
 .timeline-guide-popup span{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;min-width:0;padding:3px 0;border-bottom:1px solid #f0f2f4;white-space:normal}
 .timeline-guide-popup em,.timeline-guide-popup strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .timeline-guide-popup strong{text-align:right}
-@media(max-width:600px){.timeline-guide-popup{width:min(340px,calc(100vw - 28px));max-height:260px;gap:3px 10px;padding:9px 10px;font-size:9px}.timeline-guide-popup>b{grid-column:1/-1}.timeline-guide-popup>b small{font-size:9px}.timeline-guide-popup span{gap:4px}.timeline-guide-popup strong{font-size:9px}}
+@media(max-width:600px){.timeline-guide-popup{width:min(360px,calc(100vw - 28px));max-height:280px;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 10px;padding:9px 10px;font-size:9px}.timeline-guide-popup-title{grid-column:1/-1}.timeline-guide-popup-title small{font-size:9px}.timeline-guide-popup span{gap:4px}.timeline-guide-popup strong{font-size:9px}}
 
 /* Interactive housing-tax estimate below the policy timeline. */
 .tax-estimator{margin-top:12px;padding:17px;border:1px solid #e2dce8;border-radius:14px;background:linear-gradient(145deg,#fff,#faf8fc);box-shadow:0 8px 24px rgba(49,36,66,.05)}

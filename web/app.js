@@ -1390,7 +1390,7 @@ function renderGraphBoards(){
     '<div class="period-control"><label for="priceMode">그래프 기준</label><select id="priceMode">'+priceModeOptions+'</select></div></div>'+
     '<span>'+board.series.length+' / 10개 단지</span></div>'+
     '<div class="series-list">'+(board.series.length?board.series.map(series=>seriesControl(board,series)).join(""):'<div class="series-empty">검색한 단지의 ‘추가’ 버튼을 누르면 추가 순서에 맞는 색상으로 표시됩니다.</div>')+'</div>'+
-    '<div class="timeline-guide" hidden aria-hidden="true"><span class="timeline-guide-date"></span><div class="timeline-guide-popup"></div></div>'+
+    '<div class="timeline-guide" hidden aria-hidden="true"><span class="timeline-guide-date"></span><div class="timeline-guide-popup" tabindex="0" role="region" aria-label="선택 시점 경제지표"></div></div>'+
     '<section class="stack-chart price-section"><div class="economic-title"><b>'+chartHeading+'</b><span>'+chartSubtitle+'</span></div>'+
     '<div class="graph-size-controls" aria-label="실거래 그래프 크기 조절">'+
       '<label>가로 <input id="graphWidth" type="range" min="100" max="200" step="10" value="'+board.chartWidth+'"><output id="graphWidthValue">'+board.chartWidth+'%</output></label>'+
@@ -1790,7 +1790,7 @@ function bindTimelineGuide(container,timelineCharts,labels){
       popupItem("KOSPI 지수",market,index,""),popupItem("NASDAQ 지수",market,index,"",3),popupItem("S&P 500 지수",market,index,"",2),
       popupItem("비트코인",bitcoin,index,"달러"),popupItem("VIX",sentiment,index,""),popupItem("공포·탐욕",sentiment,index,"",1)
     ].filter(Boolean).join("");
-    return '<b>경제지표 <small>'+labels[index]+'</small></b>'+items;
+    return '<div class="timeline-guide-popup-title"><b>경제지표</b><small>'+labels[index]+'</small></div>'+items;
   };
   const hide=()=>{guide.hidden=true;};
   const indexAt=(sourceChart,clientX)=>{
