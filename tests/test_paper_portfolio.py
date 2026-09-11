@@ -38,8 +38,10 @@ def test_manual_paper_portfolio_is_local_and_requires_confirmation() -> None:
     assert "data-remove-symbol" in script
     assert "essentialCatalog" in script and "localSearch" in script
     assert '"삼성":"005930"' in script
+    assert 'event.key !== "Enter"' in script
     assert "한글 종목명 또는 6자리 종목코드" in script
     assert "삼성전자, SK하이닉스" in html
+    assert "현재가 조회" in html
     assert 'id="paperClearOrders"' in html
     assert "data-remove-position" in script
     assert all(token in html for token in ('id="paperCloudCreate"', 'id="paperCloudExport"', 'id="paperCloudImport"', 'id="paperCloudFile"'))

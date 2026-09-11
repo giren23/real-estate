@@ -116,7 +116,7 @@
       $("#paperQuoteGrid").innerHTML = "<p>PC 서버가 켜지고 시세 연결이 준비되면 자동으로 표시됩니다.</p>";
     } finally { quoteLoading = false; }
   }
-  $("#paperQuoteApply")?.addEventListener("click", async () => {
+  const applyQuoteSymbols = async () => {
     const values = $("#paperQuoteSymbols").value.split(",").map(clean).filter(Boolean);
     if (values.length > 20) return message("현재가 목록은 최대 20종목입니다.", "error");
     if (!values.length) return message("한글 종목명 또는 6자리 종목코드를 입력해 주세요.", "error");
@@ -133,6 +133,12 @@
     if (unknown.length) return message(`찾지 못한 종목: ${unknown.join(", ")}. 검색창에서 정확한 종목명을 선택해 주세요.`, "error");
     quoteSymbols = [...new Set(symbols)]; $("#paperQuoteSymbols").value = quoteSymbols.join(","); localStorage.setItem(QUOTE_KEY, quoteSymbols.join(",")); refreshQuotes();
     save();
+  };
+  $("#paperQuoteApply")?.addEventListener("click", applyQuoteSymbols);
+  $("#paperQuoteSymbols")?.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    applyQuoteSymbols();
   });
 
   const selectSearchResult = (symbol, name) => {
