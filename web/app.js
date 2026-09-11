@@ -40,7 +40,7 @@ let viewportMarkerTimer = null, viewportRefreshSuspended = false, viewportComple
 let buildingRequestId = 0, buildingAbortController = null;
 let catalogRefreshChecking = false, lastCatalogRefreshCheck = 0;
 const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
-const GRAPH_STORAGE_KEY = "realEstateGraphWorkspacesV1";
+const LEGACY_GRAPH_STORAGE_KEY = "realEstateGraphWorkspacesV1";
 const FAVORITE_GRAPH_STORAGE_KEY = "realEstateFavoriteGraphsV1";
 const TAX_BASE_YEAR = 2026;
 const graphColors = [
@@ -1243,8 +1243,11 @@ function removeSeries(boardId,seriesId){
 
 function restoreGraphBoards(){
   try{
-    const saved=JSON.parse(localStorage.getItem(GRAPH_STORAGE_KEY)||"null");
-    graphBoards=(Array.isArray(saved?.boards)?saved.boards:[]).slice(0,10).map((board,index)=>({
+    const favorites=JSON.parse(localStorage.getItem(FAVORITE_GRAPH_STORAGE_KEY)||"null");
+    const legacy=JSON.parse(localStorage.getItem(LEGACY_GRAPH_STORAGE_KEY)||"null");
+    const rawBoards=[...(Array.isArray(legacy?.boards)?legacy.boards.map(board=>({...board,favorite:true})):[]),...(Array.isArray(favorites?.boards)?favorites.boards:[])].filter(board=>board&&typeof board==="object");
+    const uniqueBoards=[...new Map(rawBoards.map(board=>[String(board.id||makeId("graph")),board])).values()];
+    graphBoards=uniqueBoards.slice(0,10).map((board,index)=>({
       id:String(board.id||makeId("graph")),
       name:String(board.name||"그래프 "+(index+1)).slice(0,30),
       periodYears:[1,3,5,10,20,0].includes(Number(board.periodYears))?Number(board.periodYears):20,
@@ -1263,29 +1266,17 @@ function restoreGraphBoards(){
         lineStyle:graphLineStyle(series.lineStyle).value
       })):[]
     }));
-    activeGraphId=graphBoards.some(board=>board.id===saved.activeGraphId)?saved.activeGraphId:(graphBoards[0]?.id||null);
-    if(graphBoards.length) byId("saveState").textContent="저장된 그래프를 불러왔습니다.";
-    const favorites=JSON.parse(localStorage.getItem(FAVORITE_GRAPH_STORAGE_KEY)||"null");
-    (favorites?.boards||[]).forEach(raw=>{
-      if(!Array.isArray(raw.series)||!raw.series.every(series=>apartmentGroups.some(group=>group.key===series.key)))return;
-      const existing=graphBoards.find(board=>board.id===raw.id);
-      if(existing)Object.assign(existing,raw,{favorite:true});
-      else if(graphBoards.length<10)graphBoards.push({...raw,favorite:true});
-    });
+    const restoredActiveId=favorites?.activeGraphId||legacy?.activeGraphId;
+    activeGraphId=graphBoards.some(board=>board.id===restoredActiveId)?restoredActiveId:(graphBoards[0]?.id||null);
+    if(legacy){
+      try{
+        localStorage.setItem(FAVORITE_GRAPH_STORAGE_KEY,JSON.stringify({version:1,activeGraphId,boards:graphBoards.filter(board=>board.favorite)}));
+        localStorage.removeItem(LEGACY_GRAPH_STORAGE_KEY);
+      }catch(_error){setStatus("기존 저장 그래프를 즐겨찾기로 옮기지 못했습니다.",true);}
+    }
     if(!activeGraphId&&graphBoards.length)activeGraphId=graphBoards[0].id;
   }catch{
     graphBoards=[];activeGraphId=null;
-  }
-}
-
-function saveGraphBoards(){
-  try{
-    localStorage.setItem(GRAPH_STORAGE_KEY,JSON.stringify({version:1,activeGraphId,boards:graphBoards}));
-    byId("saveState").textContent="이 브라우저에 저장되었습니다.";
-    byId("saveState").classList.remove("unsaved");
-    setStatus("현재 그래프 상태를 저장했습니다. 다음에 다시 열어도 그대로 보입니다.");
-  }catch(error){
-    setStatus("그래프를 저장하지 못했습니다: "+error.message,true);
   }
 }
 
@@ -1294,8 +1285,6 @@ function saveFavoriteGraphs(){
 }
 
 function markUnsaved(message){
-  byId("saveState").textContent="저장되지 않은 변경";
-  byId("saveState").classList.add("unsaved");
   setStatus(message);
   refreshResultButtons();
   saveFavoriteGraphs();
@@ -1306,7 +1295,6 @@ function renderGraphBoards(){
   charts.clear();
   byId("graphCount").textContent=graphBoards.length+" / 10";
   byId("removeGraphBtn").disabled=!activeBoard();
-  byId("saveGraphsBtn").disabled=false;
   const favoriteButton=byId("favoriteGraphBtn");
   favoriteButton.disabled=!activeBoard();
 
@@ -2226,7 +2214,6 @@ byId("searchInput").addEventListener("keydown",event=>{
 document.addEventListener("click",event=>{if(!event.target.closest("#searchForm,#searchSuggestions"))hideSearchSuggestions();});
 byId("addGraphBtn").addEventListener("click",addGraphBoard);
 byId("removeGraphBtn").addEventListener("click",removeActiveGraphBoard);
-byId("saveGraphsBtn").addEventListener("click",saveGraphBoards);
 byId("map").addEventListener("click",async event=>{
   const button=event.target.closest?.(".map-popup-add");
   if(!button||button.disabled)return;
