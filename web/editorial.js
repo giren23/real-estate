@@ -48,9 +48,8 @@
   function cardHtml(item) {
     const tags = (item.tags || []).slice(0, 3).map(tag => `<span>${escapeHtml(tag)}</span>`).join("");
     return `<button type="button" class="editorial-card" data-editorial-id="${escapeHtml(item.id)}">
-      <time class="editorial-date" datetime="${escapeHtml(publishedTime(item))}">${escapeHtml(formatPublishedTime(publishedTime(item)))}</time>
       <span class="editorial-card-body">
-        <span class="editorial-card-meta">${escapeHtml(item.eyebrow)} · 약 ${escapeHtml(item.read_minutes)}분</span>
+        <span class="editorial-card-meta"><span>${escapeHtml(item.eyebrow)} · 약 ${escapeHtml(item.read_minutes)}분</span><time class="editorial-date" datetime="${escapeHtml(publishedTime(item))}">${escapeHtml(formatPublishedTime(publishedTime(item)))}</time></span>
         <strong>${item.important ? '<span class="important-prefix">[중요]</span> ' : ''}${escapeHtml(item.title)} ${statusBadge(item)}</strong>
         <span class="editorial-card-summary">${escapeHtml(item.summary)}</span>
         <span class="editorial-card-tags">${tags}</span>
@@ -72,33 +71,45 @@
 
   function sectionHtml(section) {
     const more = section.more_url ? `<a class="editorial-more" href="${safeUrl(section.more_url)}">더보기 →</a>` : "";
-    const search = section.id === "news" ? `<div class="editorial-news-search"><label for="integratedNewsSearch">경제 통합 뉴스 검색</label><input id="integratedNewsSearch" type="search" inputmode="search" autocomplete="off" placeholder="기사 제목·발행사·요약 검색"><button id="integratedNewsSearchReset" type="button">지우기</button><small id="integratedNewsSearchCount">최신 기사 ${(section.items || []).length}건 표시</small></div>` : "";
+    const search = section.id === "news" ? `<div class="editorial-news-search"><button id="integratedNewsSearchToggle" type="button" aria-label="경제 통합 뉴스 검색" aria-expanded="false" title="기사 검색">⌕</button><input id="integratedNewsSearch" type="search" inputmode="search" autocomplete="off" placeholder="기사 제목·발행사·요약 검색" hidden></div>` : "";
     return `<section class="editorial-section editorial-${escapeHtml(section.id)}">
       <div class="editorial-section-title">
-        <div><span aria-hidden="true">${escapeHtml(section.icon)}</span><h3>${escapeHtml(section.title)}</h3></div>
+        <div><span aria-hidden="true">${escapeHtml(section.icon)}</span><h3>${escapeHtml(section.title)}</h3>${search}</div>
         <span class="editorial-section-tools"><small>${escapeHtml(section.description)}</small>${more}</span>
       </div>
-      ${search}<div class="editorial-list">${(section.items || []).map(cardHtml).join("")}</div>
+      <div class="editorial-list">${(section.items || []).map(cardHtml).join("")}</div>
     </section>`;
   }
 
   function bindIntegratedNewsSearch(section) {
     const input = document.getElementById("integratedNewsSearch");
-    const reset = document.getElementById("integratedNewsSearchReset");
-    const count = document.getElementById("integratedNewsSearchCount");
+    const toggle = document.getElementById("integratedNewsSearchToggle");
     const list = hub.querySelector(".editorial-news .editorial-list");
-    if (!input || !reset || !count || !list) return;
+    if (!input || !toggle || !list) return;
     const searchable = section.search_items || section.items || [];
     const render = () => {
       const query = input.value.trim().toLocaleLowerCase("ko-KR");
       const matched = query ? searchable.filter(item => [item.title, item.publisher, item.summary, item.eyebrow, ...(item.tags || [])].join(" ").toLocaleLowerCase("ko-KR").includes(query)) : section.items || [];
       const shown = matched.slice(0, query ? 30 : 10);
       list.innerHTML = shown.length ? shown.map(cardHtml).join("") : '<p class="editorial-loading">검색 조건에 맞는 기사가 없습니다.</p>';
-      count.textContent = query ? `검색 결과 ${matched.length.toLocaleString()}건${matched.length > shown.length ? ` · 상위 ${shown.length}건 표시` : ""}` : `최신 기사 ${shown.length}건 표시`;
       list.querySelectorAll("[data-editorial-id]").forEach(button => button.addEventListener("click", () => openArticle(button.dataset.editorialId)));
     };
     input.addEventListener("input", render);
-    reset.addEventListener("click", () => { input.value = ""; render(); input.focus(); });
+    toggle.addEventListener("click", () => {
+      const opening = input.hidden;
+      input.hidden = !opening;
+      toggle.setAttribute("aria-expanded", String(opening));
+      if (opening) input.focus();
+      else { input.value = ""; render(); }
+    });
+    input.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      input.hidden = true;
+      input.value = "";
+      toggle.setAttribute("aria-expanded", "false");
+      render();
+      toggle.focus();
+    });
   }
 
   function metricsHtml(metrics) {
