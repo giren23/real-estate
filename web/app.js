@@ -42,6 +42,28 @@ let catalogRefreshChecking = false, lastCatalogRefreshCheck = 0;
 const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const LEGACY_GRAPH_STORAGE_KEY = "realEstateGraphWorkspacesV1";
 const FAVORITE_GRAPH_STORAGE_KEY = "realEstateFavoriteGraphsV1";
+const TRACKING_REQUESTER_KEY="realEstateTrackingRequesterV1",TRACKING_API="/api/real-estate-tracking";
+let trackingStats=null;
+function trackingRequester(){let id=localStorage.getItem(TRACKING_REQUESTER_KEY);if(!id){id=[...crypto.getRandomValues(new Uint8Array(24))].map(value=>value.toString(16).padStart(2,"0")).join("");localStorage.setItem(TRACKING_REQUESTER_KEY,id);}return id;}
+function renderTrackingStats(){const element=byId("trackingStats");if(!element)return;if(!trackingStats){element.hidden=true;return;}element.hidden=false;element.textContent=`누적 요청 ${fmt(trackingStats.total_requests)}건 · ${fmt(trackingStats.unique_complexes)}개 단지`;}
+async function requestTrackingForBoard(board,button){
+  const groups=[...new Map(board.series.map(series=>{const group=apartmentGroups.find(item=>item.key===series.key);return group?[group.key,group]:null;}).filter(Boolean)).values()];
+  if(!groups.length)return;
+  button.disabled=true;
+  let accepted=0,already=0,failedMessage="";
+  try{
+    for(const group of groups){
+      const response=await fetch(TRACKING_API,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({lawd_cd:group.lawd_cd,apt_name:group.data_apt_name||group.apt_name,dong:group.dong,requester_id:trackingRequester()})});
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok){failedMessage=data.detail||"추적 요청에 실패했습니다.";break;}
+      trackingStats=data;
+      if(data.accepted)accepted++;else already++;
+    }
+    renderTrackingStats();
+    const outcome=accepted?`${accepted}개 단지의 실거래 추적 요청을 등록했습니다.`:already?"선택한 단지는 오늘 이미 추적 요청했습니다.":"";
+    setStatus(failedMessage?(outcome?outcome+" ":"")+failedMessage:outcome,Boolean(failedMessage&&!outcome));
+  }catch(error){setStatus(error.message||"추적 요청에 실패했습니다.",true);}finally{button.disabled=!activeBoard()||!activeBoard().series.length;}
+}
 const TAX_BASE_YEAR = 2026;
 const graphColors = [
   {name:"빨강",value:"#ef4444"},{name:"주황",value:"#f97316"},{name:"노랑",value:"#eab308"},
@@ -1301,7 +1323,10 @@ function renderGraphBoards(){
   byId("graphCount").textContent=graphBoards.length+" / 10";
   byId("removeGraphBtn").disabled=!activeBoard();
   const favoriteButton=byId("favoriteGraphBtn");
+  const trackingButton=byId("trackingRequestBtn");
   favoriteButton.disabled=!activeBoard();
+  trackingButton.disabled=!activeBoard()||!activeBoard().series.length;
+  renderTrackingStats();
 
   if(!graphBoards.length){
     byId("graphTabs").innerHTML="";
@@ -1325,6 +1350,7 @@ function renderGraphBoards(){
   favoriteButton.textContent=board.favorite?"★ 즐겨찾기 해제":"☆ 즐겨찾기";
   favoriteButton.setAttribute("aria-pressed",String(Boolean(board.favorite)));
   favoriteButton.onclick=()=>{board.favorite=!board.favorite;saveFavoriteGraphs();renderGraphBoards();setStatus(board.favorite?"이 그래프를 이 기기의 즐겨찾기에 저장했습니다. 앱을 다시 열어도 유지됩니다.":"이 그래프의 즐겨찾기를 해제했습니다.");};
+  trackingButton.onclick=()=>requestTrackingForBoard(board,trackingButton);
   if(![1,3,5,10,20,0].includes(Number(board.periodYears))) board.periodYears=20;
   const periodOptions=[[1,"최근 1년"],[3,"최근 3년"],[5,"최근 5년"],[10,"최근 10년"],[20,"최근 20년"],[0,"전체 기간"]]
     .map(([value,label])=>'<option value="'+value+'" '+(Number(board.periodYears)===value?"selected":"")+'>'+label+'</option>').join("");
@@ -2254,6 +2280,7 @@ byId("map").addEventListener("click",async event=>{
   refreshGraphAddButtons(group);
 });
 load();
+fetch(TRACKING_API,{cache:"no-store"}).then(response=>response.ok?response.json():null).then(data=>{if(data){trackingStats=data;renderTrackingStats();}}).catch(()=>{});
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")refreshCatalogIfUpdated();});
 window.addEventListener("focus",refreshCatalogIfUpdated);
 setInterval(refreshCatalogIfUpdated,CATALOG_REFRESH_INTERVAL_MS);

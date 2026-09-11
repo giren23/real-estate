@@ -1,6 +1,7 @@
 const PUBLIC_SITE = "https://giren23.github.io/real-estate/";
 const PAPER_MAX_BYTES = 200000;
 const PAPER_MAX_SYMBOLS = 20;
+const TRACKING_MAX_PER_DAY = 12;
 const PUBLIC_REAL_ESTATE_APIS = new Set([
   "/api/catalog",
   "/api/meta",
@@ -148,6 +149,20 @@ async function paperApi(request, env, incoming) {
   return json({detail:"모의투자 API를 찾을 수 없습니다."}, 404);
 }
 
+async function trackingApi(request, env) {
+  if(!env.PAPER_DB) return json({detail:"추적 요청 저장소가 연결되지 않았습니다."},503);
+  const stats=async()=>{const row=await env.PAPER_DB.prepare("SELECT COUNT(*) total_requests, COUNT(DISTINCT lawd_cd || '|' || dong || '|' || apt_name) unique_complexes FROM real_estate_tracking_requests").first();return {total_requests:Number(row?.total_requests||0),unique_complexes:Number(row?.unique_complexes||0),daily_complex_cap:TRACKING_MAX_PER_DAY};};
+  if(request.method === "GET") return json(await stats());
+  if(request.method !== "POST") return json({detail:"지원하지 않는 요청입니다."},405,{allow:"GET, POST"});
+  let body;try{body=await request.json();}catch{return json({detail:"JSON 형식이 아닙니다."},400);}
+  const lawd=String(body?.lawd_cd||""),apt=String(body?.apt_name||"").trim().slice(0,100),dong=String(body?.dong||"").trim().slice(0,60),requester=String(body?.requester_id||"");
+  if(!/^\d{5}$/.test(lawd)||!apt||!/^[a-f0-9]{48}$/.test(requester))return json({detail:"요청 단지 정보가 올바르지 않습니다."},400);
+  const hash=await sha256(requester),day=new Date().toISOString().slice(0,10),used=await env.PAPER_DB.prepare("SELECT COUNT(*) count FROM real_estate_tracking_requests WHERE requester_hash=? AND requested_date=?").bind(hash,day).first();
+  if(Number(used?.count||0)>=TRACKING_MAX_PER_DAY)return json({detail:`하루 최대 ${TRACKING_MAX_PER_DAY}개 단지까지 요청할 수 있습니다.`,...await stats()},429);
+  const result=await env.PAPER_DB.prepare("INSERT OR IGNORE INTO real_estate_tracking_requests(lawd_cd,apt_name,dong,requester_hash,requested_date,requested_at) VALUES(?,?,?,?,?,?)").bind(lawd,apt,dong,hash,day,new Date().toISOString()).run();
+  return json({accepted:Number(result.meta?.changes||0)>0,...await stats()});
+}
+
 async function readSmallJson(bucket, key, maxBytes = 1024 * 1024) {
   const object = await bucket.get(key);
   if (!object || object.size > maxBytes) return null;
@@ -227,6 +242,7 @@ async function localRealEstateApi(request, env, incoming) {
 export default {
   async fetch(request, env) {
     const incoming = new URL(request.url);
+    if(incoming.pathname === "/api/real-estate-tracking") return trackingApi(request,env);
     if (incoming.pathname.startsWith("/api/paper/")) return paperApi(request, env, incoming);
     if (incoming.pathname.startsWith("/api/")) return localRealEstateApi(request, env, incoming);
 
