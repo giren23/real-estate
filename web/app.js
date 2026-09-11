@@ -55,6 +55,11 @@ const graphLineStyles = [
   {name:"점선",value:"dashSmall",width:1.8,dash:[3,3]}
 ];
 function graphLineStyle(value){return graphLineStyles.find(style=>style.value===value)||graphLineStyles[0];}
+function naverLandSearchUrl(group,series){
+  const area=Math.round(Number(series?.area)||0);
+  const query=[group.region_name,group.dong,group.apt_name,area?area+"㎡":""].filter(Boolean).join(" ");
+  return "https://new.land.naver.com/search?query="+encodeURIComponent(query);
+}
 const POLICY_DETAILS = {
   "2017-08-02": {
     "before": [
@@ -1421,12 +1426,14 @@ function seriesControl(board,series){
   const lineStyleOptions=graphLineStyles.map(style=>'<option value="'+style.value+'" '+(style.value===graphLineStyle(series.lineStyle).value?"selected":"")+'>'+style.name+'</option>').join("");
   const matchingSeries=board.series.filter(item=>item.key===series.key);
   const duplicateOrdinal=matchingSeries.findIndex(item=>item.id===series.id)+1;
+  const listingUrl=naverLandSearchUrl(group,series);
   return '<div class="series-item" data-series-id="'+esc(series.id)+'"><i class="series-color" style="background:'+esc(series.color)+'"></i>'+
     '<div class="series-name"><b>'+esc(group.apt_name)+'</b><span>'+esc(group.region_name+" "+group.dong+" · 동일 단지 "+duplicateOrdinal+"번째 / "+matchingSeries.length+"개")+'</span></div>'+
     '<select class="area-select" aria-label="'+esc(group.apt_name)+' 평형 선택">'+areaOptions+'</select>'+
     '<select class="color-select" aria-label="'+esc(group.apt_name)+' 색상 선택">'+colorOptions+'</select>'+
     '<select class="line-style-select" aria-label="'+esc(group.apt_name)+' 선 종류 선택">'+lineStyleOptions+'</select>'+
     (board.priceMode==="pyeong"?'<label class="supply-control">공급면적(평)<input class="supply-input" type="number" min="1" step="0.1" value="'+fmt(Number(series.supplyPyeong)||Math.max(1,defaultSupplyPyeong(series.area)))+'" aria-label="'+esc(group.apt_name)+' 공급면적 평수"><small>최초값은 전용률 75% 추정</small></label>':"")+
+    '<a class="listing-link" href="'+esc(listingUrl)+'" target="_blank" rel="noopener noreferrer" aria-label="'+esc(group.apt_name)+' '+esc(String(Math.round(Number(series.area)||0)))+'제곱미터 네이버 매물 보기">매물 보기</a>'+
     '<button class="remove-btn" type="button" aria-label="'+esc(group.apt_name)+' 그래프에서 삭제">삭제</button></div>';
 }
 
