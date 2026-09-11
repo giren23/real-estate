@@ -212,7 +212,7 @@ def build_payload(day: str) -> dict:
             ],
             "metrics": metrics(("sp500", "nasdaq", "dow", "us10y", "gold", "wti")),
             "checks": [checks[1], f"WTI {metric(items.get('wti'))['value']} ({metric(items.get('wti'))['change']}) — 유가 급등은 물가·금리 경로를 다시 자극할 수 있습니다."],
-            "scenarios": [], "news": section_news(rows, ("미국", "연준", "fomc", "나스닥", "s&p", "금리"), 0)[:2],
+            "scenarios": [], "news": [],
         },
         {
             "id": "kr", "title": "3. 오늘 한국시장", "subtitle": "개장 전 환율·수급·업종 점검",
@@ -223,7 +223,7 @@ def build_payload(day: str) -> dict:
             ],
             "metrics": metrics(("kospi", "kosdaq", "krw_usd", "kr_10y")),
             "checks": [checks[0], "반도체·수출주 뉴스가 지수 상승을 실제 거래 확산으로 연결하는지 확인합니다."],
-            "scenarios": [], "news": section_news(rows, ("한국", "코스피", "코스닥", "삼성", "하이닉스", "수출"), 3)[:2],
+            "scenarios": [], "news": [],
         },
         {
             "id": "sectors", "title": "4. 섹터·기업 체크", "subtitle": "사실과 관찰 항목을 구분한 업종별 촉매·위험",
@@ -234,7 +234,7 @@ def build_payload(day: str) -> dict:
                 FACT_LANGUAGE_RULE,
             ],
             "metrics": [], "checks": ["개별 기업 이슈는 ‘누가·무엇을·언제·얼마에·어떤 방식으로 했는지’가 원문 또는 공시에 나타난 경우에만 확정 사실로 읽습니다."],
-            "scenarios": [], "news": [news_card(row) for row in selected[:3]],
+            "scenarios": [], "news": [],
         },
         {
             "id": "kr-top5", "title": "5. 한국장 관심종목 TOP 5", "subtitle": "AI 메모리·전력 인프라 중심의 일일 관찰 목록",
@@ -273,7 +273,7 @@ def build_payload(day: str) -> dict:
                 {"name": "③ 외국인 수급", "description": "현물·선물 동향", "reason": "관찰: 단기 변동성과 추세"},
                 {"name": "④ 메모리 가격", "description": "DRAM·NAND 현물·계약 가격", "reason": "관찰: 계약가격·출하량으로 보는 업황 전환"},
                 {"name": "⑤ 경쟁 구도", "description": "삼성전자·Micron의 HBM 공급", "reason": "관찰: 공급량·고객 인증·점유율 변화"}
-            ]}], "metrics": [], "checks": ["수요나 수주를 확정 사실로 표기하려면 고객사·제품·수량 또는 계약금액·기간이 공개된 공시·발표를 근거로 합니다. 그 전에는 관찰 항목입니다."], "scenarios": [], "news": section_news(rows, ("하이닉스", "hbm", "메모리", "dram"), 0)[:2],
+            ]}], "metrics": [], "checks": ["수요나 수주를 확정 사실로 표기하려면 고객사·제품·수량 또는 계약금액·기간이 공개된 공시·발표를 근거로 합니다. 그 전에는 관찰 항목입니다."], "scenarios": [], "news": [],
         },
         {
             "id": "risk", "title": "8. 오늘 가장 중요한 위험", "subtitle": "우선순위대로 보는 경보 신호",
