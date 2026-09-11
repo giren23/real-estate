@@ -113,11 +113,21 @@
       $("#paperQuoteGrid").innerHTML = "<p>PC 서버가 켜지고 시세 연결이 준비되면 자동으로 표시됩니다.</p>";
     } finally { quoteLoading = false; }
   }
-  $("#paperQuoteApply")?.addEventListener("click", () => {
+  $("#paperQuoteApply")?.addEventListener("click", async () => {
     const values = $("#paperQuoteSymbols").value.split(",").map(clean).filter(Boolean);
     if (values.length > 20) return message("현재가 목록은 최대 20종목입니다.", "error");
-    if (!values.length || values.some(value => !/^\d{6}$/.test(value))) return message("숫자 6자리 종목코드를 쉼표로 구분해 입력해 주세요.", "error");
-    quoteSymbols = [...new Set(values)]; localStorage.setItem(QUOTE_KEY, quoteSymbols.join(",")); refreshQuotes();
+    if (!values.length) return message("한글 종목명 또는 6자리 종목코드를 입력해 주세요.", "error");
+    const catalog = await localCatalog(), unknown = [];
+    const symbols = values.map(value => {
+      if (/^\d{6}$/.test(value)) return value;
+      const needle = value.replace(/\s+/g, "").toLowerCase();
+      const exact = catalog.filter(item => String(item.name || "").replace(/\s+/g, "").toLowerCase() === needle);
+      const matches = exact.length ? exact : catalog.filter(item => String(item.name || "").replace(/\s+/g, "").toLowerCase().includes(needle));
+      if (matches.length === 1) { quoteNames[matches[0].symbol] = matches[0].name; return matches[0].symbol; }
+      unknown.push(value); return "";
+    }).filter(Boolean);
+    if (unknown.length) return message(`찾지 못한 종목: ${unknown.join(", ")}. 검색창에서 정확한 종목명을 선택해 주세요.`, "error");
+    quoteSymbols = [...new Set(symbols)]; $("#paperQuoteSymbols").value = quoteSymbols.join(","); localStorage.setItem(QUOTE_KEY, quoteSymbols.join(",")); refreshQuotes();
     save();
   });
 

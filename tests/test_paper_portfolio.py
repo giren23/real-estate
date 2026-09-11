@@ -37,6 +37,8 @@ def test_manual_paper_portfolio_is_local_and_requires_confirmation() -> None:
     assert "paper-account-recovery.json" in script
     assert "data-remove-symbol" in script
     assert "essentialCatalog" in script and "localSearch" in script
+    assert "한글 종목명 또는 6자리 종목코드" in script
+    assert "삼성전자, SK하이닉스" in html
     assert 'id="paperClearOrders"' in html
     assert "data-remove-position" in script
 
