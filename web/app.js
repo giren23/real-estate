@@ -49,6 +49,7 @@ const graphColors = [
   {name:"청록",value:"#0891b2"},{name:"분홍",value:"#db2777"},{name:"갈색",value:"#92400e"},{name:"회색",value:"#64748b"}
 ];
 const graphLineStyles = [
+  {name:"얇은 선",value:"thin",width:0.8,dash:[]},
   {name:"기본 선",value:"solid",width:1.4,dash:[]},
   {name:"굵은 선",value:"thick",width:3.2,dash:[]},
   {name:"점선",value:"dashSmall",width:1.8,dash:[3,3]}
@@ -1914,9 +1915,10 @@ function renderBoardChart(board,container){
   });
   if(policies.length) showPolicyDetail(container,policies[0]);
 
-  const alignTimelineYAxis=scale=>{scale.width=78;};
+  const compactMobileChart=window.matchMedia("(max-width: 600px)").matches;
+  const alignTimelineYAxis=scale=>{scale.width=compactMobileChart?46:78;};
   const timelineTicks={display:true,autoSkip:true,maxTicksLimit:12,maxRotation:0,minRotation:0,callback:shortMonthTick};
-  const priceChart=new Chart(container.querySelector(".price-chart"),{type:"line",data:{labels,datasets},plugins:[policyMarkerPlugin],options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"nearest",intersect:true},scales:{x:{offset:false,title:{display:true,text:"거래월"},ticks:{...timelineTicks}},y:{afterFit:alignTimelineYAxis,title:{display:true,text:isPyeong?"월 중앙 공급평당가 (만원/평)":"월 중앙 실거래가 (억원)"},beginAtZero:false}},plugins:{policyMarkers:{items:policies},legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:7}},tooltip:{displayColors:true,callbacks:{title:items=>items[0]?.label||"",label:c=>c.raw==null?c.dataset.label+": 거래 없음":c.dataset.label+": "+fmt(c.raw)+(isPyeong?"만원/평":"억원"),afterLabel:c=>c.raw==null?"":"해당 월 거래 "+fmt(c.dataset.tradeCounts[c.dataIndex])+"건의 중앙값"}}}}});
+  const priceChart=new Chart(container.querySelector(".price-chart"),{type:"line",data:{labels,datasets},plugins:[policyMarkerPlugin],options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"nearest",intersect:true},scales:{x:{offset:false,title:{display:true,text:"거래월"},ticks:{...timelineTicks}},y:{afterFit:alignTimelineYAxis,title:{display:!compactMobileChart,text:isPyeong?"월 중앙 공급평당가 (만원/평)":"월 중앙 실거래가 (억원)"},ticks:{maxTicksLimit:compactMobileChart?5:undefined,padding:compactMobileChart?2:6,font:compactMobileChart?{size:10}:undefined},beginAtZero:false}},plugins:{policyMarkers:{items:policies},legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:7}},tooltip:{displayColors:true,callbacks:{title:items=>items[0]?.label||"",label:c=>c.raw==null?c.dataset.label+": 거래 없음":c.dataset.label+": "+fmt(c.raw)+(isPyeong?"만원/평":"억원"),afterLabel:c=>c.raw==null?"":"해당 월 거래 "+fmt(c.dataset.tradeCounts[c.dataIndex])+"건의 중앙값"}}}}});
   bindPolicyMarkerHover(priceChart,container);
   const exchangeMap=valueMap(economicContext.exchange_rates,"krw_per_usd");
   const usRateMap=valueMap(economicContext.us_policy_rates,"rate");
