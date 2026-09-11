@@ -1347,8 +1347,8 @@ function renderGraphBoards(){
       '<label>높이 <input id="graphHeight" type="range" min="260" max="720" step="10" value="'+shownChartHeight+'"><output id="graphHeightValue">'+shownChartHeight+'px</output></label>'+
       '<span class="graph-size-actions"><button id="alignEconomicCharts" type="button">경제지표 그래프 정렬</button><button id="resetAllGraphScales" type="button">그래프 배율 초기화</button></span></div>'+
     '<div class="price-chart-scroll"><div class="chart-wrap graph-chart-wrap" style="'+chartSizeStyle+'"><canvas class="price-chart" aria-label="'+esc(board.name)+' '+chartHeading+' 그래프"></canvas></div></div></section>'+
-    '<p class="chart-help">그래프 위를 움직이거나 누르면 모든 지표의 같은 연월을 잇는 세로선이 표시됩니다. 숫자 세로선은 아래 주요 정책 발표 시점입니다.</p>'+
     graphTradeHistoryHtml(board)+
+    '<p class="chart-help">그래프 위를 움직이거나 누르면 모든 지표의 같은 연월을 잇는 세로선이 표시됩니다. 숫자 세로선은 아래 주요 정책 발표 시점입니다.</p>'+
     '<div class="economic-stack stacked">'+
       '<section class="stack-chart economic-indicator"><div class="economic-title"><b>원·달러 환율</b><span>월평균 · 원/USD</span></div><div class="economic-chart"><canvas class="exchange-chart" aria-label="원달러 환율 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> 1달러를 사는 데 필요한 원화입니다.</p><p><b>해석</b> 상승하면 원화 약세로 수입물가 부담이 커질 수 있고, 하락하면 원화 강세로 외국인 자금과 수입비용에 유리할 수 있습니다.</p></div></section>'+
       '<section class="stack-chart economic-indicator"><div class="economic-title"><b>기준금리</b><span>한국·미국·일본 · %</span></div><div class="economic-chart"><canvas class="rate-chart" aria-label="한국 미국 일본 기준금리 비교 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> 각국 중앙은행 통화정책의 기준이 되는 금리입니다.</p><p><b>해석</b> 인상은 대출·부동산·주식 수요를 누르는 방향, 인하는 자금조달 부담을 낮추는 방향입니다. 국가 간 금리차는 환율에도 영향을 줍니다.</p></div></section>'+
