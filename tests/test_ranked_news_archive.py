@@ -125,6 +125,27 @@ def test_news_regions_and_real_engagement_are_explicit() -> None:
     assert "공식 인기기사 순위" in detail["response_proxy"]
 
 
+def test_macro_market_shock_promotes_linked_oil_inflation_rate_story() -> None:
+    rows = [
+        sample("유가 100달러 돌파·PPI 상승에 미 국채금리 급등", "원자재", 1, 1),
+        sample("미국 CPI 발표 앞두고 뉴욕증시 하락", "증시", 1, 1),
+    ]
+    marked = mark_important(rows)
+    shock = marked[0]
+    assert shock["important"] is True
+    assert shock["importance"]["macro_alert_score"] == 18
+    assert {"유가", "물가", "금리"} <= set(shock["importance"]["macro_alert_signals"])
+
+
+def test_public_editorial_feature_and_views_receive_explicit_bonus() -> None:
+    featured = sample("연준과 CPI가 증시 방향을 가를 전망", "금리·채권", 1, 1)
+    featured["engagement"] = {"views": 250000, "reactions": 1200, "featured": True, "metric": "공식 주요 기사"}
+    detail = importance_details(featured)
+    assert detail["engagement_score"] > 0
+    assert detail["editorial_priority_score"] == 10
+    assert "공개 조회" in detail["response_proxy"]
+
+
 def test_news_ui_groups_regions_and_shows_verified_translation_below_link() -> None:
     editorial = (ROOT / "web" / "editorial.js").read_text(encoding="utf-8")
     report = (ROOT / "web" / "report.js").read_text(encoding="utf-8")

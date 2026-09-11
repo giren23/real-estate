@@ -111,6 +111,20 @@ US_PUBLISHERS = ("New York Times", "New York Post", "Fortune", "Wall Street Jour
 KOREAN_PUBLISHERS = ("연합뉴스", "한국은행", "기획재정부", "금융위원회", "한국거래소", "KBS", "MBC", "SBS", "한경", "한국경제", "매일경제", "서울경제", "이데일리", "조선일보", "중앙일보", "동아일보", "전자신문")
 IMPACT_KEYWORDS = ("기준금리", "연준", "금리 인상", "금리 인하", "환율", "국채", "물가", "고용", "GDP", "관세", "수출", "실적", "코스피", "코스닥", "나스닥", "유가", "원유", "금값", "반도체", "부동산 정책", "대출 규제", "세제")
 INVESTMENT_RELEVANCE = ("금리", "연준", "환율", "달러", "국채", "채권", "물가", "고용", "GDP", "관세", "무역", "수출", "실적", "코스피", "코스닥", "나스닥", "다우", "주가", "유가", "원유", "금값", "구리", "반도체", "비트코인", "ETF", "주택", "아파트", "대출", "분양", "재건축", "재개발", "공급", "세제", "세금")
+MACRO_MARKET_SIGNALS = {
+    # "유가증권" 같은 금융상품 명칭은 국제유가 충격이 아니므로, 유가라는
+    # 단독 낱말 대신 원유·배럴·WTI·브렌트 등 오인 가능성이 낮은 표현만 쓴다.
+    "유가": ("유가", "원유", "WTI", "브렌트", "두바이유", "배럴당"),
+    "물가": ("소비자물가", "생산자물가", "CPI", "PPI", "인플레이션"),
+    "금리": ("국채", "10년물", "국채금리", "수익률", "장기금리", "기준금리"),
+    "통화정책": ("연준", "Federal Reserve", "FOMC", "금리 인상", "금리 인하"),
+    "주식시장": ("뉴욕증시", "코스피", "코스닥", "나스닥", "S&P", "주가", "증시"),
+}
+MACRO_ALERT_PAIRS = (
+    frozenset({"유가", "물가"}), frozenset({"유가", "금리"}), frozenset({"유가", "통화정책"}), frozenset({"유가", "주식시장"}),
+    frozenset({"물가", "금리"}), frozenset({"물가", "통화정책"}), frozenset({"물가", "주식시장"}),
+    frozenset({"금리", "통화정책"}), frozenset({"금리", "주식시장"}),
+)
 MAX_HIGHLIGHT_TERMS = ("기준금리 인상", "기준금리 인하", "금리 인상", "금리 인하", "공급 중단", "대규모 감원", "법정관리", "부도", "디폴트")
 HIGH_HIGHLIGHT_TERMS = ("연방준비제도", "연준", "한국은행", "기준금리", "국채", "환율", "관세", "물가", "고용", "GDP", "코스피", "코스닥", "나스닥", "반도체", "비트코인", "국토교통부", "공공주택", "재생에너지", "RE100")
 NOISE_KEYWORDS = ("화재", "사망", "숨져", "대피", "홍수", "실종", "범죄", "교통사고", "연예", "Weverse", "TXT-LOG", "프라하하하", "[포토]", "[TVis]", "미우새", "시상식", "페스티벌", "위장전입", "부정청약")
@@ -1055,7 +1069,69 @@ def representative_score(source: dict[str, str]) -> tuple[int, int, int, int]:
     return authority, 1 if NUMBER_PATTERN.search(f"{title} {description}") else 0, min(len(description), 300), min(len(title), 100)
 
 
-def importance_details(item: dict[str, object]) -> dict[str, object]:
+def aggregate_engagement(related: list[dict[str, object]]) -> dict[str, object]:
+    """Keep only public, source-supplied popularity/editorial signals.
+
+    We never infer clicks from a headline or a publisher name.  When a duplicate
+    group contains multiple official ranks, the best rank is retained; views and
+    reactions are summed only when they are explicitly exposed by a source.
+    """
+    views = reactions = 0
+    ranks: list[int] = []
+    metrics: list[str] = []
+    featured = False
+    for source in related:
+        engagement = source.get("engagement") if isinstance(source.get("engagement"), dict) else {}
+        views += max(0, int(engagement.get("views") or 0))
+        reactions += max(0, int(engagement.get("reactions") or 0))
+        rank = int(engagement.get("rank") or 0)
+        if rank > 0:
+            ranks.append(rank)
+        metric = clean_text(str(engagement.get("metric") or ""))
+        if metric and metric not in metrics:
+            metrics.append(metric[:80])
+        featured = featured or bool(engagement.get("featured") or engagement.get("editor_pick") or engagement.get("top_story"))
+    result: dict[str, object] = {}
+    if views:
+        result["views"] = views
+    if reactions:
+        result["reactions"] = reactions
+    if ranks:
+        result["rank"] = min(ranks)
+    if metrics:
+        result["metric"] = " · ".join(metrics[:2])
+    if featured:
+        result["featured"] = True
+    return result
+
+
+def item_market_text(item: dict[str, object]) -> str:
+    sources = item.get("sources") if isinstance(item.get("sources"), list) else []
+    source_text = " ".join(f"{source.get('title', '')} {source.get('description', '')}" for source in sources if isinstance(source, dict))
+    return " ".join(str(item.get(key) or "") for key in ("title", "summary", "easy_explanation", "core_summary")) + " " + source_text
+
+
+def macro_signals(text: str) -> set[str]:
+    # "유가증권"은 국내 주식시장 용어라 국제유가 신호에서 제외한다.
+    lowered = text.lower().replace("유가증권", "")
+    return {label for label, keywords in MACRO_MARKET_SIGNALS.items() if any(keyword.lower() in lowered for keyword in keywords)}
+
+
+def macro_market_alert(items: list[dict[str, object]]) -> set[str]:
+    """Return verified cross-market signals only when a same-day shock is corroborated.
+
+    A single headline never creates an alert.  Two linked groups must appear and at
+    least one article must directly connect the groups, preventing unrelated daily
+    headlines from being promoted merely because they share broad keywords.
+    """
+    per_item = [macro_signals(item_market_text(item)) for item in items]
+    present = set().union(*per_item) if per_item else set()
+    confirmed = set().union(*(pair for pair in MACRO_ALERT_PAIRS if pair <= present))
+    linked = any(any(pair <= signals for pair in MACRO_ALERT_PAIRS if pair <= confirmed) for signals in per_item)
+    return confirmed if linked else set()
+
+
+def importance_details(item: dict[str, object], active_macro_alert: set[str] | None = None) -> dict[str, object]:
     title = str(item.get("title", ""))
     category = str(item.get("category") or ((item.get("tags") or ["거시경제"])[0]))
     metrics = item.get("metrics") or []
@@ -1080,19 +1156,27 @@ def importance_details(item: dict[str, object]) -> dict[str, object]:
     actual_views = int(engagement.get("views") or 0)
     actual_reactions = int(engagement.get("reactions") or 0)
     popularity_rank = int(engagement.get("rank") or 0)
+    featured = bool(engagement.get("featured") or engagement.get("editor_pick") or engagement.get("top_story"))
     engagement_bonus = min(24, int((actual_views + actual_reactions * 4) ** 0.25 * 2)) if actual_views or actual_reactions else max(0, 18 - popularity_rank) if popularity_rank else 0
+    editorial_bonus = 10 if featured else 0
+    item_signals = macro_signals(item_market_text(item))
+    headline_signals = macro_signals(title)
+    linked_macro_signals = item_signals & (active_macro_alert or set())
+    macro_alert_bonus = 18 if headline_signals and any(pair <= linked_macro_signals for pair in MACRO_ALERT_PAIRS) else 0
     title_lower = title.lower()
     noise = 32 if any(keyword in title for keyword in NOISE_KEYWORDS) else 0
     if any(keyword in title_lower for keyword in MARKET_QUOTE_NOISE):
         noise = max(noise, 60)
     non_market_event = any(keyword in title for keyword in NON_MARKET_EVENT_TERMS)
     relevant = (category in CORE_MARKET_CATEGORIES or any(keyword.lower() in title.lower() for keyword in INVESTMENT_RELEVANCE)) and not non_market_event
-    score = max(0, min(100, coverage + market + impact + authority + numeric + decision_bonus + engagement_bonus - noise))
+    score = max(0, min(100, coverage + market + impact + authority + numeric + decision_bonus + engagement_bonus + editorial_bonus + macro_alert_bonus - noise))
     views_available = actual_views > 0
     if views_available or actual_reactions:
         response_basis = f"공개 조회 {actual_views:,}회 · 공개 반응 {actual_reactions:,}건"
     elif popularity_rank:
         response_basis = f"매체 공식 인기기사 순위 {popularity_rank}위 · 조회수 원수치는 비공개"
+    elif featured:
+        response_basis = "매체가 공개적으로 주요 기사·편집 추천으로 표시"
     else:
         response_basis = "조회·반응 수치 미제공 · 유사 보도 확산과 매체 다양성으로 대체"
     return {
@@ -1103,6 +1187,9 @@ def importance_details(item: dict[str, object]) -> dict[str, object]:
         "noise_penalty": max(noise, 60 if non_market_event else 0),
         "attention_basis": f"유사 보도 {related}건 · 확인 매체 {sources}곳",
         "engagement_score": engagement_bonus,
+        "editorial_priority_score": editorial_bonus,
+        "macro_alert_score": macro_alert_bonus,
+        "macro_alert_signals": sorted(linked_macro_signals),
         "views_available": views_available,
         "rate_decision": rate_decision,
         "response_proxy": response_basis,
@@ -1111,11 +1198,12 @@ def importance_details(item: dict[str, object]) -> dict[str, object]:
 
 
 def mark_important(items: list[dict[str, object]], limit: int = 8) -> list[dict[str, object]]:
+    active_macro_alert = macro_market_alert(items)
     for item in items:
         item["category"] = str(item.get("category") or ((item.get("tags") or ["거시경제"])[0]))
         item["publisher"] = str(item.get("publisher") or (((item.get("sources") or [{}])[0]).get("publisher", "원문")))
         item["region"] = str(item.get("region") or classify_region(str(item["publisher"])))
-        item["importance"] = importance_details(item)
+        item["importance"] = importance_details(item, active_macro_alert)
         item["importance_score"] = item["importance"]["score"]
         item["important"] = False
     ranked = sorted(items, key=lambda row: (bool(row["importance"].get("rate_decision")), int(row.get("importance_score", 0)), str(row.get("date", ""))), reverse=True)
@@ -1283,7 +1371,7 @@ def item_from_feed(row: dict[str, str], related: list[dict[str, str]] | None = N
         "category": category,
         "publisher": row["publisher"][:40],
         "region": topic_region,
-        "engagement": row.get("engagement", {}),
+        "engagement": aggregate_engagement(related),
         "related_reports": len(related),
         "source_count": len(sources),
         "easy_explanation": description,
@@ -1567,7 +1655,7 @@ def rebuild_index() -> None:
         "total_articles": len(all_items),
         "latest_items": all_items[:12],
         "important_items": important_items,
-        "importance_method": "실제 조회수·좋아요 미제공 · 유사 보도 확산, 매체 다양성, 대표 기사 품질, 출처 신뢰도, 금리 결정 등 시장 영향도로 산정",
+        "importance_method": "공개 조회·반응 수치, 매체 공식 인기기사 순위·편집 추천, 유사 보도 확산, 매체 다양성, 출처 신뢰도와 거시 시장 경보(유가·물가·금리·통화정책·주식시장 동시 충격)로 산정",
         # Keep the first load light on mobile. Older days load on demand.
         "items": all_items[:600],
         "detailed_articles": sum(item.get("article_body_status") in {"full_text", "verified_reconstruction"} for item in all_items),
