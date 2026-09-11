@@ -77,6 +77,14 @@ ARTICLE_NOISE_PATTERN = re.compile(
     r"주소\s*:\s*서울특별시|일간신문등록번호|인터넷신문등록번호|등록\s*\(발행\)일자|발행\s*/\s*편집인|"
     r"가장\s*빠른\s*뉴스가\s*있고[^.!?。]{0,160}(?:다음\s*뉴스|다음뉴스)를\s*만나보세요|"
     r"(?:다음\s*뉴스|다음뉴스)를\s*만나보세요|다양한\s*정보[,· ]*쌍방향\s*소통[^.!?。]{0,120})", re.I)
+# These are repetitive fund-administration disclosures, not editorial market
+# reporting.  They may be re-indexed by search feeds days later and should not
+# occupy a news card merely because an ETF happens to be finance-related.
+NON_EDITORIAL_NOTICE_PATTERN = re.compile(
+    r"\b(?:net\s+asset\s+value(?:\(s\))?|nav\s+per\s+share|"
+    r"dealing\s+date|ucits\s+etf|regulatory\s+announcement)\b",
+    re.I,
+)
 
 
 CATEGORY_RULES = (
@@ -139,6 +147,13 @@ STRUCTURED_KEYS = ("summary_title", "article_summary", "core_summary", "six_w_on
 
 def clean_text(value: str) -> str:
     return SPACE_PATTERN.sub(" ", html.unescape(TAG_PATTERN.sub(" ", value or ""))).strip()
+
+
+def is_non_editorial_notice(row: dict[str, object]) -> bool:
+    """Exclude repetitive fund NAV and regulatory administration notices."""
+    title = clean_text(str(row.get("title") or ""))
+    description = clean_text(str(row.get("description") or ""))
+    return bool(NON_EDITORIAL_NOTICE_PATTERN.search(title) or NON_EDITORIAL_NOTICE_PATTERN.search(description))
 
 
 SUMMARY_PROVENANCE_PATTERN = re.compile(
@@ -1260,7 +1275,11 @@ def fetch_feed(query: str, target: date, language: str = "ko", country: str = "K
         except (TypeError, ValueError):
             published_date = target.isoformat()
             published_time = published_date
-        rows.append({"title": title, "url": link, "publisher": publisher or "뉴스 원문", "description": description, "published_at": published_date, "published_time": published_time, "region": classify_region(publisher, region)})
+        row = {"title": title, "url": link, "publisher": publisher or "뉴스 원문", "description": description, "published_at": published_date, "published_time": published_time, "region": classify_region(publisher, region)}
+        # Google can re-surface older, repeatedly updated or re-indexed items
+        # despite the query date.  Never place those into today's archive.
+        if published_date == target.isoformat() and not is_non_editorial_notice(row):
+            rows.append(row)
     return rows
 
 
@@ -1281,8 +1300,9 @@ def fetch_direct_feed(url: str, publisher: str, region: str, target: date) -> li
             published_date, published_time = published_at.date().isoformat(), published_at.isoformat(timespec="minutes")
         except (TypeError, ValueError):
             published_date, published_time = target.isoformat(), target.isoformat()
-        if title and link and published_date == target.isoformat():
-            rows.append({"title": title, "url": link, "publisher": publisher, "description": description, "published_at": published_date, "published_time": published_time, "region": region})
+        row = {"title": title, "url": link, "publisher": publisher, "description": description, "published_at": published_date, "published_time": published_time, "region": region}
+        if title and link and published_date == target.isoformat() and not is_non_editorial_notice(row):
+            rows.append(row)
     return rows
 
 
@@ -1578,6 +1598,8 @@ def collect_day(target: date, limit: int) -> list[dict[str, object]]:
     for query in FEED_QUERIES:
         try:
             for row in fetch_feed(query, target):
+                if row.get("published_at") != target.isoformat() or is_non_editorial_notice(row):
+                    continue
                 key = SPACE_PATTERN.sub("", row["title"].lower())
                 unique.setdefault(key, row)
         except Exception as error:
@@ -1586,6 +1608,8 @@ def collect_day(target: date, limit: int) -> list[dict[str, object]]:
     for query, language, country, edition, region in GLOBAL_FEEDS:
         try:
             for row in fetch_feed(query, target, language, country, edition, region):
+                if row.get("published_at") != target.isoformat() or is_non_editorial_notice(row):
+                    continue
                 key = SPACE_PATTERN.sub("", row["title"].lower())
                 unique.setdefault(key, row)
         except Exception as error:
@@ -1594,6 +1618,8 @@ def collect_day(target: date, limit: int) -> list[dict[str, object]]:
     for url, publisher, region in DIRECT_RSS_FEEDS:
         try:
             for row in fetch_direct_feed(url, publisher, region, target):
+                if row.get("published_at") != target.isoformat() or is_non_editorial_notice(row):
+                    continue
                 key = SPACE_PATTERN.sub("", row["title"].lower())
                 unique.setdefault(key, row)
         except Exception as error:

@@ -17,6 +17,7 @@ from scripts.update_economic_news import (
     select_caption_excerpts,
     sixw_summary_from_sentences,
     fetch_article_sentences,
+    is_non_editorial_notice,
     youtube_video_id,
 )
 
@@ -58,6 +59,14 @@ def test_stock_quote_pages_are_not_selected_as_important_news() -> None:
     marked = mark_important([quote])
     assert marked[0]["important"] is False
     assert marked[0]["importance"]["investment_relevant"] is False
+
+
+def test_repetitive_fund_nav_notices_are_excluded_from_news() -> None:
+    notice = {
+        "title": "Amundi US Curve steepening 2-10Y UCITS ETF GBP Hedged Dist: Net Asset Value(s)",
+        "description": "DEALING DATE: 07-Sep-2026. NAV PER SHARE: GBP 10.42",
+    }
+    assert is_non_editorial_notice(notice) is True
 
 
 def test_personal_housing_scandals_are_not_selected_as_important_news() -> None:
@@ -153,6 +162,8 @@ def test_news_ui_groups_regions_and_shows_verified_translation_below_link() -> N
     assert all(label in editorial for label in ("국내 뉴스", "미국 뉴스", "기타 글로벌 뉴스"))
     assert "summary_ko" in report and "한국어 번역 요약" in report
     assert "NYT_API_KEY" in workflow and "DEEPL_API_KEY" not in workflow
+    assert "isAdministrativeNotice" in editorial
+    assert "isAdministrativeNotice" in (ROOT / "web" / "news.js").read_text(encoding="utf-8")
 
 
 def test_international_important_news_is_rendered_before_domestic() -> None:

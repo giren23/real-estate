@@ -26,6 +26,7 @@
   const publishedTime = item => item.published_time || item.sources?.[0]?.published_time || item.sources?.[0]?.published_at || item.date || "";
   const formatPublishedTime = value => { const match = String(value || "").match(/^(\d{2})(\d{2})-(\d{2})-(\d{2})(?:T|\s)(\d{2}):(\d{2})/); return match ? `${match[2]}.${match[3]}.${match[4]} ${match[5]}:${match[6]}` : `${formatDate(value).replace(/^20/,"")} · 시각 미제공`; };
   const statusBadge = item => item.title_match_status === "similar_article_verified" ? '<small class="news-status-badge similar">유사기사</small>' : item.article_body_status === "unavailable" ? '<small class="news-status-badge unverified">미확인</small>' : "";
+  const isAdministrativeNotice = item => /\b(?:net\s+asset\s+value(?:\(s\))?|nav\s+per\s+share|dealing\s+date|ucits\s+etf|regulatory\s+announcement)\b/i.test(`${item?.title || ""} ${item?.summary || ""}`);
 
   let contentById = new Map();
   const isRateDecision = item => /(?:기준금리|정책금리|연준|한은|한국은행).{0,28}(?:인상|인하|동결|올렸|내렸)|금리.{0,18}(?:인상 결정|인하 결정|동결 결정|올렸다|내렸다)/i.test(item.title || "");
@@ -182,11 +183,11 @@
       const overrideById = new Map((overrides.items || []).map(item => [item.id,item]));
       if (news) {
         const apply = item => ({...item,...(overrideById.get(item.id) || {})});
-        news.latest_items = (news.latest_items || []).map(apply).filter(canShowNewsDetail);
-        news.items = (news.items || []).map(apply);
+        news.latest_items = (news.latest_items || []).map(apply).filter(item => !isAdministrativeNotice(item)).filter(canShowNewsDetail);
+        news.items = (news.items || []).map(apply).filter(item => !isAdministrativeNotice(item));
         // 중요뉴스는 본문 수집 실패 여부와 별개로 선별 결과를 표시한다.
         // 상세 화면은 확보된 원문/요약 범위를 명시해 제공한다.
-        news.important_items = (news.important_items || []).map(apply);
+        news.important_items = (news.important_items || []).map(apply).filter(item => !isAdministrativeNotice(item));
       }
       const sections = Array.isArray(data.sections) ? data.sections : [];
       const importantItems = news ? [...(news.latest_items || []).filter(isRateDecision), ...(news.important_items || [])].filter((item, index, rows) => rows.findIndex(row => row.id === item.id) === index).slice(0, 10).map(item => ({...item, important:true})) : [];
