@@ -12,6 +12,8 @@
   try { state = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (_error) { state = null; }
   if (!state || state.version !== 1) state = emptyState(100000000);
   const quoteNames = {"005930":"삼성전자","000660":"SK하이닉스","005380":"현대차","035420":"NAVER","035720":"카카오","373220":"LG에너지솔루션","207940":"삼성바이오로직스","068270":"셀트리온","105560":"KB금융","005490":"POSCO홀딩스"};
+  const essentialCatalog = Object.entries(quoteNames).map(([symbol, name]) => ({symbol,name,exchange:"KRX"}));
+  let catalogPromise = null;
   const defaultQuoteSymbols = Object.keys(quoteNames);
   let quoteSymbols = (localStorage.getItem(QUOTE_KEY) || defaultQuoteSymbols.join(",")).split(",").map(clean).filter(Boolean).slice(0, 20), quoteLoading = false;
   let cloudCredentials = null, cloudSaveTimer = 0;
@@ -59,14 +61,19 @@
     const positions = Object.values(state.positions).sort((a, b) => a.name.localeCompare(b.name, "ko"));
     $("#paperPositions").innerHTML = positions.length ? positions.map(item => {
       const profit = positionValue(item) - positionCost(item), rate = positionCost(item) ? profit / positionCost(item) * 100 : 0;
-      return `<tr><th>${item.name}<small>${item.symbol}</small></th><td>${item.quantity.toLocaleString("ko-KR")}</td><td>${money(item.averagePrice)}</td><td><input class="paper-mark-price" data-symbol="${item.symbol}" type="number" min="0.01" step="0.01" value="${item.currentPrice}" aria-label="${item.name} 현재가"></td><td>${money(positionValue(item))}</td><td class="${profit >= 0 ? "paper-positive" : "paper-negative"}">${profit >= 0 ? "+" : ""}${money(profit)}<small>${rate >= 0 ? "+" : ""}${rate.toFixed(2)}%</small></td></tr>`;
-    }).join("") : '<tr><td class="paper-empty" colspan="6">아직 보유한 가상 종목이 없습니다.</td></tr>';
+      return `<tr><th>${item.name}<small>${item.symbol}</small></th><td>${item.quantity.toLocaleString("ko-KR")}</td><td>${money(item.averagePrice)}</td><td><input class="paper-mark-price" data-symbol="${item.symbol}" type="number" min="0.01" step="0.01" value="${item.currentPrice}" aria-label="${item.name} 현재가"></td><td>${money(positionValue(item))}</td><td class="${profit >= 0 ? "paper-positive" : "paper-negative"}">${profit >= 0 ? "+" : ""}${money(profit)}<small>${rate >= 0 ? "+" : ""}${rate.toFixed(2)}%</small></td><td><button class="paper-position-remove" data-remove-position="${escapeHtml(item.symbol)}" type="button">삭제</button></td></tr>`;
+    }).join("") : '<tr><td class="paper-empty" colspan="7">아직 보유한 가상 종목이 없습니다.</td></tr>';
     $("#paperOrders").innerHTML = state.orders.length ? [...state.orders].reverse().map(order => `<tr><td>${new Date(order.time).toLocaleString("ko-KR")}</td><td class="${order.side === "BUY" ? "paper-positive" : "paper-negative"}">${order.side === "BUY" ? "매수" : "매도"}</td><td>${order.name}<small>${order.symbol}</small></td><td>${money(order.price)}</td><td>${order.quantity.toLocaleString("ko-KR")}</td><td>${money(order.costs)}</td><td>${money(order.cashAfter)}</td></tr>`).join("") : '<tr><td class="paper-empty" colspan="7">가상 거래내역이 없습니다.</td></tr>';
     $("#paperOrderCount").textContent = `${state.orders.length}건`;
     document.querySelectorAll(".paper-mark-price").forEach(input => input.addEventListener("change", event => {
       const position = state.positions[event.target.dataset.symbol], value = Number(event.target.value);
       if (!position || !(value > 0)) return message("현재가는 0보다 크게 입력해 주세요.", "error");
       position.currentPrice = value; save(); render(); message(`${position.name} 현재가를 ${money(value)}으로 갱신했습니다.`, "success");
+    }));
+    document.querySelectorAll("[data-remove-position]").forEach(button => button.addEventListener("click", () => {
+      const position = state.positions[button.dataset.removePosition];
+      if (!position || !window.confirm(`${position.name} 보유 항목을 목록에서 삭제할까요? 현금과 기존 거래내역은 유지됩니다.`)) return;
+      delete state.positions[position.symbol]; save(); render(); message(`${position.name} 보유 항목을 삭제했습니다.`, "success");
     }));
   }
 
@@ -120,6 +127,15 @@
     $("#paperSymbol").value = symbol; $("#paperName").value = name;
     $("#paperSearchResults").innerHTML = ""; save(); refreshQuotes(); orderPreview();
   };
+  const localCatalog = async () => {
+    if (!catalogPromise) catalogPromise = fetch("data/stock_catalog.json", {cache:"force-cache"}).then(response => response.ok ? response.json() : {items:[]}).then(payload => [...essentialCatalog, ...(payload.items || [])]).catch(() => essentialCatalog);
+    return catalogPromise;
+  };
+  const localSearch = async query => {
+    const needle = clean(query).replace(/\s+/g, "").toLowerCase();
+    const items = await localCatalog();
+    return items.filter((item, index, rows) => String(item.symbol || "").includes(needle) || String(item.name || "").replace(/\s+/g, "").toLowerCase().includes(needle)).filter((item, index, rows) => rows.findIndex(row => row.symbol === item.symbol) === index).slice(0, 10);
+  };
   const searchCompanies = async () => {
     const query = clean($("#paperCompanySearch").value);
     if (!query) return;
@@ -128,9 +144,14 @@
       const response = await fetch(`/api/paper/search?q=${encodeURIComponent(query)}`, {cache:"no-store"});
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || "검색 실패");
+      payload.items = (payload.items || []).length ? payload.items : await localSearch(query);
       $("#paperSearchResults").innerHTML = (payload.items || []).map(item => `<button type="button" data-symbol="${escapeHtml(item.symbol)}" data-name="${escapeHtml(item.name)}"><span>${escapeHtml(item.name)}</span><small>${escapeHtml(item.symbol)} · ${escapeHtml(item.exchange)}</small></button>`).join("") || "<p>검색 결과가 없습니다.</p>";
       document.querySelectorAll("#paperSearchResults button").forEach(button => button.addEventListener("click", () => selectSearchResult(button.dataset.symbol, button.dataset.name)));
-    } catch (error) { $("#paperSearchResults").innerHTML = `<p>${error.message}</p>`; }
+    } catch (_error) {
+      const items = await localSearch(query);
+      $("#paperSearchResults").innerHTML = items.map(item => `<button type="button" data-symbol="${escapeHtml(item.symbol)}" data-name="${escapeHtml(item.name)}"><span>${escapeHtml(item.name)}</span><small>${escapeHtml(item.symbol)} · ${escapeHtml(item.exchange)}</small></button>`).join("") || "<p>검색 결과가 없습니다.</p>";
+      document.querySelectorAll("#paperSearchResults button").forEach(button => button.addEventListener("click", () => selectSearchResult(button.dataset.symbol, button.dataset.name)));
+    }
   };
   $("#paperCompanySearchButton")?.addEventListener("click", searchCompanies);
   $("#paperCompanySearch")?.addEventListener("keydown", event => { if(event.key === "Enter"){event.preventDefault();searchCompanies();} });
@@ -207,6 +228,11 @@
   $("#paperReset")?.addEventListener("click", () => {
     if (!window.confirm("보유 종목과 모든 가상 거래내역을 초기화할까요? 이 브라우저의 모의투자 기록만 삭제됩니다.")) return;
     state = emptyState(Number($("#paperInitialCash").value) || 100000000); save(); render(); message("가상계좌를 초기화했습니다.", "success");
+  });
+  $("#paperClearOrders")?.addEventListener("click", () => {
+    if (!state.orders.length) return message("삭제할 가상 거래내역이 없습니다.");
+    if (!window.confirm("가상 거래내역만 삭제할까요? 현재 보유 종목·현금은 유지됩니다.")) return;
+    state.orders = []; save(); render(); message("가상 거래내역을 삭제했습니다.", "success");
   });
   $("#paperExport")?.addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }), link = document.createElement("a");

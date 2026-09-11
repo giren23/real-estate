@@ -36,6 +36,9 @@ def test_manual_paper_portfolio_is_local_and_requires_confirmation() -> None:
     assert "/api/paper/account" in script
     assert "paper-account-recovery.json" in script
     assert "data-remove-symbol" in script
+    assert "essentialCatalog" in script and "localSearch" in script
+    assert 'id="paperClearOrders"' in html
+    assert "data-remove-position" in script
 
 
 def test_cloud_paper_api_is_read_only_for_quotes_and_hashes_recovery_tokens() -> None:
