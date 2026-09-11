@@ -254,6 +254,13 @@ def test_full_article_is_reduced_to_one_evidence_bound_sixw_summary() -> None:
     assert result["summary_basis"] == "공개 원문 본문"
 
 
+def test_article_body_div_is_extracted_when_paragraph_tags_are_absent() -> None:
+    page = """<article><div id="articleBody"><div>국제유가가 배럴당 100달러를 돌파하면서 에너지 시장의 변동성이 크게 확대됐다.</div><div>원유 ETN과 정유주는 가격 민감도와 비용 구조가 달라 투자 전 차이를 확인해야 한다.</div><div>시장 참여자는 변동성과 선물 롤오버 비용을 함께 점검하고 있다.</div></div></article>"""
+    sentences = article_sentences(page)
+    assert len(sentences) >= 3
+    assert any("원유 ETN" in sentence for sentence in sentences)
+
+
 def test_collector_enriches_current_and_archived_articles() -> None:
     collector = (ROOT / "scripts" / "update_economic_news.py").read_text(encoding="utf-8")
     assert "enrich_article_bodies(items)" in collector

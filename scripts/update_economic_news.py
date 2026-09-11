@@ -57,6 +57,7 @@ PUBLISHER_DAILY_SECTIONS = {
 }
 PUBLISHER_SEARCH_ENDPOINTS = {
     "머니투데이": ("publisher_search_moneytoday", "https://www.mt.co.kr/search/{query}/news"),
+    "아주경제": ("publisher_search_ajunews", "https://www.ajunews.com/search?q={query}"),
 }
 TAG_PATTERN = re.compile(r"<[^>]+>")
 SPACE_PATTERN = re.compile(r"\s+")
@@ -220,11 +221,19 @@ class ArticleParagraphParser(HTMLParser):
         self.paragraphs: list[str] = []
         self._capture = 0
         self._buffer: list[str] = []
+        self._article_body_depth = 0
+        self._article_body_buffer: list[str] = []
         self._json_ld = False
         self._json_buffer: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = {key.lower(): value or "" for key, value in attrs}
+        is_article_body = attributes.get("id", "").lower() == "articlebody" or attributes.get("itemprop", "").lower() == "articlebody"
+        if is_article_body and not self._article_body_depth:
+            self._article_body_depth = 1
+            self._article_body_buffer = []
+        elif self._article_body_depth and tag.lower() in {"article", "div", "section"}:
+            self._article_body_depth += 1
         if tag.lower() in {"p", "blockquote"}:
             self._capture += 1
             if self._capture == 1:
@@ -240,6 +249,12 @@ class ArticleParagraphParser(HTMLParser):
                 text = clean_text(" ".join(self._buffer))
                 if text:
                     self.paragraphs.append(text)
+        if self._article_body_depth and tag.lower() in {"article", "div", "section"}:
+            self._article_body_depth -= 1
+            if self._article_body_depth == 0:
+                text = clean_text(" ".join(self._article_body_buffer))
+                if text:
+                    self.paragraphs.append(text)
         if tag.lower() == "script" and self._json_ld:
             self._json_ld = False
             raw = "".join(self._json_buffer).strip()
@@ -251,6 +266,8 @@ class ArticleParagraphParser(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self._capture:
             self._buffer.append(data)
+        if self._article_body_depth:
+            self._article_body_buffer.append(data)
         if self._json_ld:
             self._json_buffer.append(data)
 
@@ -1566,7 +1583,7 @@ def enrich_article_bodies(items: list[dict[str, object]], limit: int | None = No
             strip_summary_provenance(item)
 
 
-def enrich_archived_bodies(limit: int, force_retry: bool = False) -> int:
+def enrich_archived_bodies(limit: int, force_retry: bool = False, article_ids: set[str] | None = None) -> int:
     """Gradually migrate past archives so each scheduled run makes bounded progress."""
     if limit <= 0:
         return 0
@@ -1576,8 +1593,11 @@ def enrich_archived_bodies(limit: int, force_retry: bool = False) -> int:
         payload = json.loads(path.read_text(encoding="utf-8"))
         payloads[path] = payload
         for item in payload.get("items", []):
+            selected = not article_ids or str(item.get("id") or "") in article_ids
+            if not selected:
+                continue
             stale_discovery = bool(item.get("discovery_method")) and not is_article_candidate_url(str(item.get("article_source_url") or ""))
-            should_retry = (item.get("article_body_status") == "unavailable" or stale_discovery) if force_retry else article_retry_due(item)
+            should_retry = (item.get("article_body_status") == "unavailable" or stale_discovery) if (force_retry or article_ids) else article_retry_due(item)
             if should_retry:
                 targets.append((path, payload, item))
                 if len(targets) >= limit:
@@ -1586,7 +1606,7 @@ def enrich_archived_bodies(limit: int, force_retry: bool = False) -> int:
             break
     if not targets:
         return 0
-    enrich_article_bodies([item for _path, _payload, item in targets], workers=6, force_retry=force_retry)
+    enrich_article_bodies([item for _path, _payload, item in targets], workers=6, force_retry=force_retry or bool(article_ids))
     touched = {path for path, _payload, _item in targets}
     for path in touched:
         path.write_text(json.dumps(payloads[path], ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
@@ -1698,6 +1718,7 @@ def main() -> None:
     parser.add_argument("--archive-enrich-limit", type=int, default=60, help="한 실행에서 과거 원문 본문을 다시 처리할 최대 기사 수")
     parser.add_argument("--archive-only", action="store_true", help="새 뉴스 수집 없이 과거 기사 구조화만 실행")
     parser.add_argument("--force-retry-unavailable", action="store_true", help="원문 미확인 기사도 즉시 다시 원문 경로를 확인")
+    parser.add_argument("--article-id", action="append", default=[], help="지정한 기사 ID만 원문을 다시 확인")
     args = parser.parse_args()
     days = max(1, min(args.backfill_days, 365))
     limit = max(6, min(args.limit_per_day, 60))
@@ -1711,7 +1732,10 @@ def main() -> None:
             if items:
                 write_day(target, items)
                 print(f"{target}: {len(items)}건 저장")
-    enriched = enrich_archived_bodies(archive_limit, force_retry=args.force_retry_unavailable)
+    selected_ids = {str(value).strip() for value in args.article_id if str(value).strip()}
+    if selected_ids:
+        archive_limit = max(archive_limit, len(selected_ids))
+    enriched = enrich_archived_bodies(archive_limit, force_retry=args.force_retry_unavailable, article_ids=selected_ids or None)
     if enriched:
         print(f"과거 기사 원문 본문 재처리: {enriched}건")
     rebuild_index()
