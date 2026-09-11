@@ -41,6 +41,7 @@ let buildingRequestId = 0, buildingAbortController = null;
 let catalogRefreshChecking = false, lastCatalogRefreshCheck = 0;
 const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const GRAPH_STORAGE_KEY = "realEstateGraphWorkspacesV1";
+const FAVORITE_GRAPH_STORAGE_KEY = "realEstateFavoriteGraphsV1";
 const TAX_BASE_YEAR = 2026;
 const graphColors = [
   {name:"검은색",value:"#111827"},{name:"빨강",value:"#ef4444"},{name:"주황",value:"#f97316"},{name:"노랑",value:"#eab308"},
@@ -1203,8 +1204,7 @@ function removeSeries(boardId,seriesId){
 function restoreGraphBoards(){
   try{
     const saved=JSON.parse(localStorage.getItem(GRAPH_STORAGE_KEY)||"null");
-    if(!saved||!Array.isArray(saved.boards)) return;
-    graphBoards=saved.boards.slice(0,10).map((board,index)=>({
+    graphBoards=(Array.isArray(saved?.boards)?saved.boards:[]).slice(0,10).map((board,index)=>({
       id:String(board.id||makeId("graph")),
       name:String(board.name||"그래프 "+(index+1)).slice(0,30),
       periodYears:[1,3,5,10,20,0].includes(Number(board.periodYears))?Number(board.periodYears):20,
@@ -1212,6 +1212,7 @@ function restoreGraphBoards(){
       chartWidth:Math.min(200,Math.max(100,Number(board.chartWidth)||100)),
       chartHeight:Number(board.chartHeight)>=260&&Number(board.chartHeight)<=720?Number(board.chartHeight):0,
       economicWidth:Math.min(200,Math.max(100,Number(board.economicWidth)||100)),
+      favorite:Boolean(board.favorite),
       series:Array.isArray(board.series)?board.series.slice(0,10).filter(series=>apartmentGroups.some(g=>g.key===series.key)).map((series,seriesIndex)=>({
         id:String(series.id||makeId("series")),
         key:String(series.key),
@@ -1223,6 +1224,14 @@ function restoreGraphBoards(){
     }));
     activeGraphId=graphBoards.some(board=>board.id===saved.activeGraphId)?saved.activeGraphId:(graphBoards[0]?.id||null);
     if(graphBoards.length) byId("saveState").textContent="저장된 그래프를 불러왔습니다.";
+    const favorites=JSON.parse(localStorage.getItem(FAVORITE_GRAPH_STORAGE_KEY)||"null");
+    (favorites?.boards||[]).forEach(raw=>{
+      if(!Array.isArray(raw.series)||!raw.series.every(series=>apartmentGroups.some(group=>group.key===series.key)))return;
+      const existing=graphBoards.find(board=>board.id===raw.id);
+      if(existing)Object.assign(existing,raw,{favorite:true});
+      else if(graphBoards.length<10)graphBoards.push({...raw,favorite:true});
+    });
+    if(!activeGraphId&&graphBoards.length)activeGraphId=graphBoards[0].id;
   }catch{
     graphBoards=[];activeGraphId=null;
   }
@@ -1239,11 +1248,16 @@ function saveGraphBoards(){
   }
 }
 
+function saveFavoriteGraphs(){
+  try{localStorage.setItem(FAVORITE_GRAPH_STORAGE_KEY,JSON.stringify({version:1,activeGraphId,boards:graphBoards.filter(board=>board.favorite)}));}catch(_error){setStatus("즐겨찾기를 이 기기에 저장하지 못했습니다.",true);}
+}
+
 function markUnsaved(message){
   byId("saveState").textContent="저장되지 않은 변경";
   byId("saveState").classList.add("unsaved");
   setStatus(message);
   refreshResultButtons();
+  saveFavoriteGraphs();
 }
 
 function renderGraphBoards(){
@@ -1252,6 +1266,8 @@ function renderGraphBoards(){
   byId("graphCount").textContent=graphBoards.length+" / 10";
   byId("removeGraphBtn").disabled=!activeBoard();
   byId("saveGraphsBtn").disabled=false;
+  const favoriteButton=byId("favoriteGraphBtn");
+  favoriteButton.disabled=!activeBoard();
 
   if(!graphBoards.length){
     byId("graphTabs").innerHTML="";
@@ -1271,6 +1287,10 @@ function renderGraphBoards(){
 
   const board=activeBoard()||graphBoards[0];
   activeGraphId=board.id;
+  favoriteButton.disabled=false;
+  favoriteButton.textContent=board.favorite?"★ 즐겨찾기 해제":"☆ 즐겨찾기";
+  favoriteButton.setAttribute("aria-pressed",String(Boolean(board.favorite)));
+  favoriteButton.onclick=()=>{board.favorite=!board.favorite;saveFavoriteGraphs();renderGraphBoards();setStatus(board.favorite?"이 그래프를 이 기기의 즐겨찾기에 저장했습니다. 앱을 다시 열어도 유지됩니다.":"이 그래프의 즐겨찾기를 해제했습니다.");};
   if(![1,3,5,10,20,0].includes(Number(board.periodYears))) board.periodYears=20;
   const periodOptions=[[1,"최근 1년"],[3,"최근 3년"],[5,"최근 5년"],[10,"최근 10년"],[20,"최근 20년"],[0,"전체 기간"]]
     .map(([value,label])=>'<option value="'+value+'" '+(Number(board.periodYears)===value?"selected":"")+'>'+label+'</option>').join("");
@@ -1298,6 +1318,7 @@ function renderGraphBoards(){
       '<span class="graph-size-actions"><button id="alignEconomicCharts" type="button">경제지표 그래프 정렬</button><button id="resetAllGraphScales" type="button">그래프 배율 초기화</button></span></div>'+
     '<div class="price-chart-scroll"><div class="chart-wrap graph-chart-wrap" style="'+chartSizeStyle+'"><canvas class="price-chart" aria-label="'+esc(board.name)+' '+chartHeading+' 그래프"></canvas></div></div></section>'+
     '<p class="chart-help">그래프 위를 움직이거나 누르면 모든 지표의 같은 연월을 잇는 세로선이 표시됩니다. 숫자 세로선은 아래 주요 정책 발표 시점입니다.</p>'+
+    graphTradeHistoryHtml(board)+
     '<div class="economic-stack stacked">'+
       '<section class="stack-chart economic-indicator"><div class="economic-title"><b>원·달러 환율</b><span>월평균 · 원/USD</span></div><div class="economic-chart"><canvas class="exchange-chart" aria-label="원달러 환율 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> 1달러를 사는 데 필요한 원화입니다.</p><p><b>해석</b> 상승하면 원화 약세로 수입물가 부담이 커질 수 있고, 하락하면 원화 강세로 외국인 자금과 수입비용에 유리할 수 있습니다.</p></div></section>'+
       '<section class="stack-chart economic-indicator"><div class="economic-title"><b>기준금리</b><span>한국·미국·일본 · %</span></div><div class="economic-chart"><canvas class="rate-chart" aria-label="한국 미국 일본 기준금리 비교 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> 각국 중앙은행 통화정책의 기준이 되는 금리입니다.</p><p><b>해석</b> 인상은 대출·부동산·주식 수요를 누르는 방향, 인하는 자금조달 부담을 낮추는 방향입니다. 국가 간 금리차는 환율에도 영향을 줍니다.</p></div></section>'+
@@ -1841,6 +1862,15 @@ function bindTaxEstimator(board,container){
   growthNumber.addEventListener("input",()=>{const value=clampGrowth(growthNumber.value);growthRange.value=value;growthValue.value=value+"%";render();});
   [purchase,official,homeCount,acquisitionYear,adjusted,urban].forEach(input=>input.addEventListener("input",render));
   render();
+}
+
+function graphTradeHistoryHtml(board){
+  const rows=board.series.flatMap(series=>{
+    const group=apartmentGroups.find(item=>item.key===series.key);if(!group)return [];
+    return group.trades.filter(row=>Number(row.area_m2)===Number(series.area)).map(row=>({series,group,row}));
+  }).sort((a,b)=>String(b.row.trade_date||"").localeCompare(String(a.row.trade_date||"")));
+  const body=rows.map(({series,group,row})=>'<tr><td><i class="trade-color" style="background:'+esc(series.color)+'"></i>'+esc(String(row.trade_date||"—"))+'</td><td>'+esc(group.apt_name)+'</td><td>'+esc(areaComparisonLabel(series.area,series.supplyPyeong))+'</td><td>'+esc(fmt(Number(row.price_eok)))+'억원</td><td>'+esc(String(row.floor||"—"))+'층</td></tr>').join("");
+  return '<details class="graph-trade-history"><summary>색상별 실거래 내역 <b>'+rows.length+'건</b><span>펼쳐서 날짜·단지·평형·금액을 확인하세요</span></summary><div class="graph-trade-table-wrap"><table><thead><tr><th>거래일 · 그래프색</th><th>단지</th><th>평형</th><th>거래금액</th><th>층</th></tr></thead><tbody>'+(body||'<tr><td colspan="5">선택한 평형의 상세 거래가 없습니다.</td></tr>')+'</tbody></table></div></details>';
 }
 
 function renderBoardChart(board,container){
