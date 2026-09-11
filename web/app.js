@@ -1696,6 +1696,36 @@ function bindPolicyMarkerHover(chart,container){
   });
 }
 
+let economicSnapshotPopup=null;
+function economicSnapshotHtml(labels,timelineCharts,index){
+  const month=labels[index]||"선택 시점";
+  const rows=timelineCharts.slice(1).flatMap(chart=>{
+    const unit=String(chart.options?.scales?.y?.title?.text||"").replace("시작값=","");
+    return (chart.data?.datasets||[]).map(dataset=>{
+      const value=Number(dataset.data?.[index]);
+      if(!Number.isFinite(value))return "";
+      let previous=null;
+      for(let cursor=index-1;cursor>=0;cursor--){const candidate=Number(dataset.data?.[cursor]);if(Number.isFinite(candidate)){previous=candidate;break;}}
+      const change=Number.isFinite(previous)&&previous!==0?(value-previous)/Math.abs(previous)*100:null;
+      const direction=change===null?"flat":change>.05?"up":change<-.05?"down":"flat";
+      const trend=change===null?"자료 비교 없음":(direction==="up"?"▲ ":direction==="down"?"▼ ":"— ")+fmt(Math.abs(change))+"%";
+      return '<li><span>'+esc(String(dataset.label||"지표"))+'</span><b>'+esc(fmt(value))+(unit?'<small>'+esc(unit)+'</small>':"")+'</b><em class="'+direction+'">'+trend+'</em></li>';
+    });
+  }).filter(Boolean).join("");
+  return '<header><div><b>경제지표 스냅샷</b><span>'+esc(month)+' · 직전 자료 대비</span></div><button type="button" class="economic-snapshot-close" aria-label="경제지표 팝업 닫기">×</button></header><p class="economic-snapshot-note">그래프를 빠르게 두 번 누르면 이 창을 다시 열 수 있습니다.</p><ul>'+rows+'</ul>';
+}
+function showEconomicSnapshot(labels,timelineCharts,index){
+  if(!economicSnapshotPopup){
+    economicSnapshotPopup=document.createElement("aside");
+    economicSnapshotPopup.className="economic-snapshot-popup";
+    economicSnapshotPopup.setAttribute("aria-live","polite");
+    document.body.appendChild(economicSnapshotPopup);
+  }
+  economicSnapshotPopup.innerHTML=economicSnapshotHtml(labels,timelineCharts,index);
+  economicSnapshotPopup.hidden=false;
+  economicSnapshotPopup.querySelector(".economic-snapshot-close").addEventListener("click",()=>{economicSnapshotPopup.hidden=true;});
+}
+
 function bindTimelineGuide(container,timelineCharts,labels){
   const guide=container.querySelector(".timeline-guide"),label=guide?.querySelector(".timeline-guide-date"),popup=guide?.querySelector(".timeline-guide-popup");
   if(!guide||!labels.length||!timelineCharts.length)return;
@@ -1710,12 +1740,16 @@ function bindTimelineGuide(container,timelineCharts,labels){
     '<span><em>10년 국고채</em><strong>'+indicatorValue(timelineCharts[4],index,"%")+'</strong></span>'+
     '<span><em>브렌트유</em><strong>'+indicatorValue(timelineCharts[5],index,"달러")+'</strong></span>';
   const hide=()=>{guide.hidden=true;};
-  const show=(sourceChart,clientX)=>{
+  const indexAt=(sourceChart,clientX)=>{
     const sourceRect=sourceChart.canvas.getBoundingClientRect();
     const sourceX=(clientX-sourceRect.left)*(sourceChart.width/sourceRect.width);
-    if(sourceX<sourceChart.chartArea.left||sourceX>sourceChart.chartArea.right)return hide();
+    if(sourceX<sourceChart.chartArea.left||sourceX>sourceChart.chartArea.right)return -1;
     const rawIndex=Number(sourceChart.scales.x.getValueForPixel(sourceX));
-    const index=Math.max(0,Math.min(labels.length-1,Math.round(rawIndex)));
+    return Math.max(0,Math.min(labels.length-1,Math.round(rawIndex)));
+  };
+  const show=(sourceChart,clientX)=>{
+    const index=indexAt(sourceChart,clientX);
+    if(index<0)return hide();
     const anchor=timelineCharts[0],last=timelineCharts[timelineCharts.length-1];
     const containerRect=container.getBoundingClientRect();
     const anchorRect=anchor.canvas.getBoundingClientRect(),firstEconomicRect=timelineCharts[1]?.canvas?.getBoundingClientRect(),lastRect=last.canvas.getBoundingClientRect();
@@ -1738,6 +1772,11 @@ function bindTimelineGuide(container,timelineCharts,labels){
   timelineCharts.forEach(chart=>{
     chart.canvas.addEventListener("mousemove",event=>show(chart,event.clientX));
     chart.canvas.addEventListener("touchstart",event=>{const touch=event.touches[0];if(touch)show(chart,touch.clientX);},{passive:true});
+    chart.canvas.addEventListener("dblclick",event=>{
+      const index=indexAt(chart,event.clientX);
+      if(index<0)return;
+      event.preventDefault();show(chart,event.clientX);showEconomicSnapshot(labels,timelineCharts,index);
+    });
   });
   container.addEventListener("mouseleave",hide);
 }
