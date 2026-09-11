@@ -1196,7 +1196,7 @@ function addGraphBoard(){
 }
 
 function newGraphBoard(){
-  return {id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),periodYears:20,priceMode:"trade",chartWidth:100,chartHeight:0,economicWidth:100,series:[]};
+  return {id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),periodYears:20,priceMode:"trade",chartWidth:100,chartHeight:0,economicWidth:100,tradeHistoryMonths:3,series:[]};
 }
 
 function ensureInitialGraphBoard(){
@@ -1252,6 +1252,7 @@ function restoreGraphBoards(){
       chartWidth:Math.min(200,Math.max(100,Number(board.chartWidth)||100)),
       chartHeight:Number(board.chartHeight)>=260&&Number(board.chartHeight)<=720?Number(board.chartHeight):0,
       economicWidth:Math.min(200,Math.max(100,Number(board.economicWidth)||100)),
+      tradeHistoryMonths:[3,6,12,36,60,120,0].includes(Number(board.tradeHistoryMonths))?Number(board.tradeHistoryMonths):3,
       favorite:Boolean(board.favorite),
       series:Array.isArray(board.series)?board.series.slice(0,10).filter(series=>apartmentGroups.some(g=>g.key===series.key)).map((series,seriesIndex)=>({
         id:String(series.id||makeId("series")),
@@ -1341,6 +1342,7 @@ function renderGraphBoards(){
   board.chartWidth=Math.min(200,Math.max(100,Number(board.chartWidth)||100));
   board.chartHeight=Number(board.chartHeight)>=260&&Number(board.chartHeight)<=720?Number(board.chartHeight):0;
   board.economicWidth=Math.min(200,Math.max(100,Number(board.economicWidth)||100));
+  if(![3,6,12,36,60,120,0].includes(Number(board.tradeHistoryMonths)))board.tradeHistoryMonths=3;
   const defaultChartHeight=window.matchMedia("(max-width:600px)").matches?320:390;
   const shownChartHeight=board.chartHeight||defaultChartHeight;
   const chartSizeStyle='width:'+board.chartWidth+'%;'+(board.chartHeight?'height:'+board.chartHeight+'px;':'');
@@ -1431,6 +1433,11 @@ function renderGraphBoards(){
   byId("resetAllGraphScales").addEventListener("click",()=>{
     graphBoards.forEach(item=>{item.chartWidth=100;item.chartHeight=0;item.economicWidth=100;});
     renderGraphBoards();markUnsaved("모든 그래프의 가로·높이·경제지표 배율을 기본값으로 되돌렸습니다.");
+  });
+  byId("tradeHistoryPeriod").addEventListener("click",e=>e.stopPropagation());
+  byId("tradeHistoryPeriod").addEventListener("change",e=>{
+    board.tradeHistoryMonths=Number(e.target.value);
+    renderGraphBoards();markUnsaved("색상별 실거래 내역 기간을 변경했습니다.");
   });
   byId("graphBoards").querySelectorAll(".series-item").forEach(card=>{
     const series=board.series.find(item=>item.id===card.dataset.seriesId);
@@ -1911,8 +1918,19 @@ function graphTradeHistoryHtml(board){
     const group=apartmentGroups.find(item=>item.key===series.key);if(!group)return [];
     return group.trades.filter(row=>Number(row.area_m2)===Number(series.area)).map(row=>({series,group,row}));
   }).sort((a,b)=>String(b.row.trade_date||"").localeCompare(String(a.row.trade_date||"")));
-  const body=rows.map(({series,group,row})=>'<tr><td><i class="trade-color" style="background:'+esc(series.color)+'"></i>'+esc(String(row.trade_date||"—"))+'</td><td>'+esc(group.apt_name)+'</td><td>'+esc(areaComparisonLabel(series.area,series.supplyPyeong))+'</td><td>'+esc(fmt(Number(row.price_eok)))+'억원</td><td>'+esc(String(row.floor||"—"))+'층</td></tr>').join("");
-  return '<details class="graph-trade-history"><summary>색상별 실거래 내역 <b>'+rows.length+'건</b><span>펼쳐서 날짜·단지·평형·금액을 확인하세요</span></summary><div class="graph-trade-table-wrap"><table><thead><tr><th>거래일 · 그래프색</th><th>단지</th><th>평형</th><th>거래금액</th><th>층</th></tr></thead><tbody>'+(body||'<tr><td colspan="5">선택한 평형의 상세 거래가 없습니다.</td></tr>')+'</tbody></table></div></details>';
+  const periodMonths=[3,6,12,36,60,120,0].includes(Number(board.tradeHistoryMonths))?Number(board.tradeHistoryMonths):3;
+  const latestDate=String(rows.find(item=>/^\d{4}-\d{2}-\d{2}/.test(String(item.row.trade_date||"")))?.row.trade_date||"");
+  let filteredRows=rows;
+  if(periodMonths&&latestDate){
+    const cutoff=new Date(latestDate+"T00:00:00Z");
+    cutoff.setUTCMonth(cutoff.getUTCMonth()-periodMonths);
+    const cutoffDate=cutoff.toISOString().slice(0,10);
+    filteredRows=rows.filter(item=>String(item.row.trade_date||"")>=cutoffDate);
+  }
+  const periodOptions=[[3,"최근 3개월"],[6,"최근 6개월"],[12,"최근 1년"],[36,"최근 3년"],[60,"최근 5년"],[120,"최근 10년"],[0,"전체 기간"]]
+    .map(([value,label])=>'<option value="'+value+'" '+(periodMonths===value?"selected":"")+'>'+label+'</option>').join("");
+  const body=filteredRows.map(({series,group,row})=>'<tr><td><i class="trade-color" style="background:'+esc(series.color)+'"></i>'+esc(String(row.trade_date||"—"))+'</td><td>'+esc(group.apt_name)+'</td><td>'+esc(areaComparisonLabel(series.area,series.supplyPyeong))+'</td><td>'+esc(fmt(Number(row.price_eok)))+'억원</td><td>'+esc(String(row.floor||"—"))+'층</td></tr>').join("");
+  return '<details class="graph-trade-history"><summary><span>색상별 실거래 내역 <b>'+filteredRows.length+'건</b></span><label class="trade-history-period">표시 기간 <select id="tradeHistoryPeriod" aria-label="색상별 실거래 내역 표시 기간">'+periodOptions+'</select></label><em>펼쳐서 날짜·단지·평형·금액을 확인하세요</em></summary><div class="graph-trade-table-wrap"><table><thead><tr><th>거래일 · 그래프색</th><th>단지</th><th>평형</th><th>거래금액</th><th>층</th></tr></thead><tbody>'+(body||'<tr><td colspan="5">선택한 평형의 해당 기간 상세 거래가 없습니다.</td></tr>')+'</tbody></table></div></details>';
 }
 
 function renderBoardChart(board,container){
