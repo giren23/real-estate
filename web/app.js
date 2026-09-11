@@ -1720,14 +1720,28 @@ function bindTimelineGuide(container,timelineCharts,labels){
   if(!guide||!labels.length||!timelineCharts.length)return;
   const indicatorValue=(chart,index,suffix,datasetIndex=0)=>{
     const value=Number(chart?.data?.datasets?.[datasetIndex]?.data?.[index]);
-    return Number.isFinite(value)?fmt(value)+suffix:"—";
+    return Number.isFinite(value)?fmt(value)+suffix:"";
   };
-  const popupHtml=index=>'<b>경제지표</b>'+
-    '<span><em>원·달러</em><strong>'+indicatorValue(timelineCharts[1],index,"원")+'</strong></span>'+
-    '<span><em>한·미·일 금리</em><strong>'+indicatorValue(timelineCharts[2],index,"%")+' · '+indicatorValue(timelineCharts[2],index,"%",1)+' · '+indicatorValue(timelineCharts[2],index,"%",2)+'</strong></span>'+
-    '<span><em>M1·M2</em><strong>'+indicatorValue(timelineCharts[3],index,"조원")+' · '+indicatorValue(timelineCharts[3],index,"조원",1)+'</strong></span>'+
-    '<span><em>10년 국고채</em><strong>'+indicatorValue(timelineCharts[4],index,"%")+'</strong></span>'+
-    '<span><em>브렌트유</em><strong>'+indicatorValue(timelineCharts[5],index,"달러")+'</strong></span>';
+  const popupItem=(label,chart,index,suffix,datasetIndex=0)=>{
+    const value=indicatorValue(chart,index,suffix,datasetIndex);
+    return value?'<span><em>'+label+'</em><strong>'+value+'</strong></span>':"";
+  };
+  const popupHtml=index=>{
+    const rates=timelineCharts[2],money=timelineCharts[3],metals=timelineCharts[4],oil=timelineCharts[5];
+    const krBond=timelineCharts[6],usBond=timelineCharts[7],jpBond=timelineCharts[8],market=timelineCharts[9];
+    const bitcoin=timelineCharts[10],sentiment=timelineCharts[11];
+    const items=[
+      popupItem("원·달러",timelineCharts[1],index,"원"),
+      popupItem("한국 기준금리",rates,index,"%"),popupItem("미국 기준금리",rates,index,"%",1),popupItem("일본 기준금리",rates,index,"%",2),
+      popupItem("M1",money,index,"조원"),popupItem("M2",money,index,"조원",1),
+      popupItem("금 지수",metals,index,""),popupItem("은 지수",metals,index,"",1),popupItem("구리 지수",metals,index,"",2),
+      popupItem("브렌트유",oil,index,"달러"),popupItem("WTI",oil,index,"달러",1),popupItem("두바이유",oil,index,"달러",2),
+      popupItem("한국 10년물",krBond,index,"%",1),popupItem("미국 10년물",usBond,index,"%",1),popupItem("일본 10년물",jpBond,index,"%",1),
+      popupItem("KOSPI 지수",market,index,""),popupItem("NASDAQ 지수",market,index,"",3),popupItem("S&P 500 지수",market,index,"",2),
+      popupItem("비트코인",bitcoin,index,"달러"),popupItem("VIX",sentiment,index,""),popupItem("공포·탐욕",sentiment,index,"",1)
+    ].filter(Boolean).join("");
+    return '<b>경제지표 <small>'+labels[index]+'</small></b>'+items;
+  };
   const hide=()=>{guide.hidden=true;};
   const indexAt=(sourceChart,clientX)=>{
     const sourceRect=sourceChart.canvas.getBoundingClientRect();
@@ -1750,7 +1764,7 @@ function bindTimelineGuide(container,timelineCharts,labels){
     label.textContent=labels[index];popup.innerHTML=popupHtml(index);
     const gapTop=(anchorRect.bottom-containerRect.top)+30;
     const gapBottom=firstEconomicRect?(firstEconomicRect.top-containerRect.top)-8:gapTop+110;
-    const popupTop=Math.max(10,gapTop-top+Math.max(0,(gapBottom-gapTop-96)/2));
+    const popupTop=Math.max(10,gapTop-top+Math.max(0,(gapBottom-gapTop-192)/2));
     guide.style.setProperty("--timeline-popup-top",popupTop+"px");
     guide.classList.remove("is-left");guide.hidden=false;
     popup.style.right="auto";
