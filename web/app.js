@@ -42,6 +42,8 @@ let catalogRefreshChecking = false, lastCatalogRefreshCheck = 0;
 const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const LEGACY_GRAPH_STORAGE_KEY = "realEstateGraphWorkspacesV1";
 const FAVORITE_GRAPH_STORAGE_KEY = "realEstateFavoriteGraphsV1";
+const FAVORITE_GRAPH_BACKUP_STORAGE_KEY = "realEstateFavoriteGraphsBackupV1";
+let favoriteStorageHealthy = true;
 const TRACKING_REQUESTER_KEY="realEstateTrackingRequesterV1",TRACKING_API="/api/real-estate-tracking";
 const SIMPLE_ADMIN_SESSION_KEY="realEstateSimpleAdminModeV1",SIMPLE_ADMIN_PASSWORD="1212";
 let trackingStats=null;
@@ -1271,10 +1273,18 @@ function removeSeries(boardId,seriesId){
   markUnsaved("단지 그래프를 제거했습니다.");
 }
 
+function readFavoriteStorage(key){
+  const raw=localStorage.getItem(key);
+  if(raw===null)return {state:"missing",payload:null};
+  try{const payload=JSON.parse(raw);return payload&&typeof payload==="object"&&Array.isArray(payload.boards)?{state:"valid",payload}:{state:"invalid",payload:null};}catch{return {state:"invalid",payload:null};}
+}
+
 function restoreGraphBoards(){
   try{
-    const favorites=JSON.parse(localStorage.getItem(FAVORITE_GRAPH_STORAGE_KEY)||"null");
-    const legacy=JSON.parse(localStorage.getItem(LEGACY_GRAPH_STORAGE_KEY)||"null");
+    const primary=readFavoriteStorage(FAVORITE_GRAPH_STORAGE_KEY),backup=readFavoriteStorage(FAVORITE_GRAPH_BACKUP_STORAGE_KEY);
+    const favorites=primary.state==="valid"?primary.payload:backup.state==="valid"?backup.payload:null;
+    favoriteStorageHealthy=primary.state!=="invalid"||backup.state==="valid";
+    const legacy=readFavoriteStorage(LEGACY_GRAPH_STORAGE_KEY).payload;
     const rawBoards=[...(Array.isArray(legacy?.boards)?legacy.boards.map(board=>({...board,favorite:true})):[]),...(Array.isArray(favorites?.boards)?favorites.boards:[])].filter(board=>board&&typeof board==="object");
     const uniqueBoards=[...new Map(rawBoards.map(board=>[String(board.id||makeId("graph")),board])).values()];
     graphBoards=uniqueBoards.slice(0,10).map((board,index)=>({
@@ -1287,7 +1297,9 @@ function restoreGraphBoards(){
       economicWidth:Math.min(200,Math.max(100,Number(board.economicWidth)||100)),
       tradeHistoryMonths:[3,6,12,36,60,120,0].includes(Number(board.tradeHistoryMonths))?Number(board.tradeHistoryMonths):3,
       favorite:Boolean(board.favorite),
-      series:Array.isArray(board.series)?board.series.slice(0,10).filter(series=>apartmentGroups.some(g=>g.key===series.key)).map((series,seriesIndex)=>({
+      // Keep series even when the currently loaded catalog is a reduced public snapshot.
+      // Otherwise a temporary offline/mobile catalog would silently delete a favorite line.
+      series:Array.isArray(board.series)?board.series.slice(0,10).filter(series=>series&&typeof series==="object"&&series.key).map((series,seriesIndex)=>({
         id:String(series.id||makeId("series")),
         key:String(series.key),
         area:Number(series.area||0),
@@ -1298,20 +1310,23 @@ function restoreGraphBoards(){
     }));
     const restoredActiveId=favorites?.activeGraphId||legacy?.activeGraphId;
     activeGraphId=graphBoards.some(board=>board.id===restoredActiveId)?restoredActiveId:(graphBoards[0]?.id||null);
-    if(legacy){
-      try{
-        localStorage.setItem(FAVORITE_GRAPH_STORAGE_KEY,JSON.stringify({version:1,activeGraphId,boards:graphBoards.filter(board=>board.favorite)}));
-        localStorage.removeItem(LEGACY_GRAPH_STORAGE_KEY);
-      }catch(_error){setStatus("기존 저장 그래프를 즐겨찾기로 옮기지 못했습니다.",true);}
-    }
+    if(primary.state==="invalid"&&backup.state==="valid")saveFavoriteGraphs(true);
+    if(legacy){saveFavoriteGraphs(true);try{localStorage.removeItem(LEGACY_GRAPH_STORAGE_KEY);}catch(_error){setStatus("기존 저장 그래프를 즐겨찾기로 옮기지 못했습니다.",true);}}
     if(!activeGraphId&&graphBoards.length)activeGraphId=graphBoards[0].id;
   }catch{
-    graphBoards=[];activeGraphId=null;
+    // Do not allow a read failure to overwrite the only remaining favorite copy.
+    favoriteStorageHealthy=false;graphBoards=[];activeGraphId=null;
   }
 }
 
-function saveFavoriteGraphs(){
-  try{localStorage.setItem(FAVORITE_GRAPH_STORAGE_KEY,JSON.stringify({version:1,activeGraphId,boards:graphBoards.filter(board=>board.favorite)}));}catch(_error){setStatus("즐겨찾기를 이 기기에 저장하지 못했습니다.",true);}
+function saveFavoriteGraphs(force=false){
+  if(!favoriteStorageHealthy&&!force)return;
+  try{
+    const previous=readFavoriteStorage(FAVORITE_GRAPH_STORAGE_KEY);
+    if(previous.state==="valid")localStorage.setItem(FAVORITE_GRAPH_BACKUP_STORAGE_KEY,JSON.stringify(previous.payload));
+    localStorage.setItem(FAVORITE_GRAPH_STORAGE_KEY,JSON.stringify({version:2,activeGraphId,boards:graphBoards.filter(board=>board.favorite)}));
+    favoriteStorageHealthy=true;
+  }catch(_error){setStatus("즐겨찾기를 이 기기에 저장하지 못했습니다.",true);}
 }
 
 function markUnsaved(message){
@@ -1353,7 +1368,7 @@ function renderGraphBoards(){
   favoriteButton.disabled=false;
   favoriteButton.textContent=board.favorite?"★ 즐겨찾기 해제":"☆ 즐겨찾기";
   favoriteButton.setAttribute("aria-pressed",String(Boolean(board.favorite)));
-  favoriteButton.onclick=()=>{board.favorite=!board.favorite;saveFavoriteGraphs();renderGraphBoards();setStatus(board.favorite?"이 그래프를 이 기기의 즐겨찾기에 저장했습니다. 앱을 다시 열어도 유지됩니다.":"이 그래프의 즐겨찾기를 해제했습니다.");};
+  favoriteButton.onclick=()=>{board.favorite=!board.favorite;saveFavoriteGraphs(true);renderGraphBoards();setStatus(board.favorite?"이 그래프를 이 기기의 즐겨찾기에 저장했습니다. 앱을 다시 열어도 유지됩니다.":"이 그래프의 즐겨찾기를 해제했습니다.");};
   trackingButton.onclick=()=>requestTrackingForBoard(board,trackingButton);
   if(![1,3,5,10,20,0].includes(Number(board.periodYears))) board.periodYears=20;
   const periodOptions=[[1,"최근 1년"],[3,"최근 3년"],[5,"최근 5년"],[10,"최근 10년"],[20,"최근 20년"],[0,"전체 기간"]]
