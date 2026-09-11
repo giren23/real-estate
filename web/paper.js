@@ -6,6 +6,8 @@
   const $ = selector => document.querySelector(selector);
   const money = value => `${new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(Math.round(Number(value) || 0))}원`;
   const clean = value => String(value || "").trim();
+  const numericValue = value => Number(String(value || "").replace(/,/g, "").trim()) || 0;
+  const formatMoneyInput = input => { if (!input) return; const value = numericValue(input.value); input.value = value > 0 ? new Intl.NumberFormat("ko-KR", {maximumFractionDigits: 0}).format(value) : ""; };
   const escapeHtml = value => String(value || "").replace(/[&<>"']/g, character => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]);
   const emptyState = cash => ({ version: 1, initialCash: cash, cash, realized: 0, positions: {}, orders: [] });
   let state;
@@ -50,7 +52,7 @@
 
   function render() {
     const sum = totals();
-    $("#paperInitialCash").value = Math.round(state.initialCash);
+    $("#paperInitialCash").value = new Intl.NumberFormat("ko-KR", {maximumFractionDigits: 0}).format(Math.round(state.initialCash));
     $("#paperMetrics").innerHTML = [
       ["총자산", money(sum.assets), `초기자금 대비 ${money(sum.assets - state.initialCash)}`],
       ["가상 현금", money(state.cash), "주문 가능 금액"],
@@ -61,12 +63,12 @@
     const positions = Object.values(state.positions).sort((a, b) => a.name.localeCompare(b.name, "ko"));
     $("#paperPositions").innerHTML = positions.length ? positions.map(item => {
       const profit = positionValue(item) - positionCost(item), rate = positionCost(item) ? profit / positionCost(item) * 100 : 0;
-      return `<tr><th>${item.name}<small>${item.symbol}</small></th><td>${item.quantity.toLocaleString("ko-KR")}</td><td>${money(item.averagePrice)}</td><td><input class="paper-mark-price" data-symbol="${item.symbol}" type="number" min="0.01" step="0.01" value="${item.currentPrice}" aria-label="${item.name} 현재가"></td><td>${money(positionValue(item))}</td><td class="${profit >= 0 ? "paper-positive" : "paper-negative"}">${profit >= 0 ? "+" : ""}${money(profit)}<small>${rate >= 0 ? "+" : ""}${rate.toFixed(2)}%</small></td><td><button class="paper-position-remove" data-remove-position="${escapeHtml(item.symbol)}" type="button">삭제</button></td></tr>`;
+      return `<tr><th>${item.name}<small>${item.symbol}</small></th><td>${item.quantity.toLocaleString("ko-KR")}</td><td>${money(item.averagePrice)}</td><td><input class="paper-mark-price" data-symbol="${item.symbol}" type="text" inputmode="decimal" value="${new Intl.NumberFormat("ko-KR", {maximumFractionDigits: 0}).format(item.currentPrice)}" aria-label="${item.name} 현재가"></td><td>${money(positionValue(item))}</td><td class="${profit >= 0 ? "paper-positive" : "paper-negative"}">${profit >= 0 ? "+" : ""}${money(profit)}<small>${rate >= 0 ? "+" : ""}${rate.toFixed(2)}%</small></td><td><button class="paper-position-remove" data-remove-position="${escapeHtml(item.symbol)}" type="button">삭제</button></td></tr>`;
     }).join("") : '<tr><td class="paper-empty" colspan="7">아직 보유한 가상 종목이 없습니다.</td></tr>';
     $("#paperOrders").innerHTML = state.orders.length ? [...state.orders].reverse().map(order => `<tr><td>${new Date(order.time).toLocaleString("ko-KR")}</td><td class="${order.side === "BUY" ? "paper-positive" : "paper-negative"}">${order.side === "BUY" ? "매수" : "매도"}</td><td>${order.name}<small>${order.symbol}</small></td><td>${money(order.price)}</td><td>${order.quantity.toLocaleString("ko-KR")}</td><td>${money(order.costs)}</td><td>${money(order.cashAfter)}</td></tr>`).join("") : '<tr><td class="paper-empty" colspan="7">가상 거래내역이 없습니다.</td></tr>';
     $("#paperOrderCount").textContent = `${state.orders.length}건`;
     document.querySelectorAll(".paper-mark-price").forEach(input => input.addEventListener("change", event => {
-      const position = state.positions[event.target.dataset.symbol], value = Number(event.target.value);
+      const position = state.positions[event.target.dataset.symbol], value = numericValue(event.target.value);
       if (!position || !(value > 0)) return message("현재가는 0보다 크게 입력해 주세요.", "error");
       position.currentPrice = value; save(); render(); message(`${position.name} 현재가를 ${money(value)}으로 갱신했습니다.`, "success");
     }));
@@ -78,7 +80,7 @@
   }
 
   function orderPreview() {
-    const side = $("#paperSide").value, price = Number($("#paperPrice").value), quantity = Number($("#paperQuantity").value);
+    const side = $("#paperSide").value, price = numericValue($("#paperPrice").value), quantity = Number($("#paperQuantity").value);
     const feeRate = Math.max(0, Number($("#paperFeeRate").value) || 0) / 100;
     const sellTaxRate = Math.max(0, Number($("#paperSellTaxRate").value) || 0) / 100;
     const gross = price * quantity, costs = gross * (feeRate + (side === "SELL" ? sellTaxRate : 0));
@@ -197,7 +199,7 @@
   $("#paperOrderForm")?.addEventListener("submit", event => {
     event.preventDefault();
     const symbol = clean($("#paperSymbol").value).toUpperCase(), name = clean($("#paperName").value);
-    const side = $("#paperSide").value, price = Number($("#paperPrice").value), quantity = Number($("#paperQuantity").value);
+    const side = $("#paperSide").value, price = numericValue($("#paperPrice").value), quantity = Number($("#paperQuantity").value);
     const feeRate = Math.max(0, Number($("#paperFeeRate").value) || 0) / 100, sellTaxRate = Math.max(0, Number($("#paperSellTaxRate").value) || 0) / 100;
     if (!symbol || !name || !(price > 0) || !Number.isInteger(quantity) || quantity < 1) return message("종목·가격·수량을 올바르게 입력해 주세요.", "error");
     if (!$("#paperConfirm").checked) return message("가상 주문 내용을 먼저 확인해 주세요.", "error");
@@ -220,14 +222,14 @@
     save(); render(); $("#paperConfirm").checked = false; $("#paperSubmit").disabled = true; message(`${summary} 가상 체결을 기록했습니다.`, "success");
   });
   $("#paperApplyCapital")?.addEventListener("click", () => {
-    const cash = Number($("#paperInitialCash").value);
+    const cash = numericValue($("#paperInitialCash").value);
     if (state.orders.length || Object.keys(state.positions).length) return message("거래내역이 있으면 초기자금을 바꿀 수 없습니다. 먼저 가상계좌를 초기화해 주세요.", "error");
     if (!(cash >= 100000)) return message("초기 가상자금은 10만원 이상 입력해 주세요.", "error");
     state = emptyState(cash); save(); render(); message(`초기 가상자금을 ${money(cash)}으로 설정했습니다.`, "success");
   });
   $("#paperReset")?.addEventListener("click", () => {
     if (!window.confirm("보유 종목과 모든 가상 거래내역을 초기화할까요? 이 브라우저의 모의투자 기록만 삭제됩니다.")) return;
-    state = emptyState(Number($("#paperInitialCash").value) || 100000000); save(); render(); message("가상계좌를 초기화했습니다.", "success");
+    state = emptyState(numericValue($("#paperInitialCash").value) || 100000000); save(); render(); message("가상계좌를 초기화했습니다.", "success");
   });
   $("#paperClearOrders")?.addEventListener("click", () => {
     if (!state.orders.length) return message("삭제할 가상 거래내역이 없습니다.");
@@ -238,6 +240,7 @@
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }), link = document.createElement("a");
     link.href = URL.createObjectURL(blob); link.download = `paper-portfolio-${new Date().toISOString().slice(0, 10)}.json`; link.click(); URL.revokeObjectURL(link.href);
   });
+  ["#paperInitialCash", "#paperPrice"].forEach(selector => $(selector)?.addEventListener("blur", event => formatMoneyInput(event.target)));
   $("#paperQuoteSymbols").value = quoteSymbols.join(",");
   render(); orderPreview(); refreshQuotes(); setInterval(refreshQuotes, 15000);
   if(cloudCredentials) fetch("/api/paper/account",{headers:cloudHeaders()}).then(async response => {

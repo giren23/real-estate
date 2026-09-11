@@ -55,17 +55,18 @@
   <section id="paperTrading" class="paper-trading" aria-labelledby="paperTradingTitle">
     <header class="paper-head"><div><span>LOCAL PAPER PORTFOLIO</span><h2 id="paperTradingTitle">모의 투자</h2><p>실제 계좌·증권사 API와 연결되지 않는 브라우저 전용 가상계좌입니다.</p></div><strong>🔒 직접 확인 후에만 가상 체결</strong></header>
     <section class="paper-quotes" aria-labelledby="paperQuotesTitle"><header><div><h3 id="paperQuotesTitle">주요 종목 현재가</h3><p>최대 20종목 · 조회 전용 · 장중 15초 자동 갱신</p></div><span id="paperQuoteStatus">시세 연결 확인 중</span></header><div class="paper-quote-controls"><input id="paperQuoteSymbols" type="text" aria-label="조회할 종목코드" placeholder="종목코드를 쉼표로 구분해 입력"><button id="paperQuoteApply" type="button">목록 적용</button></div><div id="paperQuoteGrid" class="paper-quote-grid"><p>현재가를 불러오는 중입니다.</p></div></section>
-    <div class="paper-capital"><label>초기 가상자금 <span><input id="paperInitialCash" type="number" min="100000" step="100000" value="100000000"><em>원</em></span></label><button id="paperApplyCapital" type="button">초기자금 적용</button><small>거래가 없을 때만 변경됩니다.</small></div>
+      <div class="paper-capital"><label>초기 가상자금 <span><input id="paperInitialCash" type="text" inputmode="numeric" value="100,000,000"><em>원</em></span></label><button id="paperApplyCapital" type="button">초기자금 적용</button><small>거래가 없을 때만 변경됩니다.</small></div>
     <div id="paperMetrics" class="paper-metrics"></div>
     <form id="paperOrderForm" class="paper-order-form">
-      <div class="paper-order-title"><b>가상 주문 입력</b><span>가격과 수량을 직접 확인하세요.</span></div>
+        <div class="paper-order-title"><b>가상 주문 입력</b><span>가격과 수량을 직접 확인하세요.</span></div>
+        <div class="paper-search"><input id="paperCompanySearch" type="search" inputmode="search" aria-label="종목 검색" placeholder="한글 종목명 또는 6자리 코드"><button id="paperCompanySearchButton" type="button">검색</button><div id="paperSearchResults" class="paper-search-results" aria-live="polite"></div></div>
       <label>종목코드<input id="paperSymbol" maxlength="16" placeholder="예: 005930" required></label>
       <label>종목명<input id="paperName" maxlength="30" placeholder="예: 삼성전자" required></label>
       <label>주문구분<select id="paperSide"><option value="BUY">매수</option><option value="SELL">매도</option></select></label>
-      <label>주문가격<input id="paperPrice" type="number" min="0.01" step="0.01" placeholder="현재가" required></label>
+        <label>주문가격<input id="paperPrice" type="text" inputmode="decimal" placeholder="현재가" required></label>
       <label>수량<input id="paperQuantity" type="number" min="1" step="1" value="1" required></label>
-      <label>수수료율<input id="paperFeeRate" type="number" min="0" max="10" step="0.001" value="0"><span class="paper-unit">%</span></label>
-      <label>매도 제비용률<input id="paperSellTaxRate" type="number" min="0" max="10" step="0.001" value="0"><span class="paper-unit">%</span></label>
+        <label>수수료율<input id="paperFeeRate" type="number" min="0" max="10" step="0.001" value="0.015"><span class="paper-unit">% · 국내 주식 예시</span></label>
+        <label>매도 제비용률<input id="paperSellTaxRate" type="number" min="0" max="10" step="0.001" value="0.20"><span class="paper-unit">% · 국내 주식 예시</span></label>
       <div id="paperOrderPreview" class="paper-order-preview">종목·가격·수량을 입력하면 예상 금액이 표시됩니다.</div>
       <label class="paper-confirm"><input id="paperConfirm" type="checkbox"><span>위 가상 주문 내용을 직접 확인했습니다.</span></label>
       <button id="paperSubmit" class="paper-submit" type="submit" disabled>가상 주문 체결</button>
