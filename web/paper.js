@@ -253,6 +253,7 @@
   ["#paperInitialCash", "#paperPrice"].forEach(selector => $(selector)?.addEventListener("blur", event => formatMoneyInput(event.target)));
   $("#paperQuoteSymbols").value = quoteSymbols.join(",");
   render(); orderPreview(); refreshQuotes(); setInterval(refreshQuotes, 15000);
+  updateCloudStatus(cloudCredentials ? "클라우드 계좌 연결 확인 중" : "이 기기에만 저장됨");
   if(cloudCredentials) fetch("/api/paper/account",{headers:cloudHeaders()}).then(async response => {
     if(!response.ok) throw new Error(); const payload=await response.json(); state=payload.payload;
     quoteSymbols=(payload.payload.watchlist || quoteSymbols).slice(0,20); localStorage.setItem(KEY,JSON.stringify(state)); localStorage.setItem(QUOTE_KEY,quoteSymbols.join(","));

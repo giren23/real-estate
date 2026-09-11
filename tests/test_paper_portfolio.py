@@ -41,6 +41,7 @@ def test_manual_paper_portfolio_is_local_and_requires_confirmation() -> None:
     assert "삼성전자, SK하이닉스" in html
     assert 'id="paperClearOrders"' in html
     assert "data-remove-position" in script
+    assert all(token in html for token in ('id="paperCloudCreate"', 'id="paperCloudExport"', 'id="paperCloudImport"', 'id="paperCloudFile"'))
 
 
 def test_cloud_paper_api_is_read_only_for_quotes_and_hashes_recovery_tokens() -> None:
