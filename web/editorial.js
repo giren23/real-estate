@@ -24,7 +24,7 @@
     return parts.length === 3 ? `${parts[0]}.${parts[1]}.${parts[2]}` : String(value || "");
   };
   const publishedTime = item => item.published_time || item.sources?.[0]?.published_time || item.sources?.[0]?.published_at || item.date || "";
-  const formatPublishedTime = value => { const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T|\s)(\d{2}):(\d{2})/); return match ? `${match[1]}.${match[2]}.${match[3]} ${match[4]}:${match[5]}` : `${formatDate(value)} · 시간 미제공`; };
+  const formatPublishedTime = value => { const match = String(value || "").match(/^(\d{2})(\d{2})-(\d{2})-(\d{2})(?:T|\s)(\d{2}):(\d{2})/); return match ? `${match[2]}.${match[3]}.${match[4]} ${match[5]}:${match[6]}` : `${formatDate(value).replace(/^20/,"")} · 시각 미제공`; };
   const statusBadge = item => item.title_match_status === "similar_article_verified" ? '<small class="news-status-badge similar">유사기사</small>' : item.article_body_status === "unavailable" ? '<small class="news-status-badge unverified">미확인</small>' : "";
 
   let contentById = new Map();
