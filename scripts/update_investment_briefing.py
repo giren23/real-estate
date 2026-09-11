@@ -25,6 +25,17 @@ INVESTMENT_KEYWORDS = (
 )
 NOISE_KEYWORDS = ("화재", "사망", "숨져", "대피", "홍수", "사고", "범죄", "실종")
 
+# Wording contract for the no-AI briefing:
+# - "체결·공시·발표" is reserved for a source that identifies the actor and
+#   action; the related party, amount, product, and period are included only
+#   when the source itself provides them.
+# - Everything else is a monitoring condition, never an implied confirmation.
+FACT_LANGUAGE_RULE = (
+    "‘체결·공시·발표’는 원문에 주체와 행위가 명시된 사실에만 사용합니다. "
+    "상대방·규모·품목·기간은 원문에 있는 경우에만 함께 적습니다. "
+    "그 밖의 ‘수요·수주·가격·수급’은 확정 사실이 아니라 관찰할 지표로 표기합니다."
+)
+
 
 def read_json(path: Path, fallback: object) -> object:
     try:
@@ -215,13 +226,14 @@ def build_payload(day: str) -> dict:
             "scenarios": [], "news": section_news(rows, ("한국", "코스피", "코스닥", "삼성", "하이닉스", "수출"), 3)[:2],
         },
         {
-            "id": "sectors", "title": "4. 섹터·기업 체크", "subtitle": "뉴스로 확인된 업종별 촉매와 위험",
-            "summary": "기사 원문이 확인된 사실과 수치만으로 섹터의 촉매·위험을 정리합니다.",
+            "id": "sectors", "title": "4. 섹터·기업 체크", "subtitle": "사실과 관찰 항목을 구분한 업종별 촉매·위험",
+            "summary": "기사의 확정 사실과 앞으로 관찰할 조건을 구분해 섹터의 촉매·위험을 정리합니다.",
             "details": [
                 "반도체, 에너지, 금융 등은 같은 지수 안에서도 금리·유가·환율에 대한 민감도가 다릅니다. 기사 제목만으로 실적이나 목표주가를 추정하지 않습니다.",
                 "기업이 등장할 때는 사업과 주력 제품을 함께 표기하고, HBM(고대역폭메모리)·CPI(미국 소비자물가지수)처럼 약어는 첫 등장 시 뜻을 풀어 씁니다.",
+                FACT_LANGUAGE_RULE,
             ],
-            "metrics": [], "checks": ["개별 기업 이슈는 원문 본문과 공시·실적 자료가 확인된 경우에만 투자 판단의 근거로 사용합니다."],
+            "metrics": [], "checks": ["개별 기업 이슈는 ‘누가·무엇을·언제·얼마에·어떤 방식으로 했는지’가 원문 또는 공시에 나타난 경우에만 확정 사실로 읽습니다."],
             "scenarios": [], "news": [news_card(row) for row in selected[:3]],
         },
         {
@@ -229,39 +241,39 @@ def build_payload(day: str) -> dict:
             "summary": "당일 매수 추천 순위가 아니라, 아침 브리핑에서 실적·수급·뉴스를 함께 확인할 한국 상장 핵심 종목입니다.",
             "details": ["순위는 자동매매 신호가 아니며, 개장 뒤 지수·환율·외국인 수급과 각 회사의 공시·실적을 확인해 해석합니다."],
             "rankings": [{"market": "한국", "items": [
-                {"name": "SK하이닉스", "description": "메모리 반도체·SSD / 주력: HBM·DRAM", "reason": "AI 메모리 수요와 HBM 공급·가격 신호 확인"},
-                {"name": "삼성전자", "description": "반도체·스마트폰·가전 / 주력: 메모리반도체", "reason": "메모리 업황과 HBM 경쟁력·외국인 수급 확인"},
-                {"name": "한미반도체", "description": "반도체 장비 / 주력: HBM 후공정 장비", "reason": "HBM 투자 확대가 장비 발주로 이어지는지 확인"},
-                {"name": "HD현대일렉트릭", "description": "전력기기 / 주력: 변압기·송배전 장비", "reason": "AI 데이터센터·전력망 투자 수혜와 수주 흐름 확인"},
-                {"name": "두산에너빌리티", "description": "발전설비 / 주력: 원전·가스터빈", "reason": "전력 수요와 원전·가스터빈 수주 뉴스 확인"}
-            ]}], "metrics": [], "checks": ["각 종목은 일일 관심 목록이며 가격·목표가·매수 의견을 자동 생성하지 않습니다."], "scenarios": [], "news": [],
+                {"name": "SK하이닉스", "description": "메모리 반도체·SSD / 주력: HBM·DRAM", "reason": "관찰: AI 서버 출하·고객사 설비투자, HBM 공급량·계약가격"},
+                {"name": "삼성전자", "description": "반도체·스마트폰·가전 / 주력: 메모리반도체", "reason": "관찰: 메모리 가격, HBM 제품 경쟁력, 외국인 순매수"},
+                {"name": "한미반도체", "description": "반도체 장비 / 주력: HBM 후공정 장비", "reason": "관찰: 고객사의 HBM 증설 발표 후 장비 발주·수주 공시"},
+                {"name": "HD현대일렉트릭", "description": "전력기기 / 주력: 변압기·송배전 장비", "reason": "관찰: 데이터센터·전력망 투자와 수주 공시의 상대방·금액·납기"},
+                {"name": "두산에너빌리티", "description": "발전설비 / 주력: 원전·가스터빈", "reason": "관찰: 원전·가스터빈 수주의 발주처·품목·계약금액·기간 공시"}
+            ]}], "metrics": [], "checks": ["각 종목은 일일 관심 목록입니다. 수요·수주가 ‘확정’으로 쓰일 때에는 계약 상대방, 품목, 금액·수량, 기간 중 원문에 공개된 항목을 함께 제시합니다."], "scenarios": [], "news": [],
         },
         {
             "id": "us-top5", "title": "6. 미국장 관심종목 TOP 5", "subtitle": "AI·반도체·전력 인프라 중심의 일일 관찰 목록",
             "summary": "미국 장에서는 실적, 장기금리, AI 설비투자 지속성의 세 가지를 함께 점검합니다.",
             "details": ["기업명마다 주력 사업을 함께 표시해, 종목의 테마가 아니라 실제 수익원과 연결해 읽을 수 있게 구성합니다."],
             "rankings": [{"market": "미국", "items": [
-                {"name": "Microsoft", "description": "클라우드·소프트웨어·AI / 주력: Azure·Microsoft 365", "reason": "AI 서비스 수익화와 데이터센터 투자 확인"},
-                {"name": "Broadcom", "description": "반도체·인프라 소프트웨어 / 주력: AI ASIC·네트워킹", "reason": "AI 맞춤형 반도체와 네트워크 수요 확인"},
-                {"name": "GE Vernova", "description": "발전·전력망 장비 / 주력: 가스터빈·전력망 설비", "reason": "AI 데이터센터 전력 수요와 수주 확인"},
-                {"name": "ASML", "description": "반도체 장비 / 주력: EUV 노광장비", "reason": "첨단 반도체 CAPEX(설비투자) 선행지표 확인"},
-                {"name": "NVIDIA", "description": "AI·그래픽 반도체 / 주력: AI GPU", "reason": "AI 서버 수요와 밸류에이션의 금리 민감도 확인"}
+                {"name": "Microsoft", "description": "클라우드·소프트웨어·AI / 주력: Azure·Microsoft 365", "reason": "관찰: Azure AI 매출, 데이터센터 투자 발표, 자본지출"},
+                {"name": "Broadcom", "description": "반도체·인프라 소프트웨어 / 주력: AI ASIC·네트워킹", "reason": "관찰: 고객사 AI ASIC 양산·주문과 네트워크 매출"},
+                {"name": "GE Vernova", "description": "발전·전력망 장비 / 주력: 가스터빈·전력망 설비", "reason": "관찰: 데이터센터 전력 수요와 수주 발표의 발주처·금액·납기"},
+                {"name": "ASML", "description": "반도체 장비 / 주력: EUV 노광장비", "reason": "관찰: 고객사의 첨단 반도체 설비투자와 장비 수주잔고"},
+                {"name": "NVIDIA", "description": "AI·그래픽 반도체 / 주력: AI GPU", "reason": "관찰: AI 서버 주문·출하와 장기금리 변화에 따른 밸류에이션"}
             ]}], "metrics": [], "checks": ["달러 기준 종목은 환율 변동과 미국 장기금리 상승에 따른 밸류에이션 변화를 함께 확인합니다."], "scenarios": [], "news": [],
         },
         {
-            "id": "hynix", "title": "7. SK하이닉스 별도 분석", "subtitle": "사용자 관심종목 · HBM·DRAM의 핵심 확인 항목",
+            "id": "hynix", "title": "7. SK하이닉스 별도 분석", "subtitle": "사용자 관심종목 · HBM·DRAM의 핵심 관찰 항목",
             "summary": "SK하이닉스(메모리 반도체·SSD / 주력: HBM·DRAM)는 AI 메모리 수요의 핵심 지표로 별도 추적합니다.",
             "details": [
                 "긍정 요인은 HBM(고대역폭메모리) 공급 제약, AI 데이터센터 투자, 서버 DRAM 가격·출하 흐름입니다. 반대로 미국 장기금리 상승과 메모리 가격 둔화, 경쟁사의 HBM 공급 확대는 단기 위험입니다.",
                 "매일 시가만 보지 않고 미국 반도체 흐름, 외국인 수급, HBM 관련 공시·고객 투자 뉴스가 같은 방향인지 확인합니다. 근거 없는 목표가나 매매 신호는 제시하지 않습니다.",
             ],
             "rankings": [{"market": "핵심 확인 순서", "items": [
-                {"name": "① 미국 반도체", "description": "NASDAQ·반도체 지수·메모리 기업 흐름", "reason": "한국 장 시작 전 글로벌 위험선호 확인"},
-                {"name": "② HBM 수요", "description": "AI 서버·고객사 CAPEX(설비투자)", "reason": "중기 이익 추정의 핵심 변수"},
-                {"name": "③ 외국인 수급", "description": "현물·선물 동향", "reason": "단기 변동성·추세 확인"},
-                {"name": "④ 메모리 가격", "description": "DRAM·NAND 현물·계약 가격", "reason": "업황 전환 시점 확인"},
-                {"name": "⑤ 경쟁 구도", "description": "삼성전자·Micron의 HBM 공급", "reason": "점유율과 수익성 변화 확인"}
-            ]}], "metrics": [], "checks": ["단기 주가 방향과 중기 HBM 펀더멘털 판단을 분리해 확인합니다."], "scenarios": [], "news": section_news(rows, ("하이닉스", "hbm", "메모리", "dram"), 0)[:2],
+                {"name": "① 미국 반도체", "description": "NASDAQ·반도체 지수·메모리 기업 흐름", "reason": "관찰: 한국 장 시작 전 글로벌 위험선호"},
+                {"name": "② HBM 수요", "description": "AI 서버·고객사 CAPEX(설비투자)", "reason": "관찰: 고객사 투자 발표·서버 출하·메모리 주문"},
+                {"name": "③ 외국인 수급", "description": "현물·선물 동향", "reason": "관찰: 단기 변동성과 추세"},
+                {"name": "④ 메모리 가격", "description": "DRAM·NAND 현물·계약 가격", "reason": "관찰: 계약가격·출하량으로 보는 업황 전환"},
+                {"name": "⑤ 경쟁 구도", "description": "삼성전자·Micron의 HBM 공급", "reason": "관찰: 공급량·고객 인증·점유율 변화"}
+            ]}], "metrics": [], "checks": ["수요나 수주를 확정 사실로 표기하려면 고객사·제품·수량 또는 계약금액·기간이 공개된 공시·발표를 근거로 합니다. 그 전에는 관찰 항목입니다."], "scenarios": [], "news": section_news(rows, ("하이닉스", "hbm", "메모리", "dram"), 0)[:2],
         },
         {
             "id": "risk", "title": "8. 오늘 가장 중요한 위험", "subtitle": "우선순위대로 보는 경보 신호",
@@ -290,7 +302,7 @@ def build_payload(day: str) -> dict:
         "generated_at": datetime.now(SEOUL).isoformat(timespec="seconds"),
         "title": f"{observed.year}년 {observed.month}월 {observed.day}일 {weekdays[observed.weekday()]} 아침 투자 브리핑",
         "format": "free-rule-based-morning",
-        "summary": "공개 시장 수치·원문 확인 뉴스·고정 점수 규칙으로 작성한 무료 자동 아침 투자 브리핑입니다. 원문 미확인 정보와 추정 목표가는 포함하지 않습니다.",
+        "summary": "공개 시장 수치·원문 접근 가능 뉴스·고정 점수 규칙으로 작성한 무료 자동 아침 투자 브리핑입니다. 사실은 공시·발표·체결처럼 행위와 근거가 있는 경우에만 확정 표현으로 쓰며, 나머지는 관찰 조건으로 표시합니다.",
         "sections": sections,
         "disclaimer": "공개 데이터의 기준일·시차에 따라 값이 다를 수 있습니다. 자동 생성 참고자료이며 투자 권유가 아닙니다.",
     }

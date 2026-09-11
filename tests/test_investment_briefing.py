@@ -66,3 +66,15 @@ def test_generator_filters_accident_news_from_investment_briefing() -> None:
         "연준 금리 결정과 미국 국채 시장",
         "비트코인 ETF 자금 유출",
     ]
+
+
+def test_briefing_distinguishes_confirmed_facts_from_monitoring_items() -> None:
+    from scripts.update_investment_briefing import FACT_LANGUAGE_RULE, build_payload
+
+    payload = build_payload("2026-09-11")
+    sectors = next(section for section in payload["sections"] if section["id"] == "sectors")
+    hynix = next(section for section in payload["sections"] if section["id"] == "hynix")
+
+    assert FACT_LANGUAGE_RULE in sectors["details"]
+    assert "고객사·제품·수량 또는 계약금액·기간" in hynix["checks"][0]
+    assert all(item["reason"].startswith("관찰:") for item in hynix["rankings"][0]["items"])
