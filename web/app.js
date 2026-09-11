@@ -26,7 +26,7 @@ const markers = new Map(), charts = new Map();
 const groupByKey = new Map(), groupsByLawd = new Map(), groupsByMapName = new Map();
 const regionHierarchy = new Map();
 let regionSelection={sido:"",sigungu:"",dong:""},regionFilteredKeys=null,regionSelectionRunId=0;
-let lastGeocodeAt = 0, searchRunId = 0, searchSuggestionTimer = null;
+let lastGeocodeAt = 0, searchRunId = 0, searchSuggestionTimer = null, localityFocusRunId = 0;
 const geoCache = JSON.parse(localStorage.getItem("aptGeoCache") || "{}");
 const groupCoordinates = new Map();
 const mapNameGroupCache = new Map();
@@ -44,9 +44,9 @@ const GRAPH_STORAGE_KEY = "realEstateGraphWorkspacesV1";
 const FAVORITE_GRAPH_STORAGE_KEY = "realEstateFavoriteGraphsV1";
 const TAX_BASE_YEAR = 2026;
 const graphColors = [
-  {name:"검은색",value:"#111827"},{name:"빨강",value:"#ef4444"},{name:"주황",value:"#f97316"},{name:"노랑",value:"#eab308"},
+  {name:"빨강",value:"#ef4444"},{name:"주황",value:"#f97316"},{name:"노랑",value:"#eab308"},
   {name:"초록",value:"#22c55e"},{name:"파랑",value:"#3b82f6"},{name:"남색",value:"#4f46e5"},{name:"보라",value:"#8b5cf6"},
-  {name:"청록",value:"#0891b2"},{name:"분홍",value:"#db2777"},{name:"갈색",value:"#92400e"},{name:"회색",value:"#64748b"}
+  {name:"청록",value:"#0891b2"},{name:"분홍",value:"#db2777"},{name:"갈색",value:"#92400e"},{name:"회색",value:"#64748b"},{name:"검은색",value:"#111827"}
 ];
 const graphLineStyles = [
   {name:"얇은 선",value:"thin",width:0.8,dash:[]},
@@ -545,6 +545,39 @@ function matchingApartments(query,limit=12){
     .slice(0,limit);
 }
 
+function matchingLocalityGroups(query){
+  const needle=compactName(query);
+  if(needle.length<2)return [];
+  const buckets=new Map();
+  apartmentGroups.forEach(group=>{
+    const parts=regionParts(group);
+    const names=[group.dong,parts.sigungu,group.region_name].map(compactName);
+    if(!names.some(name=>name===needle||name.endsWith(needle)))return;
+    const key=[group.region_name,group.dong].join("|");
+    if(!buckets.has(key))buckets.set(key,[]);
+    buckets.get(key).push(group);
+  });
+  return [...buckets.values()].sort((a,b)=>b.length-a.length||a[0].region_name.localeCompare(b[0].region_name,"ko"))[0]||[];
+}
+
+async function focusSearchLocality(query){
+  const groups=matchingLocalityGroups(query);
+  if(!map||!groups.length)return;
+  const focusId=++localityFocusRunId;
+  const label=[groups[0].region_name,groups[0].dong].filter(Boolean).join(" ");
+  const coordinates=groups.map(cachedCoordinate).filter(coord=>coord&&Number.isFinite(Number(coord.lat))&&Number.isFinite(Number(coord.lng)));
+  if(coordinates.length){
+    if(focusId!==localityFocusRunId)return;
+    map.fitBounds(L.latLngBounds(coordinates.map(coord=>[coord.lat,coord.lng])),{padding:[36,36],maxZoom:15});
+    mapLocalityAnchor={coord:coordinates[0],lawd_cd:groups[0].lawd_cd,group:groups[0]};
+    return;
+  }
+  const coord=await geocode(label);
+  if(focusId!==localityFocusRunId||!coord)return;
+  map.setView([coord.lat,coord.lng],15);
+  mapLocalityAnchor={coord,lawd_cd:groups[0].lawd_cd,group:groups[0]};
+}
+
 function hideSearchSuggestions(){
   const suggestions=byId("searchSuggestions"),input=byId("searchInput");
   suggestions.hidden=true;suggestions.innerHTML="";input.setAttribute("aria-expanded","false");
@@ -595,8 +628,9 @@ async function search(){
   const matches=matchingApartments(query,12);
   renderResults(matches,query);
   renderSearchSuggestions(matches,query);
+  const localityFocus=focusSearchLocality(query);
   if(matches.length===1){hideSearchSuggestions();await selectSearchGroup(matches[0].group,runId);}
-  else if(matches.length>1)setStatus("비슷한 단지 "+matches.length+"개 중 하나를 선택해 주세요.");
+  else if(matches.length>1){await localityFocus;if(runId===searchRunId)setStatus("비슷한 단지 "+matches.length+"개 중 하나를 선택해 주세요.");}
 }
 
 function activeBoard(){
@@ -2116,7 +2150,10 @@ byId("searchInput").addEventListener("input",event=>{
   clearTimeout(searchSuggestionTimer);
   const query=event.currentTarget.value.trim();
   if(query.length<2){hideSearchSuggestions();return;}
-  searchSuggestionTimer=setTimeout(()=>renderSearchSuggestions(matchingApartments(query,10),query),120);
+  searchSuggestionTimer=setTimeout(()=>{
+    renderSearchSuggestions(matchingApartments(query,10),query);
+    focusSearchLocality(query);
+  },120);
 });
 byId("searchInput").addEventListener("focus",event=>{
   const query=event.currentTarget.value.trim();
