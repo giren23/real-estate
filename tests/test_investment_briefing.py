@@ -30,19 +30,18 @@ def test_investment_briefing_page_has_top_and_bottom_pagination() -> None:
 
 def test_daily_generator_archives_by_date_and_reorders_pages() -> None:
     output_dir = ROOT / "web" / "content" / "investment-briefing"
-    subprocess.run([sys.executable, str(ROOT / "scripts" / "update_investment_briefing.py"), "--date", "2026-09-09"], cwd=ROOT, check=True)
-    payload = json.loads((output_dir / "2026-09-09.json").read_text(encoding="utf-8"))
+    subprocess.run([sys.executable, str(ROOT / "scripts" / "update_investment_briefing.py"), "--date", "2026-09-11"], cwd=ROOT, check=True)
+    payload = json.loads((output_dir / "2026-09-11.json").read_text(encoding="utf-8"))
     index = json.loads((output_dir / "index.json").read_text(encoding="utf-8"))
 
-    assert payload["date"] == "2026-09-09"
+    assert payload["date"] == "2026-09-11"
     assert payload["schema_version"] == 4
-    assert payload["title"] == "2026년 9월 9일 수요일 아침 투자 브리핑"
+    assert payload["title"] == "2026년 9월 11일 금요일 아침 투자 브리핑"
     assert [section["id"] for section in payload["sections"]] == ["verdict", "us", "kr", "sectors", "kr-top5", "us-top5", "hynix", "risk", "action"]
     assert all(section["summary"] for section in payload["sections"])
-    assert index["pages"][0]["date"] == "2026-09-10"
-    assert index["pages"][0]["file"] == "2026-09-10.json"
-    assert index["pages"][1]["date"] == "2026-09-09"
-    assert all(page["date"] >= "2026-09-09" for page in index["pages"])
+    assert index["pages"][0]["date"] == "2026-09-11"
+    assert index["pages"][0]["file"] == "2026-09-11.json"
+    assert all(page["date"] >= "2026-09-11" for page in index["pages"])
 
 
 def test_morning_workflow_generates_and_commits_the_archive_once() -> None:

@@ -13,7 +13,8 @@ NEWS_DIR = ROOT / "web" / "content" / "news"
 OUTPUT_DIR = ROOT / "web" / "content" / "investment-briefing"
 INDEX_PATH = OUTPUT_DIR / "index.json"
 SEOUL = ZoneInfo("Asia/Seoul")
-ARCHIVE_START_DATE = "2026-09-09"
+# The user requested a clean restart from this morning's report.
+ARCHIVE_START_DATE = "2026-09-11"
 
 INVESTMENT_TAGS = {"증시", "주식", "금리·채권", "환율", "원자재", "가상자산", "산업", "기업", "반도체", "경제정책"}
 INVESTMENT_KEYWORDS = (
@@ -288,8 +289,8 @@ def build_payload(day: str) -> dict:
         "schema_version": 4, "date": day,
         "generated_at": datetime.now(SEOUL).isoformat(timespec="seconds"),
         "title": f"{observed.year}년 {observed.month}월 {observed.day}일 {weekdays[observed.weekday()]} 아침 투자 브리핑",
-        "format": "chat-briefing-compatible-morning",
-        "summary": "ChatGPT ‘아침 저녁 투자 브리핑’의 보고 순서(결론·미국·한국·섹터·위험·실행)를 공개 시장 데이터로 자동 작성한 오전 브리핑입니다.",
+        "format": "free-rule-based-morning",
+        "summary": "공개 시장 수치·원문 확인 뉴스·고정 점수 규칙으로 작성한 무료 자동 아침 투자 브리핑입니다. 원문 미확인 정보와 추정 목표가는 포함하지 않습니다.",
         "sections": sections,
         "disclaimer": "공개 데이터의 기준일·시차에 따라 값이 다를 수 있습니다. 자동 생성 참고자료이며 투자 권유가 아닙니다.",
     }
@@ -318,7 +319,7 @@ def prune_old_archives() -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="GPT 호출 없이 날짜별 오전 투자 브리핑 생성")
+    parser = argparse.ArgumentParser(description="무료 규칙형 날짜별 오전 투자 브리핑 생성")
     parser.add_argument("--date", help="YYYY-MM-DD, 기본값은 한국시간 오늘")
     args = parser.parse_args()
     day = args.date or datetime.now(SEOUL).strftime("%Y-%m-%d")
