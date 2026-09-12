@@ -92,7 +92,6 @@ function graphLineStyle(value){return graphLineStyles.find(style=>style.value===
 const verifiedNaverComplexes = [
   {lawdCd:"41135",dong:"서현동",aptNames:["서현효자촌임광","효자촌임광"],complexNo:"1777"}
 ];
-const NAVER_COMPLEX_RESOLVER = "https://korean-real-estate.khasbal.workers.dev/api/naver-complex";
 function verifiedNaverComplexNo(group){
   const lawdCd=String(group?.lawd_cd||group?.bjd_code||"").slice(0,5);
   const dong=compactName(group?.dong);
@@ -109,60 +108,27 @@ function naverLandSearchUrl(group,series){
     // Naver manages its own type/area filter inside that page.
     return "https://fin.land.naver.com/complexes/"+encodeURIComponent(complexNo)+"?articleTradeTypes=A1&tab=article";
   }
-  const area=Math.round(Number(series?.area||0)*100)/100;
-  // For a complex without a separately verified Naver ID, leave out address
-  // terms: they can make Naver fall back to a nearby map instead of the name.
-  const query=[group.apt_name,group.dong,area?"전용 "+fmt(area)+"㎡":""].filter(Boolean).join(" ");
+  // Naver's own browser search chooses the matching complex and then opens its
+  // listings. Location and area terms break that match, so keep only the
+  // human-readable complex name and separate parenthesised aliases by spaces.
+  const query=String(group.apt_name||"").replace(/[()（）]/g," ").replace(/\s+/g," ").trim();
   return "https://new.land.naver.com/search?sk="+encodeURIComponent(query);
-}
-function naverListingNames(group){
-  return [...new Set([group.directory_name,group.apt_name,...(Array.isArray(group.search_names)?group.search_names:[])].map(value=>String(value||"").trim()).filter(Boolean))].slice(0,5);
 }
 function naverComplexUrl(complexNo){
   return "https://fin.land.naver.com/complexes/"+encodeURIComponent(complexNo)+"?articleTradeTypes=A1&tab=article";
-}
-function naverListingCacheKey(bjdCode,names){
-  return "naver-listing-complex-v1:"+bjdCode+":"+names.map(compactName).join(",");
 }
 function openListingWindow(url,popup){
   if(popup){popup.location.replace(url);return;}
   window.open(url,"_blank","noopener,noreferrer");
 }
-async function openNaverListing(group,series,button){
+function openNaverListing(group,series){
   const fallback=naverLandSearchUrl(group,series);
   const verified=verifiedNaverComplexNo(group);
   const popup=window.open("about:blank","_blank");
   if(popup) popup.opener=null;
   if(verified){openListingWindow(naverComplexUrl(verified),popup);return;}
-  const bjdCode=String(group.bjd_code||"").replace(/\D/g,"");
-  const names=naverListingNames(group);
-  if(!/^\d{10}$/.test(bjdCode)||!names.length){
-    setStatus("이 단지는 법정동 코드가 없어 네이버 단지 검색으로 엽니다.");
-    openListingWindow(fallback,popup);return;
-  }
-  const cacheKey=naverListingCacheKey(bjdCode,names);
-  let complexNo="";
-  try{complexNo=localStorage.getItem(cacheKey)||"";}catch{}
-  if(complexNo){openListingWindow(naverComplexUrl(complexNo),popup);return;}
-  const original=button.textContent;
-  button.disabled=true;button.textContent="단지 확인 중…";
-  try{
-    const query=new URLSearchParams({bjd_code:bjdCode,names:names.join(",")});
-    const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),5000);
-    const response=await fetch(NAVER_COMPLEX_RESOLVER+"?"+query,{signal:controller.signal});
-    clearTimeout(timeout);
-    const payload=await response.json().catch(()=>null);
-    complexNo=payload?.available&&/^\d+$/.test(String(payload.complex_no||""))?String(payload.complex_no):"";
-    if(!complexNo) throw new Error(payload?.reason||"not_found");
-    try{localStorage.setItem(cacheKey,complexNo);}catch{}
-    setStatus(group.apt_name+"의 네이버 단지 매물 페이지를 확인했습니다.");
-    openListingWindow(naverComplexUrl(complexNo),popup);
-  }catch(error){
-    const reason=String(error?.message||"");
-    setStatus(reason==="rate_limited"?"네이버 조회 한도에 도달해 이번에는 단지 검색으로 엽니다. 잠시 뒤 다시 누르면 자동 확인합니다.":"네이버 고유 단지번호를 확인하지 못해 단지 검색으로 엽니다.");
-    openListingWindow(fallback,popup);
-  }finally{button.disabled=false;button.textContent=original;}
+  setStatus(group.apt_name+"의 네이버 단지 매물 화면을 엽니다.");
+  openListingWindow(fallback,popup);
 }
 const POLICY_DETAILS = {
   "2017-08-02": {
@@ -446,7 +412,6 @@ function createGroup(row,key,address="",fromDirectory=false){
   return {
     key,
     lawd_cd:String(row.lawd_cd||row.bjd_code||"").slice(0,5),
-    bjd_code:String(row.bjd_code||"").replace(/\D/g,"").slice(0,10),
     region_name:row.region_name,
     dong:row.dong,
     jibun:row.jibun||"",
@@ -1571,7 +1536,7 @@ function renderGraphBoards(){
     });
     card.querySelector(".listing-link").addEventListener("click",()=>{
       const group=apartmentGroups.find(item=>item.key===series.key);
-      if(group) openNaverListing(group,series,card.querySelector(".listing-link"));
+      if(group) openNaverListing(group,series);
     });
     card.querySelector(".remove-btn").addEventListener("click",()=>removeSeries(board.id,series.id));
   });
