@@ -40,6 +40,7 @@ let viewportMarkerTimer = null, viewportRefreshSuspended = false, viewportComple
 let buildingRequestId = 0, buildingAbortController = null;
 let catalogRefreshChecking = false, lastCatalogRefreshCheck = 0;
 const CATALOG_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const MAX_GRAPH_BOARDS = 20, MAX_SERIES_PER_GRAPH = 20;
 const LEGACY_GRAPH_STORAGE_KEY = "realEstateGraphWorkspacesV1";
 const FAVORITE_GRAPH_STORAGE_KEY = "realEstateFavoriteGraphsV1";
 const FAVORITE_GRAPH_BACKUP_STORAGE_KEY = "realEstateFavoriteGraphsBackupV1";
@@ -73,7 +74,9 @@ const TAX_BASE_YEAR = 2026;
 const graphColors = [
   {name:"빨강",value:"#ef4444"},{name:"주황",value:"#f97316"},{name:"노랑",value:"#eab308"},
   {name:"초록",value:"#22c55e"},{name:"파랑",value:"#3b82f6"},{name:"남색",value:"#4f46e5"},{name:"보라",value:"#8b5cf6"},
-  {name:"청록",value:"#0891b2"},{name:"분홍",value:"#db2777"},{name:"갈색",value:"#92400e"},{name:"회색",value:"#64748b"},{name:"검은색",value:"#111827"}
+  {name:"청록",value:"#00897b"},{name:"분홍",value:"#db2777"},{name:"갈색",value:"#795548"},{name:"하늘색",value:"#0288d1"},
+  {name:"연두",value:"#65a30d"},{name:"자주",value:"#c026d3"},{name:"황토",value:"#b45309"},{name:"산호",value:"#f43f5e"},
+  {name:"올리브",value:"#827717"},{name:"청회색",value:"#475569"},{name:"검은색",value:"#111827"}
 ];
 const graphLineStyles = [
   {name:"얇은 선",value:"thin",width:0.8,dash:[]},
@@ -84,8 +87,10 @@ const graphLineStyles = [
 function graphLineStyle(value){return graphLineStyles.find(style=>style.value===value)||graphLineStyles[0];}
 function naverLandSearchUrl(group,series){
   const area=Math.round(Number(series?.area||0)*100)/100;
-  const query=[group.region_name,group.dong,group.apt_name,area?"전용 "+fmt(area)+"㎡":"","매매 매물"].filter(Boolean).join(" ");
-  return "https://m.land.naver.com/search/result?query="+encodeURIComponent(query)+"&isRecentDate=false&isPremium=false&btm=0&service=";
+  // Naver's legacy mobile query-string endpoint returns a 404. The current
+  // search route accepts `sk` and also works after switching to mobile.
+  const query=[group.region_name,group.dong,group.apt_name,area?"전용 "+fmt(area)+"㎡":""].filter(Boolean).join(" ");
+  return "https://new.land.naver.com/search?sk="+encodeURIComponent(query);
 }
 const POLICY_DETAILS = {
   "2017-08-02": {
@@ -1219,7 +1224,7 @@ function refreshResultButtons(){
 }
 
 function addGraphBoard(){
-  if(graphBoards.length>=10){setStatus("그래프는 최대 10개까지 만들 수 있습니다.",true);return;}
+  if(graphBoards.length>=MAX_GRAPH_BOARDS){setStatus("그래프는 최대 "+MAX_GRAPH_BOARDS+"개까지 만들 수 있습니다.",true);return;}
   const board=newGraphBoard();
   graphBoards.push(board);
   activeGraphId=board.id;
@@ -1250,7 +1255,7 @@ function removeActiveGraphBoard(){
 
 async function addSeries(group,requestedArea=null){
   const board=activeBoard()||ensureInitialGraphBoard();
-  if(board.series.length>=10){setStatus("한 그래프에는 단지를 최대 10개까지 추가할 수 있습니다.",true);return false;}
+  if(board.series.length>=MAX_SERIES_PER_GRAPH){setStatus("한 그래프에는 단지를 최대 "+MAX_SERIES_PER_GRAPH+"개까지 추가할 수 있습니다.",true);return false;}
   if(localApi){setStatus(group.apt_name+" 전체 평형과 실거래를 불러오는 중입니다.");await hydrateGroup(group);}
   if(!group.areas.length){setStatus(group.apt_name+"의 공식 실거래 평형이 아직 확인되지 않았습니다.",true);renderDetails(group,0);return false;}
   const requested=Number(requestedArea);
@@ -1287,7 +1292,7 @@ function restoreGraphBoards(){
     const legacy=readFavoriteStorage(LEGACY_GRAPH_STORAGE_KEY).payload;
     const rawBoards=[...(Array.isArray(legacy?.boards)?legacy.boards.map(board=>({...board,favorite:true})):[]),...(Array.isArray(favorites?.boards)?favorites.boards:[])].filter(board=>board&&typeof board==="object");
     const uniqueBoards=[...new Map(rawBoards.map(board=>[String(board.id||makeId("graph")),board])).values()];
-    graphBoards=uniqueBoards.slice(0,10).map((board,index)=>({
+    graphBoards=uniqueBoards.slice(0,MAX_GRAPH_BOARDS).map((board,index)=>({
       id:String(board.id||makeId("graph")),
       name:String(board.name||"그래프 "+(index+1)).slice(0,30),
       periodYears:[1,3,5,10,20,0].includes(Number(board.periodYears))?Number(board.periodYears):20,
@@ -1299,7 +1304,7 @@ function restoreGraphBoards(){
       favorite:Boolean(board.favorite),
       // Keep series even when the currently loaded catalog is a reduced public snapshot.
       // Otherwise a temporary offline/mobile catalog would silently delete a favorite line.
-      series:Array.isArray(board.series)?board.series.slice(0,10).filter(series=>series&&typeof series==="object"&&series.key).map((series,seriesIndex)=>({
+      series:Array.isArray(board.series)?board.series.slice(0,MAX_SERIES_PER_GRAPH).filter(series=>series&&typeof series==="object"&&series.key).map((series,seriesIndex)=>({
         id:String(series.id||makeId("series")),
         key:String(series.key),
         area:Number(series.area||0),
@@ -1338,7 +1343,7 @@ function markUnsaved(message){
 function renderGraphBoards(){
   charts.forEach(chart=>chart.destroy());
   charts.clear();
-  byId("graphCount").textContent=graphBoards.length+" / 10";
+  byId("graphCount").textContent=graphBoards.length+" / "+MAX_GRAPH_BOARDS;
   byId("removeGraphBtn").disabled=!activeBoard();
   const favoriteButton=byId("favoriteGraphBtn");
   const trackingButton=byId("trackingRequestBtn");
@@ -1388,7 +1393,7 @@ function renderGraphBoards(){
     '<div class="graph-board-head"><div class="graph-head-fields"><div><label for="graphName">그래프 이름</label><input id="graphName" class="graph-name" maxlength="30" value="'+esc(board.name)+'"></div>'+
     '<div class="period-control"><label for="graphPeriod">그래프 표시 기간</label><select id="graphPeriod">'+periodOptions+'</select></div>'+
     '<div class="period-control"><label for="priceMode">그래프 기준</label><select id="priceMode">'+priceModeOptions+'</select></div></div>'+
-    '<span>'+board.series.length+' / 10개 단지</span></div>'+
+    '<span>'+board.series.length+' / '+MAX_SERIES_PER_GRAPH+'개 단지</span></div>'+
     '<div class="series-list">'+(board.series.length?board.series.map(series=>seriesControl(board,series)).join(""):'<div class="series-empty">검색한 단지의 ‘추가’ 버튼을 누르면 추가 순서에 맞는 색상으로 표시됩니다.</div>')+'</div>'+
     '<div class="timeline-guide" hidden aria-hidden="true"><span class="timeline-guide-date"></span><div class="timeline-guide-popup" tabindex="0" role="region" aria-label="선택 시점 경제지표"></div></div>'+
     '<section class="stack-chart price-section"><div class="economic-title"><b>'+chartHeading+'</b><span>'+chartSubtitle+'</span></div>'+

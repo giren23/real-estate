@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="전국 아파트를 검색하고 최대 10개 그래프 작업공간에서 평형별 장기 실거래가를 비교하고 저장합니다.">
+<meta name="description" content="전국 아파트를 검색하고 최대 20개 그래프 작업공간에서 평형별 장기 실거래가를 비교하고 즐겨찾기로 저장합니다.">
 <title>Korean real estate prices</title>
 <link rel="stylesheet" href="style.css?v=38">
-<link rel="stylesheet" href="graph-favorites.css?v=4">
+<link rel="stylesheet" href="graph-favorites.css?v=5">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <!-- 시험용 MANIA 스타일: 원복하려면 아래 CSS와 mania-theme.js 연결만 제거하세요. -->
 <link rel="stylesheet" href="mania-theme.css?v=5">
@@ -91,7 +91,7 @@
 <section class="panel compare-panel">
   <div class="panel-head graph-title-row">
     <div><span class="step">2</span><h2>장기 실거래 그래프</h2></div>
-    <span id="graphCount">0 / 10</span>
+    <span id="graphCount">0 / 20</span>
   </div>
   <div class="graph-toolbar" aria-label="그래프 관리">
     <button id="addGraphBtn" class="primary-action" type="button">그래프 추가</button>
@@ -128,6 +128,6 @@
     <button class="admin-login-submit" type="submit">관리자 모드 열기</button>
   </form>
 </dialog>
-<script src="app.js?v=71"></script>
+<script src="app.js?v=72"></script>
 </body>
 </html>
