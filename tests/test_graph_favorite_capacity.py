@@ -14,6 +14,9 @@ def test_graph_favorites_support_twenty_boards_and_series_with_valid_listing_lin
     assert "new.land.naver.com/search?sk=" in app
     assert "m.land.naver.com/search/result?query=" not in app
     assert 'aptNames:["서현효자촌임광","효자촌임광"],complexNo:"1777"' in app
+    assert 'aptNames:["시범우성"],complexNo:"1840"' in app
+    assert 'aptNames:["시범한신"],complexNo:"1821"' in app
+    assert 'aptNames:["상록마을(보성)","상록임광보성"],complexNo:"2637"' in app
     assert "https://fin.land.naver.com/complexes/" in app
     assert "articleTradeTypes=A1&tab=article" in app
     assert "검은색" in app and app.index('name:"검은색"') > app.index('name:"청회색"')

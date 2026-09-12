@@ -90,7 +90,10 @@ function graphLineStyle(value){return graphLineStyles.find(style=>style.value===
 // complex IDs here, so a "매물" button never pretends a fuzzy map result is the
 // selected apartment. IDs can be added as they are verified.
 const verifiedNaverComplexes = [
-  {lawdCd:"41135",dong:"서현동",aptNames:["서현효자촌임광","효자촌임광"],complexNo:"1777"}
+  {lawdCd:"41135",dong:"서현동",aptNames:["서현효자촌임광","효자촌임광"],complexNo:"1777"},
+  {lawdCd:"41135",dong:"서현동",aptNames:["시범우성"],complexNo:"1840"},
+  {lawdCd:"41135",dong:"서현동",aptNames:["시범한신"],complexNo:"1821"},
+  {lawdCd:"41135",dong:"정자동",aptNames:["상록마을(보성)","상록임광보성"],complexNo:"2637"}
 ];
 function verifiedNaverComplexNo(group){
   const lawdCd=String(group?.lawd_cd||group?.bjd_code||"").slice(0,5);
