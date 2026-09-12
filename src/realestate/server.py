@@ -122,7 +122,8 @@ def health() -> dict:
 
 @app.get("/api/catalog")
 def catalog() -> FileResponse:
-    if not STORE.catalog_path.exists():
+    current = json.loads(STORE.catalog_path.read_text(encoding="utf-8")) if STORE.catalog_path.exists() else {}
+    if current.get("version") != 2:
         STORE.build_catalog()
     return FileResponse(STORE.catalog_path, media_type="application/json", headers={"Cache-Control": "no-cache"})
 

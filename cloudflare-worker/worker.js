@@ -1,6 +1,7 @@
 const PUBLIC_SITE = "https://giren23.github.io/real-estate/";
 const PAPER_MAX_BYTES = 200000;
 const PAPER_MAX_SYMBOLS = 20;
+const NAVER_COMPLEX_CACHE_SECONDS = 60 * 60 * 24 * 30;
 const TRACKING_MAX_PER_DAY = 12;
 const PUBLIC_REAL_ESTATE_APIS = new Set([
   "/api/catalog",
@@ -40,6 +41,56 @@ function json(data, status = 200, extraHeaders = {}) {
     status,
     headers: {"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff",...extraHeaders},
   });
+}
+
+function naverComplexName(value) {
+  return String(value || "").normalize("NFKC").toLowerCase()
+    .replace(/\s+/g, "").replace(/[()（）\[\]{}·.,\-_/]/g, "").replace(/(아파트|apt)$/g, "");
+}
+
+function naverComplexResponse(data, status = 200, cacheable = false) {
+  return json(data, status, {
+    "access-control-allow-origin": "*",
+    "cache-control": cacheable ? `public, max-age=${NAVER_COMPLEX_CACHE_SECONDS}` : "no-store",
+  });
+}
+
+async function resolveNaverComplex(incoming) {
+  const bjdCode = incoming.searchParams.get("bjd_code") || "";
+  const names = [...new Set((incoming.searchParams.get("names") || "").split(",")
+    .map(naverComplexName).filter(value => value.length >= 2))].slice(0, 5);
+  if (!/^\d{10}$/.test(bjdCode) || !names.length) {
+    return naverComplexResponse({detail:"법정동 코드와 단지명이 올바르지 않습니다."}, 400);
+  }
+  const cacheKey = new Request(`https://naver-complex-cache.invalid/${bjdCode}/${encodeURIComponent(names.join(","))}`);
+  const cached = await caches.default.match(cacheKey);
+  if (cached) return cached;
+
+  const target = new URL("https://new.land.naver.com/api/regions/complexes");
+  target.searchParams.set("cortarNo", bjdCode);
+  target.searchParams.set("realEstateType", "APT");
+  let upstream;
+  try {
+    upstream = await fetch(target, {
+      headers: {"user-agent":"Mozilla/5.0 KoreanRealEstateListingResolver/1.0","referer":"https://new.land.naver.com/complexes"},
+      signal: AbortSignal.timeout(4500),
+    });
+  } catch (_error) {
+    return naverComplexResponse({available:false,reason:"unavailable"}, 503);
+  }
+  // Do not retry or bypass Naver's rate limits. The page falls back to its
+  // ordinary search link and a later user click can reuse a cached match.
+  if (upstream.status === 429) return naverComplexResponse({available:false,reason:"rate_limited"}, 429);
+  if (!upstream.ok) return naverComplexResponse({available:false,reason:"upstream_error"}, 502);
+  let payload;
+  try { payload = await upstream.json(); } catch (_error) { return naverComplexResponse({available:false,reason:"invalid_response"}, 502); }
+  const rows = Array.isArray(payload?.complexList) ? payload.complexList : (Array.isArray(payload?.complexes) ? payload.complexes : []);
+  const match = rows.find(row => names.includes(naverComplexName(row?.complexName || row?.name)) && /^\d+$/.test(String(row?.complexNo || row?.complexNumber || "")));
+  const response = match
+    ? naverComplexResponse({available:true,complex_no:String(match.complexNo || match.complexNumber),complex_name:String(match.complexName || match.name)}, 200, true)
+    : naverComplexResponse({available:false,reason:"not_found"}, 404, true);
+  await caches.default.put(cacheKey, response.clone());
+  return response;
 }
 
 function base64url(bytes) {
@@ -242,6 +293,7 @@ async function localRealEstateApi(request, env, incoming) {
 export default {
   async fetch(request, env) {
     const incoming = new URL(request.url);
+    if (incoming.pathname === "/api/naver-complex" && request.method === "GET") return resolveNaverComplex(incoming);
     if(incoming.pathname === "/api/real-estate-tracking") return trackingApi(request,env);
     if (incoming.pathname.startsWith("/api/paper/")) return paperApi(request, env, incoming);
     if (incoming.pathname.startsWith("/api/")) return localRealEstateApi(request, env, incoming);

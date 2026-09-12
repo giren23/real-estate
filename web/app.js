@@ -92,6 +92,7 @@ function graphLineStyle(value){return graphLineStyles.find(style=>style.value===
 const verifiedNaverComplexes = [
   {lawdCd:"41135",dong:"서현동",aptNames:["서현효자촌임광","효자촌임광"],complexNo:"1777"}
 ];
+const NAVER_COMPLEX_RESOLVER = "https://korean-real-estate.khasbal.workers.dev/api/naver-complex";
 function verifiedNaverComplexNo(group){
   const lawdCd=String(group?.lawd_cd||group?.bjd_code||"").slice(0,5);
   const dong=compactName(group?.dong);
@@ -113,6 +114,55 @@ function naverLandSearchUrl(group,series){
   // terms: they can make Naver fall back to a nearby map instead of the name.
   const query=[group.apt_name,group.dong,area?"전용 "+fmt(area)+"㎡":""].filter(Boolean).join(" ");
   return "https://new.land.naver.com/search?sk="+encodeURIComponent(query);
+}
+function naverListingNames(group){
+  return [...new Set([group.directory_name,group.apt_name,...(Array.isArray(group.search_names)?group.search_names:[])].map(value=>String(value||"").trim()).filter(Boolean))].slice(0,5);
+}
+function naverComplexUrl(complexNo){
+  return "https://fin.land.naver.com/complexes/"+encodeURIComponent(complexNo)+"?articleTradeTypes=A1&tab=article";
+}
+function naverListingCacheKey(bjdCode,names){
+  return "naver-listing-complex-v1:"+bjdCode+":"+names.map(compactName).join(",");
+}
+function openListingWindow(url,popup){
+  if(popup){popup.location.replace(url);return;}
+  window.open(url,"_blank","noopener,noreferrer");
+}
+async function openNaverListing(group,series,button){
+  const fallback=naverLandSearchUrl(group,series);
+  const verified=verifiedNaverComplexNo(group);
+  const popup=window.open("about:blank","_blank");
+  if(popup) popup.opener=null;
+  if(verified){openListingWindow(naverComplexUrl(verified),popup);return;}
+  const bjdCode=String(group.bjd_code||"").replace(/\D/g,"");
+  const names=naverListingNames(group);
+  if(!/^\d{10}$/.test(bjdCode)||!names.length){
+    setStatus("이 단지는 법정동 코드가 없어 네이버 단지 검색으로 엽니다.");
+    openListingWindow(fallback,popup);return;
+  }
+  const cacheKey=naverListingCacheKey(bjdCode,names);
+  let complexNo="";
+  try{complexNo=localStorage.getItem(cacheKey)||"";}catch{}
+  if(complexNo){openListingWindow(naverComplexUrl(complexNo),popup);return;}
+  const original=button.textContent;
+  button.disabled=true;button.textContent="단지 확인 중…";
+  try{
+    const query=new URLSearchParams({bjd_code:bjdCode,names:names.join(",")});
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),5000);
+    const response=await fetch(NAVER_COMPLEX_RESOLVER+"?"+query,{signal:controller.signal});
+    clearTimeout(timeout);
+    const payload=await response.json().catch(()=>null);
+    complexNo=payload?.available&&/^\d+$/.test(String(payload.complex_no||""))?String(payload.complex_no):"";
+    if(!complexNo) throw new Error(payload?.reason||"not_found");
+    try{localStorage.setItem(cacheKey,complexNo);}catch{}
+    setStatus(group.apt_name+"의 네이버 단지 매물 페이지를 확인했습니다.");
+    openListingWindow(naverComplexUrl(complexNo),popup);
+  }catch(error){
+    const reason=String(error?.message||"");
+    setStatus(reason==="rate_limited"?"네이버 조회 한도에 도달해 이번에는 단지 검색으로 엽니다. 잠시 뒤 다시 누르면 자동 확인합니다.":"네이버 고유 단지번호를 확인하지 못해 단지 검색으로 엽니다.");
+    openListingWindow(fallback,popup);
+  }finally{button.disabled=false;button.textContent=original;}
 }
 const POLICY_DETAILS = {
   "2017-08-02": {
@@ -396,6 +446,7 @@ function createGroup(row,key,address="",fromDirectory=false){
   return {
     key,
     lawd_cd:String(row.lawd_cd||row.bjd_code||"").slice(0,5),
+    bjd_code:String(row.bjd_code||"").replace(/\D/g,"").slice(0,10),
     region_name:row.region_name,
     dong:row.dong,
     jibun:row.jibun||"",
@@ -1518,6 +1569,10 @@ function renderGraphBoards(){
     card.querySelector(".line-style-select").addEventListener("change",e=>{
       series.lineStyle=graphLineStyle(e.target.value).value;renderGraphBoards();markUnsaved("그래프 선 종류를 변경했습니다.");
     });
+    card.querySelector(".listing-link").addEventListener("click",()=>{
+      const group=apartmentGroups.find(item=>item.key===series.key);
+      if(group) openNaverListing(group,series,card.querySelector(".listing-link"));
+    });
     card.querySelector(".remove-btn").addEventListener("click",()=>removeSeries(board.id,series.id));
   });
   renderBoardChart(board,byId("graphBoards").querySelector(".graph-board"));
@@ -1532,7 +1587,6 @@ function seriesControl(board,series){
   const lineStyleOptions=graphLineStyles.map(style=>'<option value="'+style.value+'" '+(style.value===graphLineStyle(series.lineStyle).value?"selected":"")+'>'+style.name+'</option>').join("");
   const matchingSeries=board.series.filter(item=>item.key===series.key);
   const duplicateOrdinal=matchingSeries.findIndex(item=>item.id===series.id)+1;
-  const listingUrl=naverLandSearchUrl(group,series);
   const listingLabel=Number(series.area)?"전용 "+fmt(Number(series.area))+"㎡ 매물":"매물 보기";
   return '<div class="series-item" data-series-id="'+esc(series.id)+'"><i class="series-color" style="background:'+esc(series.color)+'"></i>'+
     '<div class="series-name"><b>'+esc(group.apt_name)+'</b><span>'+esc(group.region_name+" "+group.dong+" · 동일 단지 "+duplicateOrdinal+"번째 / "+matchingSeries.length+"개")+'</span></div>'+
@@ -1540,7 +1594,7 @@ function seriesControl(board,series){
     '<select class="color-select" aria-label="'+esc(group.apt_name)+' 색상 선택">'+colorOptions+'</select>'+
     '<select class="line-style-select" aria-label="'+esc(group.apt_name)+' 선 종류 선택">'+lineStyleOptions+'</select>'+
     (board.priceMode==="pyeong"?'<label class="supply-control">공급면적(평)<input class="supply-input" type="number" min="1" step="0.1" value="'+fmt(Number(series.supplyPyeong)||Math.max(1,defaultSupplyPyeong(series.area)))+'" aria-label="'+esc(group.apt_name)+' 공급면적 평수"><small>최초값은 전용률 75% 추정</small></label>':"")+
-    '<a class="listing-link" href="'+esc(listingUrl)+'" target="_blank" rel="noopener noreferrer" aria-label="'+esc(group.apt_name)+' '+esc(String(Number(series.area)||0))+'제곱미터 네이버 매물 보기">'+esc(listingLabel)+'</a>'+
+    '<button class="listing-link" type="button" aria-label="'+esc(group.apt_name)+' '+esc(String(Number(series.area)||0))+'제곱미터 네이버 매물 보기">'+esc(listingLabel)+'</button>'+
     '<button class="remove-btn" type="button" aria-label="'+esc(group.apt_name)+' 그래프에서 삭제">삭제</button></div>';
 }
 

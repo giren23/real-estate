@@ -341,7 +341,7 @@ class LocalStore:
             catalog.append({
                 "key": f"trade|{row['lawd_cd']}|{row['dong']}|{row['apt_name']}",
                 "lawd_cd": row["lawd_cd"], "region_name": row["region_name"], "dong": row["dong"],
-                "apt_name": row["apt_name"], "directory_name": match["apt_name"] if match else "",
+                "apt_name": row["apt_name"], "directory_name": match["apt_name"] if match else "", "bjd_code": match["bjd_code"] if match else "",
                 "search_names": list(dict.fromkeys(filter(None, [row["apt_name"], match["apt_name"] if match else ""]))),
                 "jibun": "", "address": match["address"] if match else f"{row['region_name']} {row['dong']}",
                 "areas": areas, "latest": {
@@ -356,14 +356,14 @@ class LocalStore:
                 continue
             catalog.append({
                 "key": f"complex|{row['complex_code']}", "lawd_cd": row["lawd_cd"], "region_name": row["region_name"],
-                "dong": row["dong"], "apt_name": row["apt_name"], "directory_name": row["apt_name"],
+                "dong": row["dong"], "apt_name": row["apt_name"], "directory_name": row["apt_name"], "bjd_code": row["bjd_code"],
                 "search_names": [row["apt_name"]], "jibun": "", "address": row["address"], "areas": [], "latest": None,
                 "data_apt_name": "", "coverage_years": completed.get(row["lawd_cd"], 0),
                 "build_year": None,
             })
         catalog.sort(key=lambda row: (row.get("latest") or {}).get("trade_date", ""), reverse=True)
         payload = {
-            "version": 1,
+            "version": 2,
             "catalog": catalog,
             "meta": {
                 "transaction_rows": trade_count,
