@@ -85,11 +85,33 @@ const graphLineStyles = [
   {name:"점선",value:"dashSmall",width:1.8,dash:[3,3]}
 ];
 function graphLineStyle(value){return graphLineStyles.find(style=>style.value===value)||graphLineStyles[0];}
+// Naver's map search is deliberately fuzzy: a full address can still land on a
+// nearby neighbourhood and show no result. Keep only separately verified
+// complex IDs here, so a "매물" button never pretends a fuzzy map result is the
+// selected apartment. IDs can be added as they are verified.
+const verifiedNaverComplexes = [
+  {lawdCd:"41135",dong:"서현동",aptNames:["서현효자촌임광","효자촌임광"],complexNo:"1777"}
+];
+function verifiedNaverComplexNo(group){
+  const lawdCd=String(group?.lawd_cd||group?.bjd_code||"").slice(0,5);
+  const dong=compactName(group?.dong);
+  const aptName=compactName(group?.apt_name);
+  const match=verifiedNaverComplexes.find(item=>
+    item.lawdCd===lawdCd && compactName(item.dong)===dong && item.aptNames.some(name=>compactName(name)===aptName)
+  );
+  return match?.complexNo||"";
+}
 function naverLandSearchUrl(group,series){
+  const complexNo=verifiedNaverComplexNo(group);
+  if(complexNo){
+    // A1 is Naver's sale-listing filter. The complex page itself is exact;
+    // Naver manages its own type/area filter inside that page.
+    return "https://fin.land.naver.com/complexes/"+encodeURIComponent(complexNo)+"?articleTradeTypes=A1&tab=article";
+  }
   const area=Math.round(Number(series?.area||0)*100)/100;
-  // Naver's legacy mobile query-string endpoint returns a 404. The current
-  // search route accepts `sk` and also works after switching to mobile.
-  const query=[group.region_name,group.dong,group.apt_name,area?"전용 "+fmt(area)+"㎡":""].filter(Boolean).join(" ");
+  // For a complex without a separately verified Naver ID, leave out address
+  // terms: they can make Naver fall back to a nearby map instead of the name.
+  const query=[group.apt_name,group.dong,area?"전용 "+fmt(area)+"㎡":""].filter(Boolean).join(" ");
   return "https://new.land.naver.com/search?sk="+encodeURIComponent(query);
 }
 const POLICY_DETAILS = {
