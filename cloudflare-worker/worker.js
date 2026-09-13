@@ -259,8 +259,17 @@ async function publicMapApi(incoming) {
     const query='[out:json][timeout:12];(nwr["building"="apartments"]["name"]('+box+');nwr["building"="residential"]["name"]('+box+');nwr["landuse"="residential"]["name"]('+box+'););out center 1200;';
     for (const endpoint of ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]) {
       const target = new URL(endpoint); target.searchParams.set("data", query);
-      try { const response = await fetchPublicMapJson(target, 15000); if (response) return mapApiResponse(response); } catch (_error) {}
+      try { const response = await fetchPublicMapJson(target, 6500); if (response) return mapApiResponse(response); } catch (_error) {}
     }
+    return new Response(JSON.stringify({elements: []}), {
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "public, max-age=60",
+        "x-content-type-options": "nosniff",
+        "x-real-estate-source": "published-trade-fallback",
+        "x-real-estate-map-warning": "public-building-source-unavailable",
+      },
+    });
   }
   return null;
 }

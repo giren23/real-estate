@@ -40,3 +40,5 @@ def test_cloudflare_worker_proxies_public_map_sources_when_pc_is_off() -> None:
     assert "nominatim.openstreetmap.org/reverse" in worker
     assert "overpass-api.de/api/interpreter" in worker
     assert 'x-real-estate-source", "public-map-fallback"' in worker
+    assert '"x-real-estate-source": "published-trade-fallback"' in worker
+    assert "public-building-source-unavailable" in worker
