@@ -58,6 +58,10 @@ def test_reb_frontend_renders_price_and_volume_top20() -> None:
     assert "transaction_volume" in script
     assert "rebArea84" in script
     assert "84㎡급 평균" in script
+    assert '<details open><summary>상승률 높은 지역 Top 20' not in html
+    assert '<details open><summary>상승률 낮은 지역 Top 20' not in html
+    assert '<details open><summary>매매량 많은 지역 Top 20' not in html
+    assert '<details open><summary>매매량 적은 지역 Top 20' not in html
 
 
 def test_area_84_average_uses_only_valid_80_to_90_sqm_trades() -> None:
