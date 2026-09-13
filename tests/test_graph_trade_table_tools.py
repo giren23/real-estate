@@ -48,3 +48,18 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert 'href="graph-trade-tools.css?v=2"' in html
     assert 'href="area-benchmark.css?v=6"' in html
     assert 'src="app.js?v=88"' in html
+
+
+def test_every_collapsible_heading_has_a_leading_state_shape() -> None:
+    stylesheet = (ROOT / "web" / "style.css").read_text(encoding="utf-8")
+    pages = ("index.html", "market.html", "news.html", "analysis.html")
+
+    assert "details>summary::before" in stylesheet
+    assert "details[open]>summary::before" in stylesheet
+    assert "rotate(-45deg)" in stylesheet
+    assert "rotate(45deg)" in stylesheet
+    assert ".reb-market-summary>i,.area-benchmark-summary>i{display:none!important}" in stylesheet
+    assert ".development-opportunity>summary::after{content:none!important}" in stylesheet
+    for page in pages:
+        html = (ROOT / "web" / page).read_text(encoding="utf-8")
+        assert 'href="style.css?v=41"' in html
