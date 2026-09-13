@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from scripts.update_reb_market_map import normalize_payload
+from scripts.update_reb_market_map import calculate_area_84_prices, enrich_area_84_prices, normalize_payload
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,3 +56,31 @@ def test_reb_frontend_renders_price_and_volume_top20() -> None:
     assert "renderRebTop20" in script
     assert "rebCombinedCities" in script
     assert "transaction_volume" in script
+    assert "rebArea84" in script
+    assert "84㎡급 평균" in script
+
+
+def test_area_84_average_uses_only_valid_80_to_90_sqm_trades() -> None:
+    rows = [
+        {"lawd_cd": "11110", "area_m2": 84.9, "price_eok": 10, "trade_date": "2026-08-01", "cancelled": False},
+        {"lawd_cd": "11110", "area_m2": 82.0, "price_eok": 12, "trade_date": "2026-09-01", "cancelled": False},
+        {"lawd_cd": "11110", "area_m2": 59.9, "price_eok": 7, "trade_date": "2026-09-02", "cancelled": False},
+        {"lawd_cd": "11110", "area_m2": 84.0, "price_eok": 30, "trade_date": "2026-09-03", "cancelled": True},
+    ]
+    result = calculate_area_84_prices(rows)
+    assert result["11110"]["average_price_eok"] == 11
+    assert result["11110"]["trade_count"] == 2
+    assert result["11110"]["period_start"] == "2026-08-01"
+
+
+def test_area_84_average_is_attached_by_official_district_code() -> None:
+    payload = {
+        "provinces": [{"code": "11", "name": "서울", "cities": [{"code": "11110", "name": "종로구", "value": 0.2}]}],
+        "transaction_volume": {"provinces": []},
+    }
+    enrich_area_84_prices(payload, [
+        {"lawd_cd": "11110", "area_m2": 84.0, "price_eok": 15.5, "trade_date": "2026-09-01", "cancelled": False}
+    ])
+    value = payload["provinces"][0]["cities"][0]["area_84_price"]
+    assert value["average_price_eok"] == 15.5
+    assert payload["area_84_prices"]["matched_region_count"] == 1

@@ -2564,6 +2564,11 @@ function setStatus(message,error=false){byId("status").textContent=message;byId(
 const REB_TILE_POSITIONS={"51":[6,1],"28":[2,2],"11":[3,2],"41":[4,2],"43":[5,2],"47":[6,2],"44":[3,3],"36":[4,3],"27":[5,3],"31":[6,3],"30":[4,4],"52":[3,4],"48":[5,4],"26":[6,4],"12":[3,5],"50":[2,6]};
 function rebSigned(value){const number=Number(value);if(!Number.isFinite(number))return "—";return (number>0?"+":"")+number.toFixed(2)+"%";}
 function rebVolume(value){const number=Number(value);return Number.isFinite(number)?fmt(Math.round(number))+"호":"—";}
+function rebArea84(value){
+  if(!value||!Number.isFinite(Number(value.average_price_eok)))return "";
+  return "84㎡급 평균 "+Number(value.average_price_eok).toLocaleString("ko-KR",{maximumFractionDigits:2})+"억원 · "+fmt(value.trade_count)+"건";
+}
+function rebArea84Title(value){return value?"전용 80~90㎡ · "+String(value.period_start||"?")+"~"+String(value.period_end||"?")+" · 국토부 실거래 공개 최신 표본":"";}
 function rebPalette(value){
   const number=Number(value)||0;
   if(number<=-.5)return {bg:"#8eb8e8",ink:"#173f69"};
@@ -2579,7 +2584,7 @@ function rebVolumeProvince(code){return rebTransactionVolume?.provinces?.find(ro
 function rebCombinedCities(province){
   const priceRows=Array.isArray(province?.cities)?province.cities:[],volumeRows=Array.isArray(rebVolumeProvince(province?.code)?.cities)?rebVolumeProvince(province.code).cities:[];
   const combined=new Map();
-  priceRows.forEach(row=>combined.set(String(row.code),{code:row.code,name:row.name,price:Number(row.value)}));
+  priceRows.forEach(row=>combined.set(String(row.code),{code:row.code,name:row.name,price:Number(row.value),area84:row.area_84_price||null}));
   volumeRows.forEach(row=>{const key=String(row.code),current=combined.get(key)||{code:row.code,name:row.name,price:null};current.volume=Number(row.value);combined.set(key,current);});
   return [...combined.values()];
 }
@@ -2594,11 +2599,11 @@ function renderRebCities(province){
   const mode=byId("rebCitySort")?.value||"price_high",field=mode.startsWith("volume")?"volume":"price",lowFirst=mode.endsWith("low");
   const sorted=[...cities].sort((a,b)=>{const av=Number.isFinite(a[field])?a[field]:(lowFirst?Infinity:-Infinity),bv=Number.isFinite(b[field])?b[field]:(lowFirst?Infinity:-Infinity);return lowFirst?av-bv:bv-av;});
   const rankLabel=field==="volume"?(lowFirst?"거래 적은":"거래 많은"):(lowFirst?"상승 낮은":"상승 높은");
-  byId("rebCityGrid").innerHTML=sorted.map((row,index)=>'<div class="reb-city-row" style="'+rebStyle(row.price,maximum)+'"><b>'+esc(rankLabel+" "+(index+1)+"위 · "+row.name)+'</b><span class="reb-city-values"><strong class="'+(Number(row.price)>=0?"up":"down")+'">'+esc(rebSigned(row.price))+'</strong><em>'+esc(rebVolume(row.volume))+'</em></span></div>').join("");
+  byId("rebCityGrid").innerHTML=sorted.map((row,index)=>'<div class="reb-city-row" style="'+rebStyle(row.price,maximum)+'"><b>'+esc(rankLabel+" "+(index+1)+"위 · "+row.name)+'</b><span class="reb-city-values"><strong class="'+(Number(row.price)>=0?"up":"down")+'">'+esc(rebSigned(row.price))+'</strong><em>'+esc(rebVolume(row.volume))+'</em>'+(row.area84?'<small title="'+esc(rebArea84Title(row.area84))+'">'+esc(rebArea84(row.area84))+'</small>':'')+'</span></div>').join("");
 }
 function renderRebTop20(payload){
   const rankings=payload.rankings||{},empty='<li class="reb-ranking-empty">공표 자료가 없습니다.</li>';
-  const draw=(id,rows,type)=>{const target=byId(id);if(!target)return;target.innerHTML=Array.isArray(rows)&&rows.length?rows.map((row,index)=>'<li><b><i>'+(index+1)+'</i>'+esc(row.province+" · "+row.name)+'</b><strong class="'+(type==="price"?(Number(row.value)>=0?"up":"down"):"volume")+'">'+esc(type==="price"?rebSigned(row.value):rebVolume(row.value))+'</strong></li>').join(""):empty;};
+  const draw=(id,rows,type)=>{const target=byId(id);if(!target)return;target.innerHTML=Array.isArray(rows)&&rows.length?rows.map((row,index)=>'<li><b><i>'+(index+1)+'</i><span>'+esc(row.province+" · "+row.name)+(row.area_84_price?'<small title="'+esc(rebArea84Title(row.area_84_price))+'">'+esc(rebArea84(row.area_84_price))+'</small>':'')+'</span></b><strong class="'+(type==="price"?(Number(row.value)>=0?"up":"down"):"volume")+'">'+esc(type==="price"?rebSigned(row.value):rebVolume(row.value))+'</strong></li>').join(""):empty;};
   draw("rebPriceTop20",rankings.price_change?.top,"price");
   draw("rebPriceBottom20",rankings.price_change?.bottom,"price");
   draw("rebVolumeTop20",rankings.transaction_volume?.top,"volume");

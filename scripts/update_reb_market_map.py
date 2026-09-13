@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -11,6 +12,7 @@ import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "web" / "content" / "reb_market_map.json"
+LATEST_TRADES = ROOT / "data" / "public" / "latest_trades.json"
 MAIN_URL = "https://www.reb.or.kr/r-one/portal/main/indexPage.do"
 DATA_URL = "https://www.reb.or.kr/r-one/portal/main/searchRegionalStatusMap.do"
 PRICE_PARAMS = {
@@ -82,15 +84,107 @@ def regional_rankings(metric: dict, limit: int = 20) -> dict:
     rows = []
     for province in metric["provinces"]:
         for city in province.get("cities", []):
-            rows.append({
+            item = {
                 "code": city["code"],
                 "name": city["name"],
                 "province": province["name"],
                 "value": city["value"],
-            })
+            }
+            if city.get("area_84_price"):
+                item["area_84_price"] = city["area_84_price"]
+            rows.append(item)
     highest = sorted(rows, key=lambda row: (row["value"], row["province"], row["name"]), reverse=True)[:limit]
     lowest = sorted(rows, key=lambda row: (row["value"], row["province"], row["name"]))[:limit]
     return {"basis": "전국 시·군·구 공표지역", "top": highest, "bottom": lowest}
+
+
+def calculate_area_84_prices(rows: list[dict]) -> dict[str, dict]:
+    """전용 80~90㎡의 공개 최신 실거래 표본으로 시군구별 평균가격을 계산합니다."""
+    candidates = []
+    for row in rows:
+        try:
+            code = str(row.get("lawd_cd") or "").zfill(5)
+            area = float(row.get("area_m2") or 0)
+            price = float(row.get("price_eok") or 0)
+            trade_date = str(row.get("trade_date") or "")
+        except (TypeError, ValueError):
+            continue
+        if not re.fullmatch(r"\d{5}", code) or not (80 <= area <= 90) or price <= 0:
+            continue
+        if row.get("cancelled") or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", trade_date):
+            continue
+        candidates.append((code, trade_date, price))
+    if not candidates:
+        return {}
+    latest = max(datetime.strptime(row[1], "%Y-%m-%d") for row in candidates)
+    cutoff = latest - timedelta(days=365)
+    grouped: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    for code, trade_date, price in candidates:
+        if datetime.strptime(trade_date, "%Y-%m-%d") >= cutoff:
+            grouped[code].append((trade_date, price))
+    return {
+        code: {
+            "average_price_eok": round(sum(price for _, price in values) / len(values), 2),
+            "trade_count": len(values),
+            "period_start": min(date for date, _ in values),
+            "period_end": max(date for date, _ in values),
+        }
+        for code, values in grouped.items()
+    }
+
+
+def enrich_area_84_prices(payload: dict, rows: list[dict]) -> dict:
+    prices = calculate_area_84_prices(rows)
+    matched = 0
+    for province in payload.get("provinces", []):
+        province_samples = []
+        for city in province.get("cities", []):
+            value = prices.get(str(city.get("code") or "").zfill(5))
+            city.pop("area_84_price", None)
+            if value:
+                city["area_84_price"] = value
+                province_samples.append(value)
+                matched += 1
+        province.pop("area_84_price", None)
+        sample_count = sum(value["trade_count"] for value in province_samples)
+        if sample_count:
+            province["area_84_price"] = {
+                "average_price_eok": round(
+                    sum(value["average_price_eok"] * value["trade_count"] for value in province_samples) / sample_count,
+                    2,
+                ),
+                "trade_count": sample_count,
+                "period_start": min(value["period_start"] for value in province_samples),
+                "period_end": max(value["period_end"] for value in province_samples),
+            }
+    payload["area_84_prices"] = {
+        "label": "84㎡급 평균 실거래가격",
+        "area_basis": "전용 80~90㎡",
+        "calculation": "공개 최신 실거래 표본의 단순 평균",
+        "window": "최신 거래일 기준 최근 1년",
+        "matched_region_count": matched,
+        "source": {"publisher": "국토교통부 실거래가 공개시스템", "url": "https://rt.molit.go.kr/"},
+    }
+    if payload.get("transaction_volume"):
+        payload["rankings"] = {
+            "price_change": regional_rankings(payload),
+            "transaction_volume": regional_rankings(payload["transaction_volume"]),
+        }
+    return payload
+
+
+def read_latest_trades() -> list[dict]:
+    if not LATEST_TRADES.exists():
+        return []
+    payload = json.loads(LATEST_TRADES.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, list) else []
+
+
+def write_payload(payload: dict) -> None:
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    temporary = OUTPUT.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    temporary.replace(OUTPUT)
 
 
 def normalize_payload(price_rows: list[dict], collected_at: str, volume_rows: list[dict] | None = None) -> dict:
@@ -164,21 +258,23 @@ def snapshot_is_fresh(max_age_hours: int = 18) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(description="한국부동산원 R-ONE 지역별 월간 가격상승률·매매량을 안전하게 갱신합니다.")
     parser.add_argument("--force", action="store_true", help="18시간 이내에 갱신했더라도 다시 확인")
+    parser.add_argument("--local-prices-only", action="store_true", help="기존 R-ONE 파일의 84㎡급 실거래 평균만 다시 계산")
     args = parser.parse_args()
-    if not args.force and snapshot_is_fresh():
-        print("R-ONE 지역 가격상승률·매매량은 18시간 이내 검증된 스냅샷이 있어 갱신을 건너뜁니다.")
-        return
-    payload = fetch_payload()
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    temporary = OUTPUT.with_suffix(".tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    temporary.replace(OUTPUT)
+    if args.local_prices_only or (not args.force and snapshot_is_fresh()):
+        if not OUTPUT.exists():
+            raise SystemExit("84㎡급 가격을 결합할 R-ONE 스냅샷이 없습니다.")
+        payload = json.loads(OUTPUT.read_text(encoding="utf-8"))
+    else:
+        payload = fetch_payload()
+    payload = enrich_area_84_prices(payload, read_latest_trades())
+    write_payload(payload)
     price_city_count = sum(len(row["cities"]) for row in payload["provinces"])
     volume = payload["transaction_volume"]
     volume_city_count = sum(len(row["cities"]) for row in volume["provinces"])
     print(
         f"R-ONE 가격상승률·매매량 저장 완료: 가격 {payload['period']} 시군구 {price_city_count}곳, "
-        f"매매량 {volume['period']} 시군구 {volume_city_count}곳"
+        f"매매량 {volume['period']} 시군구 {volume_city_count}곳, "
+        f"84㎡급 평균가격 {payload['area_84_prices']['matched_region_count']}곳"
     )
 
 

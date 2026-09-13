@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/daily-update.yml"
       - "scripts/merge_incremental_public_data.py"
+      - "scripts/update_reb_market_map.py"
       - "tests/test_daily_data_automation.py"
       - "tests/test_incremental_public_merge.py"
       - "tests/test_ranked_news_archive.py"
@@ -59,6 +60,9 @@ jobs:
           PYTHONPATH: src
         run: python scripts/merge_incremental_public_data.py
 
+      - name: Refresh regional 84sqm average transaction prices
+        run: python scripts/update_reb_market_map.py --local-prices-only
+
       - name: Test
         id: test
         continue-on-error: true
@@ -79,7 +83,7 @@ jobs:
         run: |
           git config user.name "real-estate-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/public data/raw/complexes.csv web/content/news web/content/analysis
+          git add data/public data/raw/complexes.csv web/content/reb_market_map.json web/content/news web/content/analysis
           git commit -m "Daily update" || exit 0
           git pull --rebase origin main
           git push
