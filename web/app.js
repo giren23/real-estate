@@ -34,6 +34,7 @@ const mapNameGroupCache = new Map();
 const viewportLocalityCache = new Map();
 const PUBLIC_NOMINATIM="https://nominatim.openstreetmap.org";
 const PUBLIC_OVERPASS_ENDPOINTS=["https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter"];
+const SIDO_FALLBACK_CENTERS={"서울특별시":[37.5665,126.9780],"경기도":[37.4138,127.5183],"인천광역시":[37.4563,126.7052],"강원특별자치도":[37.8228,128.1555],"충청북도":[36.6357,127.4914],"충청남도":[36.5184,126.8000],"세종특별자치시":[36.4800,127.2890],"대전광역시":[36.3504,127.3845],"경상북도":[36.4919,128.8889],"전북특별자치도":[35.7175,127.1530],"대구광역시":[35.8714,128.6014],"경상남도":[35.4606,128.2132],"울산광역시":[35.5384,129.3114],"부산광역시":[35.1796,129.0756],"제주특별자치도":[33.4996,126.5312],"전남광주통합특별시":[35.1595,126.8526]};
 const MAX_VIEWPORT_MARKERS = 120, MIN_MARKER_ZOOM = 14;
 const MAX_REGION_MARKERS = 160;
 const MAX_NEARBY_GEOCODES = 0, NEARBY_RADIUS_KM = 3;
@@ -919,6 +920,7 @@ async function applyRegionSelection(){
     center=known[0].coord;
   }else{
     center=await geocode(label);
+    if(!center){const fallback=SIDO_FALLBACK_CENTERS[regionSelection.sido];if(fallback)center={lat:fallback[0],lng:fallback[1]};}
     if(center){mapLocalityAnchor={coord:center,lawd_cd:groups[0]?.lawd_cd||"",group:groups[0]};map.setView([center.lat,center.lng],15);}
   }
   if(center)populateRegionMarkers(markerGroups,center,selectionRunId,label,selectedKeys);
