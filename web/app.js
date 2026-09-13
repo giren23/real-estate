@@ -2093,8 +2093,8 @@ function bindTaxEstimator(board,container){
 
 function areaBenchmarkHtml(board){
   if(!board.series.length)return "";
-  if(!localApi)return '<section class="area-benchmark-panel"><div class="area-benchmark-head"><h3>전국 84㎡급 평당가 위치</h3><p>동·시·군 평균 대비</p></div><p class="area-benchmark-empty">메인 서버(로컬 PC)가 꺼져 있어 전국 비교 자료를 계산할 수 없습니다. PC 서버가 켜지면 자동으로 표시합니다.</p></section>';
-  return '<section class="area-benchmark-panel" data-area-benchmark-board="'+esc(board.id)+'" aria-live="polite"><div class="area-benchmark-head"><h3>전국 84㎡급 평당가 위치</h3><p>동·시·군 평균 대비</p></div><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 최신 월별 중앙 실거래가를 사용하며, 공급면적은 전용률 75% 가정으로 환산합니다.</p><p class="area-benchmark-loading">전국 비교 분포를 계산하는 중입니다…</p></section>';
+  if(!localApi)return '<section class="area-benchmark-panel"><div class="area-benchmark-head"><h3>수집된 전국 84㎡급 평당가 위치</h3><p>동·시·군 평균 대비</p></div><p class="area-benchmark-empty">메인 서버(로컬 PC)가 꺼져 있어 전국 비교 자료를 계산할 수 없습니다. PC 서버가 켜지면 자동으로 표시합니다.</p></section>';
+  return '<section class="area-benchmark-panel" data-area-benchmark-board="'+esc(board.id)+'" aria-live="polite"><div class="area-benchmark-head"><h3>수집된 전국 84㎡급 평당가 위치</h3><p>동·시·군 평균 대비</p></div><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 최신 월별 중앙 실거래가를 사용하며, 공급면적은 전용률 75% 가정으로 환산합니다.</p><p class="area-benchmark-loading">수집된 전국 비교 분포를 계산하는 중입니다…</p></section>';
 }
 
 function benchmarkPrice(value){return Number.isFinite(Number(value))?fmt(Math.round(Number(value)))+"만원/평":"자료 없음";}
@@ -2137,7 +2137,7 @@ async function loadAreaBenchmarks(board,container){
     if(activeGraphId!==board.id||!panel.isConnected)return;
     const colors=new Map(requested.map(entry=>[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name,entry.color]));
     const cards=(payload.items||[]).map(item=>areaBenchmarkCardHtml(item,colors.get(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))||"#6040a0"));
-    panel.innerHTML='<div class="area-benchmark-head"><h3>전국 84㎡급 평당가 위치</h3><p>동·시·군 평균 대비</p></div><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 최신 월별 중앙 실거래가를 사용하며, 공급면적은 전용률 75% 가정으로 환산합니다.</p>'+(cards.length?'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'<p class="area-benchmark-disclaimer">분포는 각 단지의 최신 월별 중앙값 1개씩으로 계산합니다. 동·시·군 표본의 거래월과 단지별 전용률은 서로 다를 수 있으므로 상대 위치를 살피는 참고 지표입니다.</p>';
+    panel.innerHTML='<div class="area-benchmark-head"><h3>수집된 전국 84㎡급 평당가 위치</h3><p>동·시·군 평균 대비</p></div><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 최신 월별 중앙 실거래가를 사용하며, 공급면적은 전용률 75% 가정으로 환산합니다.</p>'+(cards.length?'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'<p class="area-benchmark-disclaimer">분포는 현재 수집된 전국 단지의 최신 월별 중앙값 1개씩으로 계산합니다. 동·시·군 표본의 거래월과 단지별 전용률은 서로 다를 수 있으므로 상대 위치를 살피는 참고 지표입니다.</p>';
   }catch(error){
     if(panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="전국 비교 자료를 불러오지 못했습니다. 메인 서버 상태를 확인한 뒤 다시 열어보세요.";
   }
