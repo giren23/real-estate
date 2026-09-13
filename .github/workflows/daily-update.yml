@@ -27,26 +27,6 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Restore and save complete trade history
-        uses: actions/cache@v4
-        with:
-          path: data/raw/trades
-          key: trade-history-${{ github.run_id }}
-          restore-keys: |
-            trade-history-
-
-      - name: Check whether complete history is available
-        id: history
-        shell: bash
-        run: |
-          if [ -f data/raw/trades/.history-complete ]; then
-            echo "complete=true" >> "$GITHUB_OUTPUT"
-            echo "완전한 과거 이력 캐시를 확인했습니다."
-          else
-            echo "complete=false" >> "$GITHUB_OUTPUT"
-            echo "과거 이력 캐시가 없거나 불완전하여 전체 기간을 복구합니다."
-          fi
-
       - run: pip install -r requirements.txt
 
       - name: Refresh nationwide apartment directory
@@ -60,7 +40,6 @@ jobs:
 
       - name: Collect two latest months for all priority districts
         id: collect
-        if: steps.history.outputs.complete == 'true'
         continue-on-error: true
         env:
           MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
@@ -71,28 +50,10 @@ jobs:
           --priority-coverage
           --failure-report data/reports/trade_collection_failures.json
 
-      - name: Recover complete history when cache is missing
-        id: recover_history
-        if: steps.history.outputs.complete != 'true'
-        continue-on-error: true
-        env:
-          MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
-          PYTHONPATH: src
-        run: >
-          python -m realestate.cli.main collect
-          --all-history
-          --priority-coverage
-          --failure-report data/reports/trade_collection_failures.json
-
-      - name: Mark complete history cache
-        if: steps.recover_history.outcome == 'success'
-        shell: bash
-        run: touch data/raw/trades/.history-complete
-
-      - name: Publish successful and cached data
+      - name: Merge latest partitions without deleting published history
         env:
           PYTHONPATH: src
-        run: python -m realestate.cli.main publish
+        run: python scripts/merge_incremental_public_data.py
 
       - name: Test
         id: test
@@ -114,13 +75,13 @@ jobs:
         run: |
           git config user.name "real-estate-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/public data/raw/trades data/raw/complexes.csv web/content/news web/content/analysis
+          git add data/public data/raw/complexes.csv web/content/news web/content/analysis
           git commit -m "Daily update" || exit 0
           git pull --rebase origin main
           git push
 
       - name: Mark incomplete refresh as failed after saving successes
-        if: steps.directory.outcome == 'failure' || steps.collect.outcome == 'failure' || steps.recover_history.outcome == 'failure' || steps.test.outcome == 'failure'
+        if: steps.directory.outcome == 'failure' || steps.collect.outcome == 'failure' || steps.test.outcome == 'failure'
         run: |
           echo "::error::수집 또는 검증 일부가 실패했습니다. 성공한 데이터는 먼저 게시했고, 아래와 아티팩트에 상세 결과를 남깁니다."
           if [ -f data/reports/trade_collection_failures.json ]; then

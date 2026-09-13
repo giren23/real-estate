@@ -11,7 +11,9 @@ def test_all_public_data_families_have_at_least_daily_scheduled_refresh() -> Non
     assert 'cron: "10 21 * * *"' in real_estate
     assert "collect-complexes" in real_estate
     assert "--priority-coverage" in real_estate
-    assert "python -m realestate.cli.main publish" in real_estate
+    assert "python scripts/merge_incremental_public_data.py" in real_estate
+    assert "--all-history" not in real_estate
+    assert "without deleting published history" in real_estate
 
     assert 'cron: "15 */3 * * *"' in markets
     for script in (
