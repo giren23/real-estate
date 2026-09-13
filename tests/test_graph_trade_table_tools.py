@@ -27,4 +27,4 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "--trade-pastel" in stylesheet
     assert "--filter-color" in stylesheet
     assert 'href="graph-trade-tools.css?v=2"' in html
-    assert 'src="app.js?v=80"' in html
+    assert 'src="app.js?v=81"' in html

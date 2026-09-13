@@ -2410,6 +2410,14 @@ function initMap(){
   }).addTo(map);
   byId("mapState").textContent="무료 지도 연결됨";
   byId("mapState").classList.add("ready");
+  byId("resetMapView").addEventListener("click",()=>{
+    buildingRequestId++;
+    if(buildingAbortController)buildingAbortController.abort();
+    mapLocalityAnchor=null;
+    map.closePopup();
+    map.fitBounds([[33.0,124.3],[38.8,131.2]],{padding:[18,18],animate:true});
+    byId("mapState").textContent="대한민국 전체 지도로 초기화했습니다";
+  });
   updateMarkerAvailability();
   map.on("moveend",scheduleViewportMarkers);
   map.on("zoomend",()=>{updateMarkerAvailability();scheduleViewportMarkers();});

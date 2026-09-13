@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="전국 아파트를 검색하고 최대 20개 그래프 작업공간에서 평형별 장기 실거래가를 비교하고 즐겨찾기로 저장합니다.">
 <title>Korean real estate prices</title>
-<link rel="stylesheet" href="style.css?v=39">
+<link rel="stylesheet" href="style.css?v=40">
 <link rel="stylesheet" href="graph-favorites.css?v=5">
 <link rel="stylesheet" href="graph-trade-tools.css?v=2">
 <link rel="stylesheet" href="area-benchmark.css?v=2">
@@ -77,7 +77,8 @@
   <article class="panel map-panel">
     <div class="panel-head">
       <div><span class="step">1</span><h2>지도에서 단지 찾기</h2><span id="markerAvailability" class="marker-availability disabled">마커 생성 안 함</span></div>
-      <span id="mapState" class="map-state">무료 지도 준비 중</span>
+      <span id="mapState" class="sr-only" role="status" aria-live="polite">무료 지도 준비 중</span>
+      <button id="resetMapView" class="reset-map-view" type="button">지도 위치 초기화</button>
     </div>
     <div id="map">
       <div class="map-fallback">
@@ -130,6 +131,6 @@
     <button class="admin-login-submit" type="submit">관리자 모드 열기</button>
   </form>
 </dialog>
-<script src="app.js?v=80"></script>
+<script src="app.js?v=81"></script>
 </body>
 </html>
