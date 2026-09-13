@@ -1,4 +1,5 @@
 let allTrades = [], apartmentGroups = [], graphBoards = [], activeGraphId = null, map, infoWindow;
+const areaBenchmarkHistoryCache = new Map();
 let localApi = false, localMeta = {};
 const minorVersion = location.hostname.endsWith(".github.io") || new URLSearchParams(location.search).get("minor") === "1";
 const minorVersionBadge = document.getElementById("minorVersionBadge");
@@ -1274,7 +1275,7 @@ function addGraphBoard(){
 }
 
 function newGraphBoard(){
-  return {id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),periodYears:20,priceMode:"trade",chartWidth:100,chartHeight:0,economicWidth:100,tradeHistoryMonths:3,tradeHistorySortKey:"date",tradeHistorySortDirection:"desc",tradeHistoryHiddenGroups:[],tradeHistoryHiddenAreas:[],tradeHistoryOpen:false,series:[]};
+  return {id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),periodYears:20,priceMode:"trade",chartWidth:100,chartHeight:0,economicWidth:100,tradeHistoryMonths:1,tradeHistoryPeriodConfigured:false,tradeHistorySortKey:"date",tradeHistorySortDirection:"desc",tradeHistoryHiddenGroups:[],tradeHistoryHiddenSeries:[],tradeHistoryOpen:false,series:[]};
 }
 
 function ensureInitialGraphBoard(){
@@ -1301,7 +1302,7 @@ async function addSeries(group,requestedArea=null){
   if(!group.areas.length){setStatus(group.apt_name+"의 공식 실거래 평형이 아직 확인되지 않았습니다.",true);renderDetails(group,0);return false;}
   const requested=Number(requestedArea);
   const area=Number.isFinite(requested)&&group.areas.some(value=>Math.abs(Number(value)-requested)<.001)?requested:preferredArea(group);
-  board.series.push({id:makeId("series"),key:group.key,area,supplyPyeong:Math.max(1,defaultSupplyPyeong(area)),color:graphColors[board.series.length%graphColors.length].value,lineStyle:"solid"});
+  board.series.push({id:makeId("series"),key:group.key,area,supplyPyeong:Math.max(1,defaultSupplyPyeong(area)),color:graphColors[board.series.length%graphColors.length].value,lineStyle:"solid",benchmarkDong:false,benchmarkCity:false});
   renderGraphBoards();
   renderDetails(group,area);
   focusGroup(group);
@@ -1341,11 +1342,12 @@ function restoreGraphBoards(){
       chartWidth:Math.min(200,Math.max(100,Number(board.chartWidth)||100)),
       chartHeight:Number(board.chartHeight)>=260&&Number(board.chartHeight)<=720?Number(board.chartHeight):0,
       economicWidth:Math.min(200,Math.max(100,Number(board.economicWidth)||100)),
-      tradeHistoryMonths:[3,6,12,36,60,120,0].includes(Number(board.tradeHistoryMonths))?Number(board.tradeHistoryMonths):3,
+      tradeHistoryPeriodConfigured:Boolean(board.tradeHistoryPeriodConfigured),
+      tradeHistoryMonths:Boolean(board.tradeHistoryPeriodConfigured)&&[1,2,3,6,12,24,36,60,120,0].includes(Number(board.tradeHistoryMonths))?Number(board.tradeHistoryMonths):1,
       tradeHistorySortKey:["date","apt","area","price","floor"].includes(board.tradeHistorySortKey)?board.tradeHistorySortKey:"date",
       tradeHistorySortDirection:board.tradeHistorySortDirection==="asc"?"asc":"desc",
       tradeHistoryHiddenGroups:Array.isArray(board.tradeHistoryHiddenGroups)?board.tradeHistoryHiddenGroups.map(String):[],
-      tradeHistoryHiddenAreas:Array.isArray(board.tradeHistoryHiddenAreas)?board.tradeHistoryHiddenAreas.map(String):[],
+      tradeHistoryHiddenSeries:Array.isArray(board.tradeHistoryHiddenSeries)?board.tradeHistoryHiddenSeries.map(String):[],
       tradeHistoryOpen:Boolean(board.tradeHistoryOpen),
       favorite:Boolean(board.favorite),
       // Keep series even when the currently loaded catalog is a reduced public snapshot.
@@ -1356,7 +1358,9 @@ function restoreGraphBoards(){
         area:Number(series.area||0),
         supplyPyeong:Number(series.supplyPyeong||0),
         color:graphColors.some(color=>color.value===series.color)?series.color:graphColors[seriesIndex%graphColors.length].value,
-        lineStyle:graphLineStyle(series.lineStyle).value
+        lineStyle:graphLineStyle(series.lineStyle).value,
+        benchmarkDong:Boolean(series.benchmarkDong),
+        benchmarkCity:Boolean(series.benchmarkCity)
       })):[]
     }));
     const restoredActiveId=favorites?.activeGraphId||legacy?.activeGraphId;
@@ -1431,11 +1435,11 @@ function renderGraphBoards(){
   board.chartWidth=Math.min(200,Math.max(100,Number(board.chartWidth)||100));
   board.chartHeight=Number(board.chartHeight)>=260&&Number(board.chartHeight)<=720?Number(board.chartHeight):0;
   board.economicWidth=Math.min(200,Math.max(100,Number(board.economicWidth)||100));
-  if(![3,6,12,36,60,120,0].includes(Number(board.tradeHistoryMonths)))board.tradeHistoryMonths=3;
+  if(!board.tradeHistoryPeriodConfigured||![1,2,3,6,12,24,36,60,120,0].includes(Number(board.tradeHistoryMonths)))board.tradeHistoryMonths=1;
   if(!["date","apt","area","price","floor"].includes(board.tradeHistorySortKey))board.tradeHistorySortKey="date";
   if(!["asc","desc"].includes(board.tradeHistorySortDirection))board.tradeHistorySortDirection="desc";
   if(!Array.isArray(board.tradeHistoryHiddenGroups))board.tradeHistoryHiddenGroups=[];
-  if(!Array.isArray(board.tradeHistoryHiddenAreas))board.tradeHistoryHiddenAreas=[];
+  if(!Array.isArray(board.tradeHistoryHiddenSeries))board.tradeHistoryHiddenSeries=[];
   const defaultChartHeight=window.matchMedia("(max-width:600px)").matches?320:390;
   const shownChartHeight=board.chartHeight||defaultChartHeight;
   const chartSizeStyle='width:'+board.chartWidth+'%;'+(board.chartHeight?'height:'+board.chartHeight+'px;':'');
@@ -1531,6 +1535,7 @@ function renderGraphBoards(){
   byId("tradeHistoryPeriod").addEventListener("click",e=>e.stopPropagation());
   byId("tradeHistoryPeriod").addEventListener("change",e=>{
     board.tradeHistoryMonths=Number(e.target.value);
+    board.tradeHistoryPeriodConfigured=true;
     renderGraphBoards();markUnsaved("색상별 실거래 내역 기간을 변경했습니다.");
   });
   const tradeHistory=byId("graphBoards").querySelector(".graph-trade-history");
@@ -1542,21 +1547,21 @@ function renderGraphBoards(){
     board.tradeHistoryOpen=true;renderGraphBoards();markUnsaved("실거래 내역 정렬 순서를 변경했습니다.");
   }));
   tradeHistory.querySelectorAll("[data-trade-filter]").forEach(input=>input.addEventListener("change",()=>{
-    const property=input.dataset.tradeFilter==="group"?"tradeHistoryHiddenGroups":"tradeHistoryHiddenAreas";
+    const property=input.dataset.tradeFilter==="group"?"tradeHistoryHiddenGroups":"tradeHistoryHiddenSeries";
     const hidden=new Set(board[property]);
     if(input.checked)hidden.delete(input.value);else hidden.add(input.value);
     board[property]=[...hidden];board.tradeHistoryOpen=true;renderGraphBoards();markUnsaved("실거래 내역 필터를 변경했습니다.");
   }));
   tradeHistory.querySelectorAll("[data-trade-filter-all]").forEach(button=>button.addEventListener("click",()=>{
-    const property=button.dataset.tradeFilterAll==="group"?"tradeHistoryHiddenGroups":"tradeHistoryHiddenAreas";
+    const property=button.dataset.tradeFilterAll==="group"?"tradeHistoryHiddenGroups":"tradeHistoryHiddenSeries";
     board[property]=[];board.tradeHistoryOpen=true;renderGraphBoards();markUnsaved("실거래 내역 필터를 전체 선택했습니다.");
   }));
   tradeHistory.querySelectorAll("[data-trade-filter-only]").forEach(button=>button.addEventListener("click",e=>{
     e.preventDefault();e.stopPropagation();
     const kind=button.dataset.tradeFilterOnly,selector='[data-trade-filter="'+kind+'"]';
-    const property=kind==="group"?"tradeHistoryHiddenGroups":"tradeHistoryHiddenAreas";
+    const property=kind==="group"?"tradeHistoryHiddenGroups":"tradeHistoryHiddenSeries";
     board[property]=[...tradeHistory.querySelectorAll(selector)].map(input=>input.value).filter(value=>value!==button.value);
-    board.tradeHistoryOpen=true;renderGraphBoards();markUnsaved("선택한 "+(kind==="group"?"단지":"평형")+"만 표시합니다.");
+    board.tradeHistoryOpen=true;renderGraphBoards();markUnsaved("선택한 "+(kind==="group"?"단지":"단지 평형")+"만 표시합니다.");
   }));
   byId("graphBoards").querySelectorAll(".series-item").forEach(card=>{
     const series=board.series.find(item=>item.id===card.dataset.seriesId);
@@ -1566,6 +1571,9 @@ function renderGraphBoards(){
     });
     const supplyInput=card.querySelector(".supply-input");
     if(supplyInput)supplyInput.addEventListener("change",e=>{series.supplyPyeong=Math.max(1,Number(e.target.value)||1);renderGraphBoards();markUnsaved("공급면적을 변경했습니다.");});
+    const benchmarkDongToggle=card.querySelector(".benchmark-dong-toggle"),benchmarkCityToggle=card.querySelector(".benchmark-city-toggle");
+    if(benchmarkDongToggle)benchmarkDongToggle.addEventListener("change",e=>{series.benchmarkDong=e.target.checked;renderGraphBoards();markUnsaved(e.target.checked?"동별 84㎡급 평균선을 추가했습니다.":"동별 평균선을 숨겼습니다.");});
+    if(benchmarkCityToggle)benchmarkCityToggle.addEventListener("change",e=>{series.benchmarkCity=e.target.checked;renderGraphBoards();markUnsaved(e.target.checked?"시·군별 84㎡급 평균선을 추가했습니다.":"시·군 평균선을 숨겼습니다.");});
     card.querySelector(".color-select").addEventListener("change",e=>{
       series.color=e.target.value;renderGraphBoards();markUnsaved("그래프 색상을 변경했습니다.");
     });
@@ -1580,6 +1588,7 @@ function renderGraphBoards(){
   });
   const renderedBoard=byId("graphBoards").querySelector(".graph-board");
   renderBoardChart(board,renderedBoard);
+  loadAreaBenchmarkOverlays(board,renderedBoard);
   loadAreaBenchmarks(board,renderedBoard);
   refreshResultButtons();
 }
@@ -1598,7 +1607,7 @@ function seriesControl(board,series){
     '<select class="area-select" aria-label="'+esc(group.apt_name)+' 평형 선택">'+areaOptions+'</select>'+
     '<select class="color-select" aria-label="'+esc(group.apt_name)+' 색상 선택">'+colorOptions+'</select>'+
     '<select class="line-style-select" aria-label="'+esc(group.apt_name)+' 선 종류 선택">'+lineStyleOptions+'</select>'+
-    (board.priceMode==="pyeong"?'<label class="supply-control">공급면적(평)<input class="supply-input" type="number" min="1" step="0.1" value="'+fmt(Number(series.supplyPyeong)||Math.max(1,defaultSupplyPyeong(series.area)))+'" aria-label="'+esc(group.apt_name)+' 공급면적 평수"><small>최초값은 전용률 75% 추정</small></label>':"")+
+    (board.priceMode==="pyeong"?'<label class="supply-control">공급면적(평)<input class="supply-input" type="number" min="1" step="0.1" value="'+fmt(Number(series.supplyPyeong)||Math.max(1,defaultSupplyPyeong(series.area)))+'" aria-label="'+esc(group.apt_name)+' 공급면적 평수"><small>최초값은 전용률 75% 추정</small></label><fieldset class="benchmark-overlay-control"><legend>84㎡급 평균선</legend><label><input class="benchmark-dong-toggle" type="checkbox" '+(series.benchmarkDong?"checked":"")+'><span>동 평균</span></label><label><input class="benchmark-city-toggle" type="checkbox" '+(series.benchmarkCity?"checked":"")+'><span>시·군 평균</span></label></fieldset>':"")+
     '<button class="listing-link" type="button" aria-label="'+esc(group.apt_name)+' '+esc(String(Number(series.area)||0))+'제곱미터 네이버 매물 보기">'+esc(listingLabel)+'</button>'+
     '<button class="remove-btn" type="button" aria-label="'+esc(group.apt_name)+' 그래프에서 삭제">삭제</button></div>';
 }
@@ -2143,13 +2152,54 @@ async function loadAreaBenchmarks(board,container){
   }
 }
 
+async function loadAreaBenchmarkOverlays(board,container){
+  if(!localApi||board.priceMode!=="pyeong")return;
+  const enabled=board.series.filter(series=>series.benchmarkDong||series.benchmarkCity);
+  if(!enabled.length)return;
+  const groups=new Map(apartmentGroups.map(group=>[group.key,group]));
+  const requested=enabled.map(series=>{
+    const group=groups.get(series.key);
+    if(!group?.data_apt_name)return null;
+    return {series,item:{lawd_cd:String(group.lawd_cd||"").padStart(5,"0").slice(0,5),dong:String(group.dong||""),apt_name:String(group.data_apt_name)}};
+  }).filter(Boolean);
+  if(!requested.length)return;
+  const cacheKey=JSON.stringify(requested.map(entry=>entry.item));
+  try{
+    let payload=areaBenchmarkHistoryCache.get(cacheKey);
+    if(!payload){
+      const response=await fetch("/api/area-benchmarks?include_history=true&items="+encodeURIComponent(JSON.stringify(requested.map(entry=>entry.item))),{cache:"no-store"});
+      if(!response.ok)throw new Error("benchmark history unavailable");
+      payload=await response.json();areaBenchmarkHistoryCache.set(cacheKey,payload);
+    }
+    if(activeGraphId!==board.id||!container.isConnected)return;
+    const chart=charts.get(board.id+"-price");if(!chart)return;
+    const labels=chart.data.labels||[],source=new Map((payload.items||[]).map(item=>[String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name),item]));
+    const overlays=[];
+    requested.forEach(({series,item})=>{
+      const detail=source.get(item.lawd_cd+"|"+item.dong+"|"+item.apt_name),group=groups.get(series.key);
+      if(!detail||!group)return;
+      [["dong",series.benchmarkDong,"동 평균",[8,5],2.2],["city",series.benchmarkCity,"시·군 평균",[2,5],1.8]].forEach(([key,active,label,dash,width])=>{
+        if(!active)return;
+        const values=new Map((detail.history?.[key]||[]).map(row=>[String(row.month),Number(row.price_per_supply_pyeong_manwon)]));
+        if(!values.size)return;
+        overlays.push({benchmarkOverlay:true,label:group.apt_name+" · "+label+"(84㎡급)",data:labels.map(month=>values.get(month)??null),borderColor:series.color,backgroundColor:series.color,borderDash:dash,borderWidth:width,pointRadius:0,pointHoverRadius:3,tension:.12,spanGaps:true,fill:false,order:2});
+      });
+    });
+    chart.data.datasets=chart.data.datasets.filter(dataset=>!dataset.benchmarkOverlay).concat(overlays);
+    chart.update();
+    renderLatestValues(chart,value=>fmt(value)+"만원/평");
+  }catch(_error){
+    setStatus("동·시 평균선 자료를 불러오지 못했습니다. 메인 서버 연결을 확인해 주세요.",true);
+  }
+}
+
 function graphTradeHistoryHtml(board){
   let rows=board.series.flatMap(series=>{
     const group=apartmentGroups.find(item=>item.key===series.key);if(!group)return [];
     return group.trades.filter(row=>Number(row.area_m2)===Number(series.area)).map(row=>({series,group,row}));
   });
-  const periodMonths=[3,6,12,36,60,120,0].includes(Number(board.tradeHistoryMonths))?Number(board.tradeHistoryMonths):3;
-  const latestDate=String(rows.find(item=>/^\d{4}-\d{2}-\d{2}/.test(String(item.row.trade_date||"")))?.row.trade_date||"");
+  const periodMonths=[1,2,3,6,12,24,36,60,120,0].includes(Number(board.tradeHistoryMonths))?Number(board.tradeHistoryMonths):1;
+  const latestDate=rows.map(item=>String(item.row.trade_date||"").slice(0,10)).filter(value=>/^\d{4}-\d{2}-\d{2}$/.test(value)).sort().at(-1)||"";
   let filteredRows=rows;
   if(periodMonths&&latestDate){
     const cutoff=new Date(latestDate+"T00:00:00Z");
@@ -2157,21 +2207,23 @@ function graphTradeHistoryHtml(board){
     const cutoffDate=cutoff.toISOString().slice(0,10);
     filteredRows=rows.filter(item=>String(item.row.trade_date||"")>=cutoffDate);
   }
-  const groupOptions=[...new Map(board.series.map(series=>{const group=apartmentGroups.find(item=>item.key===series.key);return group?[String(group.key),group]:null;}).filter(Boolean)).values()];
-  const areaOptions=[...new Map(board.series.map(series=>[String(Number(series.area)),series])).values()].sort((a,b)=>Number(a.area)-Number(b.area));
-  const hiddenGroups=new Set(board.tradeHistoryHiddenGroups||[]),hiddenAreas=new Set(board.tradeHistoryHiddenAreas||[]);
-  filteredRows=filteredRows.filter(item=>!hiddenGroups.has(String(item.group.key))&&!hiddenAreas.has(String(Number(item.series.area))));
+  const seriesOptions=board.series.map(series=>({series,group:apartmentGroups.find(item=>item.key===series.key)})).filter(item=>item.group);
+  const hiddenGroups=new Set(board.tradeHistoryHiddenGroups||[]),hiddenSeries=new Set(board.tradeHistoryHiddenSeries||[]);
+  filteredRows=filteredRows.filter(item=>!hiddenGroups.has(String(item.group.key))&&!hiddenSeries.has(String(item.series.id)));
   const sortKey=board.tradeHistorySortKey||"date",direction=board.tradeHistorySortDirection==="asc"?1:-1;
   const sortValue=(item,key)=>key==="date"?String(item.row.trade_date||""):key==="apt"?String(item.group.apt_name||""):key==="area"?Number(item.series.area)||0:key==="price"?Number(item.row.price_eok)||0:Number(item.row.floor)||0;
   filteredRows.sort((a,b)=>{const left=sortValue(a,sortKey),right=sortValue(b,sortKey);return (typeof left==="string"?left.localeCompare(right,"ko"):(left-right))*direction;});
-  const periodOptions=[[3,"최근 3개월"],[6,"최근 6개월"],[12,"최근 1년"],[36,"최근 3년"],[60,"최근 5년"],[120,"최근 10년"],[0,"전체 기간"]]
+  const periodOptions=[[1,"최근 1개월"],[2,"최근 2개월"],[3,"최근 3개월"],[6,"최근 6개월"],[12,"최근 1년"],[24,"최근 2년"],[36,"최근 3년"],[60,"최근 5년"],[120,"최근 10년"],[0,"전체 기간"]]
     .map(([value,label])=>'<option value="'+value+'" '+(periodMonths===value?"selected":"")+'>'+label+'</option>').join("");
   const pastel=color=>{const hex=String(color||"").replace("#","");if(!/^[0-9a-f]{6}$/i.test(hex))return "rgba(81,54,129,.08)";return `rgba(${parseInt(hex.slice(0,2),16)},${parseInt(hex.slice(2,4),16)},${parseInt(hex.slice(4,6),16)},.10)`;};
   const body=filteredRows.map(({series,group,row})=>'<tr style="--trade-color:'+esc(series.color)+';--trade-pastel:'+pastel(series.color)+'"><td><i class="trade-color"></i>'+esc(String(row.trade_date||"—"))+'</td><td>'+esc(group.apt_name)+'</td><td>'+esc(areaComparisonLabel(series.area,series.supplyPyeong))+'</td><td>'+esc(fmt(Number(row.price_eok)))+'억원</td><td>'+esc(String(row.floor||"—"))+'층</td></tr>').join("");
-  const groupFilters=groupOptions.map(group=>'<label><input type="checkbox" data-trade-filter="group" value="'+esc(group.key)+'" '+(hiddenGroups.has(String(group.key))?"":"checked")+'><i style="background:'+esc(board.series.find(series=>series.key===group.key)?.color||"#64748b")+'"></i><span>'+esc(group.apt_name)+'</span><button type="button" data-trade-filter-only="group" value="'+esc(group.key)+'">이것만</button></label>').join("");
-  const areaFilters=areaOptions.map(series=>'<label><input type="checkbox" data-trade-filter="area" value="'+esc(String(Number(series.area)))+'" '+(hiddenAreas.has(String(Number(series.area)))?"":"checked")+'><span>'+esc(areaComparisonLabel(series.area,series.supplyPyeong))+'</span><button type="button" data-trade-filter-only="area" value="'+esc(String(Number(series.area)))+'">이것만</button></label>').join("");
+  const complexFilters=[...new Map(seriesOptions.map(item=>[String(item.group.key),item.group])).values()].map(group=>{
+    const items=seriesOptions.filter(item=>item.group.key===group.key);
+    const filters=items.map(({series})=>'<label style="--filter-color:'+esc(series.color)+'"><input type="checkbox" data-trade-filter="series" value="'+esc(series.id)+'" '+(hiddenSeries.has(String(series.id))?"":"checked")+'><i></i><span>'+esc(areaComparisonLabel(series.area,series.supplyPyeong))+'</span><button type="button" data-trade-filter-only="series" value="'+esc(series.id)+'">이것만</button></label>').join("");
+    return '<fieldset class="trade-complex-filter"><legend><i style="background:'+esc(items[0]?.series.color||"#64748b")+'"></i>'+esc(group.apt_name)+'</legend><div>'+filters+'</div></fieldset>';
+  }).join("");
   const arrow=key=>sortKey===key?(direction===1?" ↑":" ↓"):" ↕";
-  return '<details class="graph-trade-history" '+(board.tradeHistoryOpen?'open':'')+'><summary><span>색상별 실거래 내역 <b>'+filteredRows.length+'건</b></span><label class="trade-history-period">표시 기간 <select id="tradeHistoryPeriod" aria-label="색상별 실거래 내역 표시 기간">'+periodOptions+'</select></label><em>열 제목을 눌러 정렬하고 단지·평형을 골라보세요</em></summary><div class="trade-history-filters"><fieldset><legend>단지 필터 <button type="button" data-trade-filter-all="group">전체 선택</button></legend><div>'+groupFilters+'</div></fieldset><fieldset><legend>평형 필터 <button type="button" data-trade-filter-all="area">전체 선택</button></legend><div>'+areaFilters+'</div></fieldset></div><div class="graph-trade-table-wrap"><table><thead><tr><th><button type="button" data-trade-sort="date">거래일 · 그래프색'+arrow("date")+'</button></th><th><button type="button" data-trade-sort="apt">단지'+arrow("apt")+'</button></th><th><button type="button" data-trade-sort="area">평형'+arrow("area")+'</button></th><th><button type="button" data-trade-sort="price">거래금액'+arrow("price")+'</button></th><th><button type="button" data-trade-sort="floor">층'+arrow("floor")+'</button></th></tr></thead><tbody>'+(body||'<tr><td colspan="5">선택한 조건의 상세 거래가 없습니다.</td></tr>')+'</tbody></table></div></details>';
+  return '<details class="graph-trade-history" '+(board.tradeHistoryOpen?'open':'')+'><summary><span>색상별 실거래 내역 <b>'+filteredRows.length+'건</b></span><label class="trade-history-period">표시 기간 <select id="tradeHistoryPeriod" aria-label="색상별 실거래 내역 표시 기간">'+periodOptions+'</select></label><em>가장 최신 거래일을 기준으로 기간을 계산합니다</em></summary><div class="trade-history-filters"><div class="trade-filter-head"><b>단지별 평형 필터</b><button type="button" data-trade-filter-all="series">전체 표시</button></div><div class="trade-complex-filters">'+complexFilters+'</div></div><div class="graph-trade-table-wrap"><table><thead><tr><th><button type="button" data-trade-sort="date">거래일 · 그래프색'+arrow("date")+'</button></th><th><button type="button" data-trade-sort="apt">단지'+arrow("apt")+'</button></th><th><button type="button" data-trade-sort="area">평형'+arrow("area")+'</button></th><th><button type="button" data-trade-sort="price">거래금액'+arrow("price")+'</button></th><th><button type="button" data-trade-sort="floor">층'+arrow("floor")+'</button></th></tr></thead><tbody>'+(body||'<tr><td colspan="5">선택한 조건의 상세 거래가 없습니다.</td></tr>')+'</tbody></table></div></details>';
 }
 
 function renderBoardChart(board,container){

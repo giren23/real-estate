@@ -1,7 +1,4 @@
 .trade-history-filters {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid #e7edf0;
   background: #fbfcfd;
@@ -23,6 +20,17 @@
 .trade-history-filters label i { width: 8px; height: 8px; flex: none; border-radius: 50%; }
 .trade-history-filters label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trade-history-filters label > button { border: 0; border-left: 1px solid #d8d0e2; background: transparent; padding: 0 0 0 5px; color: #694b91; font-size: 9px; font-weight: 800; cursor: pointer; }
+.trade-filter-head { display:flex; align-items:center; justify-content:space-between; gap:8px; color:#344054; font-size:11px; }
+.trade-filter-head button { border:0; background:transparent; color:#5b3d88; font-size:10px; font-weight:800; text-decoration:underline; cursor:pointer; }
+.trade-complex-filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:8px; margin-top:8px; }
+.trade-complex-filter { min-width:0; margin:0; padding:8px; border:1px solid #dfe7ea; border-radius:9px; background:#fff; }
+.trade-complex-filter legend { display:flex; align-items:center; gap:5px; max-width:100%; padding:0 4px; color:#344054; font-size:11px; font-weight:800; }
+.trade-complex-filter legend i { width:8px; height:8px; flex:none; border-radius:50%; }
+.trade-complex-filter > div { display:flex; flex-wrap:wrap; gap:5px; }
+.trade-complex-filter label { border-color:color-mix(in srgb,var(--filter-color,#5b3d88) 22%,#dfe7ea); }
+.trade-complex-filter label:has(input:checked) { border-color:var(--filter-color,#5b3d88); background:color-mix(in srgb,var(--filter-color,#5b3d88) 10%,white); color:#3f2d59; }
+.trade-complex-filter input { accent-color:var(--filter-color,#5b3d88); }
+.trade-complex-filter label i { background:var(--filter-color,#5b3d88); }
 .graph-trade-history th button { display: flex; align-items: center; width: 100%; border: 0; background: transparent; padding: 0; color: inherit; font: inherit; font-weight: 800; text-align: left; white-space: nowrap; cursor: pointer; }
 .graph-trade-history th button:hover,
 .graph-trade-history th button:focus { color: #513681; text-decoration: underline; }

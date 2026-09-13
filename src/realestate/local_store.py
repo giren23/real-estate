@@ -407,6 +407,28 @@ class LocalStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def area_84_price_history(self, lawd_cd: str, dong: str, city_name: str) -> dict[str, list[dict]]:
+        """Monthly unweighted complex averages for a dong and its city/county."""
+        expression = "median_price_eok * 10000.0 / (area_m2 / 0.75 / 3.305785)"
+        with self.connect() as db:
+            dong_rows = db.execute(
+                f"""SELECT month, ROUND(AVG({expression}), 1) AS price_per_supply_pyeong_manwon,
+                           COUNT(*) AS sample_count
+                    FROM monthly_history
+                    WHERE lawd_cd=? AND dong=? AND area_m2 BETWEEN 80.0 AND 90.0
+                    GROUP BY month ORDER BY month""",
+                (lawd_cd, dong),
+            ).fetchall()
+            city_rows = db.execute(
+                f"""SELECT month, ROUND(AVG({expression}), 1) AS price_per_supply_pyeong_manwon,
+                           COUNT(*) AS sample_count
+                    FROM monthly_history
+                    WHERE region_name LIKE ? AND area_m2 BETWEEN 80.0 AND 90.0
+                    GROUP BY month ORDER BY month""",
+                (f"{city_name}%",),
+            ).fetchall()
+        return {"dong": [dict(row) for row in dong_rows], "city": [dict(row) for row in city_rows]}
+
     def trades(self, lawd_cd: str, dong: str, apt_name: str, area_m2: float | None = None, limit: int = 1000) -> list[dict]:
         sql = "SELECT * FROM transactions WHERE lawd_cd=? AND dong=? AND apt_name=?"
         params: list = [lawd_cd, dong, apt_name]
