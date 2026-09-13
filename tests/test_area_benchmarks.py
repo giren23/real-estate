@@ -72,7 +72,7 @@ def test_trend_analysis_marks_no_trade_and_ranks_available_windows() -> None:
     one_month = next(period for period in trend["periods"] if period["months"] == 1)
 
     assert trend["province_label"] == "경기도"
-    assert [period["months"] for period in trend["periods"]] == [1, 3, 6, 12, 36]
+    assert [period["months"] for period in trend["periods"]] == [1, 3, 6, 12, 36, 60, 84, 108, 132, 156, 180]
     assert three_months["status"] == "ok"
     assert three_months["trade_count"] == 2
     assert three_months["trend_pct_per_month"] > 0
@@ -83,6 +83,26 @@ def test_trend_analysis_marks_no_trade_and_ranks_available_windows() -> None:
     assert one_month["trend_fallback_used"] is True
     assert one_month["trend_pct_per_month"] > 0
     assert one_month["dong_trend_rank"]["rank"] == 1
+
+
+def test_trend_analysis_exposes_shared_scope_average_for_deduplicated_lines() -> None:
+    rows = []
+    for apt_name, prices in {
+        "시범한신": [("2026-01", 10), ("2026-02", 12)],
+        "효자촌(임광)": [("2026-01", 8), ("2026-02", 10)],
+    }.items():
+        for month, price in prices:
+            rows.append({"lawd_cd": "41135", "region_name": "경기도 성남분당구", "dong": "서현동", "apt_name": apt_name, "area_m2": 84, "month": month, "median_price_eok": price, "trade_count": 1})
+
+    first = build_trend_analysis(rows, {"lawd_cd": "41135", "dong": "서현동", "apt_name": "시범한신"}, "2026-02")
+    second = build_trend_analysis(rows, {"lawd_cd": "41135", "dong": "서현동", "apt_name": "효자촌(임광)"}, "2026-02")
+    first_period = next(period for period in first["periods"] if period["months"] == 3)
+    second_period = next(period for period in second["periods"] if period["months"] == 3)
+    first_locality = next(item for item in first_period["administrative_price_positions"] if item["level"] == "locality")
+    second_locality = next(item for item in second_period["administrative_price_positions"] if item["level"] == "locality")
+
+    assert first_locality["key"] == second_locality["key"]
+    assert first_locality["average_exclusive_pyeong_manwon"] == second_locality["average_exclusive_pyeong_manwon"]
 
 
 def test_trend_analysis_expands_three_month_window_until_rank_is_available() -> None:

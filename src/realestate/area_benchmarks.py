@@ -316,15 +316,15 @@ def build_trend_analysis(rows: Iterable[dict], requested: dict, as_of_month: str
     target_city_scope = _city_scope(target_scopes)
     target_city = target_city_scope["label"] if target_city_scope else "지역 미확인"
     province = str(target_meta.get("region_name") or "").split()[0] if target_meta.get("region_name") else "지역 미확인"
-    definitions = ((1, "최근 1개월"), (3, "최근 3개월"), (6, "최근 6개월"), (12, "최근 1년"), (36, "최근 3년"))
+    definitions = (
+        (1, "최근 1개월"), (3, "최근 3개월"), (6, "최근 6개월"),
+        (12, "최근 1년"), (36, "최근 3년"), (60, "최근 5년"),
+        (84, "최근 7년"), (108, "최근 9년"), (132, "최근 11년"),
+        (156, "최근 13년"), (180, "최근 15년"),
+    )
     labels = {months: label for months, label in definitions}
-    fallback_windows = {
-        36: (36,),
-        12: (12, 36),
-        6: (6, 12, 36),
-        3: (3, 6, 12, 36),
-        1: (1, 3, 6, 12, 36),
-    }
+    windows = tuple(months for months, _label in definitions)
+    fallback_windows = {months: tuple(window for window in windows if window >= months) for months in windows}
     scopes: dict[int, dict] = {}
     administrative_members: dict[str, list[str]] = defaultdict(list)
     for key, meta in metadata.items():
@@ -378,13 +378,19 @@ def build_trend_analysis(rows: Iterable[dict], requested: dict, as_of_month: str
         trend_scope = scope_data(trend_basis_months) if trend_basis_months is not None else exact
         strengths = trend_scope["strengths"]
         target_strength = strengths.get(target_key)
-        administrative_price_positions = [{
-            **scope,
-            "position": _rank(
-                target_average,
-                (exact["price_averages"][key] for key in exact["administrative_keys"].get(scope["key"], [])),
-            ),
-        } for scope in reversed(target_scopes)]
+        administrative_price_positions = []
+        for scope in reversed(target_scopes):
+            peer_values = [
+                exact["price_averages"][key]
+                for key in exact["administrative_keys"].get(scope["key"], [])
+                if exact["price_averages"].get(key) is not None
+            ]
+            peer_average = _average(peer_values)
+            administrative_price_positions.append({
+                **scope,
+                "average_exclusive_pyeong_manwon": round(peer_average, 1) if peer_average is not None else None,
+                "position": _rank(target_average, peer_values),
+            })
         administrative_trend_ranks = [{
             **scope,
             "rank": _rank(

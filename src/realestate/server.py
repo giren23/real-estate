@@ -205,7 +205,9 @@ def _area_benchmark_trend_rows(region_name: str) -> tuple[list[dict], str]:
         if cached and now - float(cached["created_at"]) < AREA_BENCHMARK_CACHE_SECONDS:
             return cached["rows"], cached["as_of_month"]
     as_of_month = STORE.latest_area_84_month()
-    rows = STORE.area_84_province_history(province, shift_month(as_of_month, -35)) if province and as_of_month else []
+    # The UI compares rolling windows through 15 years. Load that full range once
+    # per province, then reuse the cached aggregate for every selected complex.
+    rows = STORE.area_84_province_history(province, shift_month(as_of_month, -179)) if province and as_of_month else []
     with _area_benchmark_lock:
         _area_benchmark_trend_cache[province] = {"created_at": now, "as_of_month": as_of_month, "rows": rows}
     return rows, as_of_month

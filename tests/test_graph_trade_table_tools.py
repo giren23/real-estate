@@ -26,13 +26,13 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "trend_fallback_used" in script
     assert "min:yMin,max:yMax" in script
     assert "data-area-trend-comparison" in script
-    assert "spread*.2" in script
-    assert "Math.max(.75,Math.min(4" in script
-    assert "Math.max(-5,dataMin-padding)" in script
-    assert 'value<0||value>100?""' in script
-    assert "usable.flatMap" in script
-    assert "0%=최상위" in script
-    assert "높은 전용 평단가일수록 0%에 가까우며 그래프 위쪽" in script
+    assert "data-area-trend-level" in script
+    assert "enabledLevels.includes" in script
+    assert "addedScopes.has(scope.key)" in script
+    assert "average_exclusive_pyeong_manwon" in script
+    assert "Number(right.months)-Number(left.months)" in script
+    assert "오른쪽이 최근" in script
+    assert "행정구역 평균선 추가(기본 꺼짐)" in script
     assert "기간 내 거래" in script
     assert "area-benchmark-summary" in script
     assert "행정구역별 84㎡급 전용 평당가 위치" in script
@@ -46,9 +46,9 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "--trade-pastel" in stylesheet
     assert "--filter-color" in stylesheet
     assert 'href="graph-trade-tools.css?v=2"' in html
-    assert 'href="area-benchmark.css?v=6"' in html
+    assert 'href="area-benchmark.css?v=7"' in html
     assert 'href="reb-market-map.css?v=2"' in html
-    assert 'src="app.js?v=89"' in html
+    assert 'src="app.js?v=90"' in html
 
 
 def test_every_collapsible_heading_has_a_leading_state_shape() -> None:

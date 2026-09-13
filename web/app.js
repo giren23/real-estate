@@ -2153,36 +2153,45 @@ function areaTrendHtml(item,color){
   const rankBasis=latestRankPeriod?.trend_basis_label||latestRankPeriod?.label;
   const latestRanks=latestRankPeriod?.administrative_trend_ranks||[];
   const rankScales=latestRankPeriod?'<div class="trend-rank-latest"><p>가장 최근 순위 · <b>'+esc(rankBasis)+'</b> 월별 회귀기울기 사용'+(latestRankPeriod.trend_fallback_used?' (짧은 구간 표본 부족으로 자동 확대)':'')+'</p>'+latestRanks.map(entry=>trendRankScaleHtml(entry.label+" "+entry.level_label+" 추세강도",entry.rank,color)).join("")+'</div>':'';
-  return '<section class="area-trend-panel" data-area-trend-key="'+esc(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))+'"><div class="area-trend-head"><h5>기간별 가격 위치·추세강도</h5><span>'+esc(trends.as_of_month)+' 기준</span></div>'+noRecent+'<p class="area-trend-axis-note">가격 위치는 거래 없는 기간을 추정하지 않으며, 읍면동→구→시군→시도마다 별도 순위를 계산합니다. 추세 순위만 1→3→6→12→36개월 순으로 표본을 확대합니다.</p><div class="area-trend-table-wrap"><table><thead><tr><th>구간</th><th>기간 내 거래</th><th>평균 전용평당가</th><th>행정구역별 가격순위</th><th>추세강도</th><th>행정구역별 추세순위</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+rankScales+'</section>';
+  return '<section class="area-trend-panel" data-area-trend-key="'+esc(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))+'"><div class="area-trend-head"><h5>기간별 가격 위치·추세강도</h5><span>'+esc(trends.as_of_month)+' 기준</span></div>'+noRecent+'<p class="area-trend-axis-note">가격 위치는 거래 없는 기간을 추정하지 않으며, 읍면동→구→시군→시도마다 별도 순위를 계산합니다. 추세 표본이 부족하면 1개월부터 최대 15년까지 단계적으로 기간을 확대합니다.</p><div class="area-trend-table-wrap"><table><thead><tr><th>구간</th><th>기간 내 거래</th><th>평균 전용평당가</th><th>행정구역별 가격순위</th><th>추세강도</th><th>행정구역별 추세순위</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+rankScales+'</section>';
 }
-function renderAreaTrendCharts(panel,items,colors){
+function renderAreaTrendCharts(panel,items,colors,enabledLevels=[]){
   const canvas=panel.querySelector("[data-area-trend-comparison]");
   const usable=(items||[]).filter(item=>item.trends?.periods?.length);
   if(!canvas||!usable.length)return;
-  const labels=usable[0].trends.periods.map(period=>period.label);
-  const rankPosition=rank=>Number(rank?.rank)&&Number(rank?.total)>1?Number(((Number(rank.rank)-1)/(Number(rank.total)-1)*100).toFixed(1)):null;
-  const line=(item,data,color,label,dash=[])=>{
+  const orderedPeriods=[...usable[0].trends.periods].sort((left,right)=>Number(right.months)-Number(left.months));
+  const labels=orderedPeriods.map(period=>period.label);
+  const line=(data,color,label,dash=[],width=2.8)=>{
     const lastIndex=(()=>{for(let index=data.length-1;index>=0;index--)if(data[index]!==null&&Number.isFinite(Number(data[index])))return index;return -1;})();
-    return {label:item.apt_name+" · "+label,data,borderColor:color,backgroundColor:color+(color.startsWith("#")?"18":""),borderWidth:dash.length?2.1:2.8,borderDash:dash,pointStyle:dash.length?"rectRot":"circle",pointRadius:data.map((value,index)=>value==null?0:index===lastIndex?6:3),pointHoverRadius:7,tension:.22,spanGaps:false,fill:false};
+    return {label,data,borderColor:color,backgroundColor:color+(color.startsWith("#")?"18":""),borderWidth:width,borderDash:dash,pointStyle:dash.length?"rectRot":"circle",pointRadius:data.map((value,index)=>value==null?0:index===lastIndex?6:3),pointHoverRadius:7,tension:.22,spanGaps:false,fill:false};
   };
-  const datasets=usable.flatMap(item=>{
+  const datasets=usable.map(item=>{
     const key=String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name),color=colors.get(key)||"#6040a0";
-    const dashByLevel={locality:[],district:[7,3],municipality:[2,4],province:[10,4]};
-    const scopes=item.trends.administrative_scopes||[];
-    return scopes.map(scope=>{
-      const data=item.trends.periods.map(period=>{
-        const found=(period.administrative_price_positions||[]).find(entry=>entry.key===scope.key);
-        return rankPosition(found?.position);
+    const periodByMonths=new Map(item.trends.periods.map(period=>[Number(period.months),period]));
+    return line(orderedPeriods.map(period=>Number(periodByMonths.get(Number(period.months))?.average_exclusive_pyeong_manwon)||null),color,item.apt_name);
+  });
+  const levelStyle={locality:{color:"#0f8c7a",dash:[3,4]},district:{color:"#d97706",dash:[8,4]},municipality:{color:"#2563eb",dash:[2,4]},province:{color:"#7c3aed",dash:[11,4]}};
+  const addedScopes=new Set();
+  usable.forEach(item=>{
+    const periodByMonths=new Map(item.trends.periods.map(period=>[Number(period.months),period]));
+    (item.trends.administrative_scopes||[]).forEach(scope=>{
+      if(!enabledLevels.includes(scope.level)||addedScopes.has(scope.key))return;
+      addedScopes.add(scope.key);
+      const data=orderedPeriods.map(period=>{
+        const source=periodByMonths.get(Number(period.months));
+        const found=(source?.administrative_price_positions||[]).find(entry=>entry.key===scope.key);
+        return Number(found?.average_exclusive_pyeong_manwon)||null;
       });
-      return line(item,data,color,scope.label+" "+scope.level_label+" 내 위치",dashByLevel[scope.level]||[4,3]);
+      const style=levelStyle[scope.level]||{color:"#64748b",dash:[5,4]};
+      datasets.push(line(data,style.color,scope.full_label+" "+scope.level_label+" 평균",style.dash,2.1));
     });
   });
   const finite=datasets.flatMap(dataset=>dataset.data).filter(value=>value!==null&&Number.isFinite(Number(value))).map(Number);
   const dataMin=finite.length?Math.min(...finite):0,dataMax=finite.length?Math.max(...finite):100;
-  const spread=Math.max(dataMax-dataMin,1),padding=Math.max(.75,Math.min(4,spread*.2));
-  let yMin=Math.max(-5,dataMin-padding),yMax=Math.min(105,dataMax+padding);
-  if(yMax-yMin<2){const center=(dataMin+dataMax)/2;yMin=Math.max(-5,center-1);yMax=Math.min(105,center+1);}
-  const chart=new Chart(canvas,{type:"line",data:{labels,datasets},options:{maintainAspectRatio:false,responsive:true,layout:{padding:{top:10,bottom:8}},interaction:{mode:"index",intersect:false},scales:{x:{grid:{display:false}},y:{min:yMin,max:yMax,reverse:true,title:{display:true,text:"전용 평당가 상대 위치 (0%=최상위)"},ticks:{callback:value=>value<0||value>100?"":fmt(value)+"%"}}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:context=>context.raw==null?context.dataset.label+": 거래 없음":context.dataset.label+": "+fmt(context.raw)+"% 위치"}}}}});
+  const spread=Math.max(dataMax-dataMin,1),padding=Math.max(100,spread*.12);
+  const yMin=Math.max(0,dataMin-padding),yMax=dataMax+padding;
+  charts.get("area-trend-comparison")?.destroy();
+  const chart=new Chart(canvas,{type:"line",data:{labels,datasets},options:{maintainAspectRatio:false,responsive:true,layout:{padding:{top:10,bottom:8}},interaction:{mode:"index",intersect:false},scales:{x:{grid:{display:false},title:{display:true,text:"왼쪽은 장기, 오른쪽은 최근"}},y:{min:yMin,max:yMax,title:{display:true,text:"전용 평당가 (만원/전용평)"},ticks:{callback:value=>fmt(value)+"만원"}}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:context=>context.raw==null?context.dataset.label+": 거래 없음":context.dataset.label+": "+fmt(context.raw)+"만원/전용평"}}}}});
   charts.set("area-trend-comparison",chart);
 }
 function developmentOpportunityHtml(item){
@@ -2225,8 +2234,12 @@ async function loadAreaBenchmarks(board,container){
     if(activeGraphId!==board.id||!panel.isConnected)return;
     const colors=new Map(requested.map(entry=>[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name,entry.color]));
     const cards=(payload.items||[]).map(item=>areaBenchmarkCardHtml(item,colors.get(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))||"#6040a0"));
-    panel.innerHTML='<summary class="area-benchmark-summary"><span><b>행정구역별 84㎡급 전용 평당가 위치</b><small>시도·시군구·읍면동 단계 비교 · 클릭하여 접기/펼치기</small></span><i aria-hidden="true"></i></summary><div class="area-benchmark-body"><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 실거래를 전용면적으로 나눈 전용 평당가 기준입니다. 선택 단지를 읍·면·동, 구, 시·군, 시도 순으로 각각 같은 행정단계의 단지와 비교합니다.</p>'+(cards.length?'<section class="area-trend-comparison"><div class="area-trend-head"><h4>선택 단지 행정구역별 상대 위치 추세</h4><span>모든 선택 단지를 한 그래프에 표시</span></div><div class="area-trend-chart"><canvas data-area-trend-comparison aria-label="선택 단지 행정구역별 전용 평당가 상대 위치 추세 비교"></canvas></div><p class="area-trend-axis-note">단지별 색상은 유지하며 읍면동은 실선, 구·시군·시도는 서로 다른 점선으로 표시합니다. 높은 전용 평단가일수록 0%에 가까우며 그래프 위쪽에 놓입니다. 비슷한 구간에 선이 모이면 실제 데이터 폭에 맞춰 자동 확대합니다.</p></section><div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'<p class="area-benchmark-disclaimer">분포와 순위는 현재 수집된 단지의 월별 중앙값으로 계산합니다. 각 행정단계는 서로 섞지 않으며, 가격 위치는 거래 없는 기간을 보간하지 않고 상승 강도는 월별 전용평당가 회귀기울기로 계산해 표본이 부족하면 최대 3년까지 자동 확대합니다.</p></div>';
+    panel.innerHTML='<summary class="area-benchmark-summary"><span><b>행정구역별 84㎡급 전용 평당가 위치</b><small>선택 단지 기본 표시 · 행정구역 평균선 선택 가능 · 클릭하여 접기/펼치기</small></span><i aria-hidden="true"></i></summary><div class="area-benchmark-body"><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 실거래를 전용면적으로 나눈 전용 평당가 기준입니다. 그래프에는 선택 단지만 기본 표시하며, 필요한 행정구역 평균선만 직접 켤 수 있습니다.</p>'+(cards.length?'<section class="area-trend-comparison"><div class="area-trend-head"><h4>선택 단지 전용평당가 추세</h4><span>15년 전부터 최근 1개월까지 · 오른쪽이 최근</span></div><fieldset class="area-trend-scope-controls"><legend>행정구역 평균선 추가(기본 꺼짐)</legend><label><input type="checkbox" data-area-trend-level="locality"><span>동·읍·면</span></label><label><input type="checkbox" data-area-trend-level="district"><span>구</span></label><label><input type="checkbox" data-area-trend-level="municipality"><span>시·군</span></label><label><input type="checkbox" data-area-trend-level="province"><span>시도</span></label></fieldset><div class="area-trend-chart"><canvas data-area-trend-comparison aria-label="선택 단지와 선택한 행정구역의 84㎡급 전용 평당가 추세 비교"></canvas></div><p class="area-trend-axis-note">같은 동·읍·면, 구, 시·군, 시도 평균선은 여러 단지가 공유해도 한 번만 표시합니다. 세 단지가 같은 성남시·분당구라면 시·구선은 하나이고, 같은 동인 단지끼리는 동선도 하나로 통합됩니다.</p></section><div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'<p class="area-benchmark-disclaimer">분포와 순위는 현재 수집된 단지의 월별 중앙값으로 계산합니다. 새 전국 실거래가가 들어오면 서버가 같은 규칙으로 다시 계산하며 GPT를 사용하지 않습니다. 가격 위치는 거래 없는 기간을 보간하지 않고 상승 강도는 월별 전용평당가 회귀기울기로 계산해 표본이 부족하면 더 긴 기간으로 자동 확대합니다.</p></div>';
     renderAreaTrendCharts(panel,payload.items||[],colors);
+    panel.querySelectorAll("[data-area-trend-level]").forEach(toggle=>toggle.addEventListener("change",()=>{
+      const enabled=[...panel.querySelectorAll("[data-area-trend-level]:checked")].map(input=>input.dataset.areaTrendLevel);
+      renderAreaTrendCharts(panel,payload.items||[],colors,enabled);
+    }));
     void loadDevelopmentOpportunities(panel,requested);
   }catch(error){
     if(panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="전국 비교 자료를 불러오지 못했습니다. 메인 서버 상태를 확인한 뒤 다시 열어보세요.";

@@ -9,6 +9,11 @@ on:
     paths:
       - ".github/workflows/economic-indicators-daily.yml"
       - "scripts/update_economic_news.py"
+      - "scripts/update_reb_market_map.py"
+      - "scripts/update_economic_context.py"
+      - "scripts/update_market_snapshot.py"
+      - "scripts/update_editorial_analysis.py"
+      - "scripts/update_investment_briefing.py"
 
 permissions:
   contents: write
