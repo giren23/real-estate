@@ -1,4 +1,4 @@
-from realestate.area_benchmarks import build_index, resolve_requested
+from realestate.area_benchmarks import build_index, build_trend_analysis, resolve_requested
 
 
 def test_area_benchmark_reports_dong_and_city_percentile() -> None:
@@ -26,3 +26,20 @@ def test_area_benchmark_uses_84_square_meter_class_only() -> None:
 
     assert item["area_m2"] == 84.8
     assert item["price_per_supply_pyeong_manwon"] > 0
+
+
+def test_trend_analysis_marks_no_trade_and_ranks_available_windows() -> None:
+    rows = []
+    for apt_name, prices in {"가": [("2026-01", 8), ("2026-02", 10)], "나": [("2026-01", 9), ("2026-02", 9)], "다": [("2026-01", 7), ("2026-03", 8)]}.items():
+        for month, price in prices:
+            rows.append({"lawd_cd": "41110", "region_name": "경기도 수원시", "dong": "매산동", "apt_name": apt_name, "area_m2": 84, "month": month, "median_price_eok": price, "trade_count": 1})
+
+    trend = build_trend_analysis(rows, {"lawd_cd": "41110", "dong": "매산동", "apt_name": "가"}, "2026-03")
+    three_months = next(period for period in trend["periods"] if period["months"] == 3)
+    one_month = next(period for period in trend["periods"] if period["months"] == 1)
+
+    assert trend["province_label"] == "경기도"
+    assert three_months["status"] == "ok"
+    assert three_months["trend_pct_per_month"] > 0
+    assert three_months["dong_trend_rank"]["rank"] == 1
+    assert one_month["status"] == "no_trade"

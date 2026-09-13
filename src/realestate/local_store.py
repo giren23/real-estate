@@ -429,6 +429,27 @@ class LocalStore:
             ).fetchall()
         return {"dong": [dict(row) for row in dong_rows], "city": [dict(row) for row in city_rows]}
 
+    def latest_area_84_month(self) -> str:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT MAX(month) FROM monthly_history WHERE area_m2 BETWEEN 80.0 AND 90.0"
+            ).fetchone()
+        return str(row[0] or "")
+
+    def area_84_province_history(self, province_name: str, start_month: str) -> list[dict]:
+        """Return 84㎡-class rows for rolling province/dong position and trend ranks."""
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT lawd_cd, region_name, dong, apt_name, area_m2, month,
+                          median_price_eok, trade_count
+                   FROM monthly_history
+                   WHERE region_name LIKE ? AND month>=?
+                     AND area_m2 BETWEEN 80.0 AND 90.0 AND median_price_eok>0
+                   ORDER BY month""",
+                (f"{province_name}%", start_month),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def trades(self, lawd_cd: str, dong: str, apt_name: str, area_m2: float | None = None, limit: int = 1000) -> list[dict]:
         sql = "SELECT * FROM transactions WHERE lawd_cd=? AND dong=? AND apt_name=?"
         params: list = [lawd_cd, dong, apt_name]

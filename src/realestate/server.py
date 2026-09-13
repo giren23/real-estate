@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from realestate.area_benchmarks import build_index, city_label, resolve_requested
+from realestate.area_benchmarks import build_index, build_trend_analysis, city_label, resolve_requested, shift_month
 from realestate.local_store import LocalStore
 from realestate.official_prices import OfficialPriceStore
 
@@ -44,6 +44,7 @@ AREA_BENCHMARK_CACHE_SECONDS = 15 * 60
 _area_benchmark_cache: dict[str, object] = {"created_at": 0.0, "index": None}
 _area_benchmark_lock = threading.Lock()
 _area_benchmark_history_cache: dict[str, dict] = {}
+_area_benchmark_trend_cache: dict[str, dict] = {}
 
 
 def _read_collection_state() -> dict:
@@ -193,10 +194,25 @@ def _area_benchmark_history(lawd_cd: str, dong: str, region_name: str) -> dict:
     return history
 
 
+def _area_benchmark_trend_rows(region_name: str) -> tuple[list[dict], str]:
+    province = str(region_name or "").split()[0]
+    now = time.monotonic()
+    with _area_benchmark_lock:
+        cached = _area_benchmark_trend_cache.get(province)
+        if cached and now - float(cached["created_at"]) < AREA_BENCHMARK_CACHE_SECONDS:
+            return cached["rows"], cached["as_of_month"]
+    as_of_month = STORE.latest_area_84_month()
+    rows = STORE.area_84_province_history(province, shift_month(as_of_month, -35)) if province and as_of_month else []
+    with _area_benchmark_lock:
+        _area_benchmark_trend_cache[province] = {"created_at": now, "as_of_month": as_of_month, "rows": rows}
+    return rows, as_of_month
+
+
 @app.get("/api/area-benchmarks")
 def area_benchmarks(
     items: str = Query(min_length=2, max_length=12000),
     include_history: bool = Query(default=False),
+    include_trends: bool = Query(default=False),
 ) -> dict:
     """Compare selected complexes with local 84㎡-class monthly-median distributions."""
     try:
@@ -221,6 +237,10 @@ def area_benchmarks(
     if include_history:
         for row in rows:
             row["history"] = _area_benchmark_history(row["lawd_cd"], row["dong"], row["region_name"])
+    if include_trends:
+        for row in rows:
+            trend_rows, as_of_month = _area_benchmark_trend_rows(row["region_name"])
+            row["trends"] = build_trend_analysis(trend_rows, row, as_of_month) if trend_rows and as_of_month else None
     return {
         "basis": {
             "target": "전용 80~90㎡ 중 84㎡에 가장 가까운 최신 월별 중앙 실거래가",
