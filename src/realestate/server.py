@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from realestate.area_benchmarks import build_index, build_trend_analysis, city_label, resolve_requested, shift_month
+from realestate.development_opportunities import DevelopmentOpportunityStore
 from realestate.local_store import LocalStore
 from realestate.official_prices import OfficialPriceStore
 
@@ -22,6 +24,7 @@ from realestate.official_prices import OfficialPriceStore
 ROOT = Path(os.environ.get("AISERVER_ROOT", Path(__file__).resolve().parents[2]))
 STORE = LocalStore(ROOT)
 OFFICIAL_PRICES = OfficialPriceStore(ROOT / "data" / "local" / "official_prices.sqlite3")
+DEVELOPMENT_OPPORTUNITIES = DevelopmentOpportunityStore(ROOT)
 STORE.initialize()
 if not STORE.catalog_path.exists():
     STORE.import_complexes(ROOT / "data" / "raw" / "complexes.csv")
@@ -213,6 +216,7 @@ def area_benchmarks(
     items: str = Query(min_length=2, max_length=12000),
     include_history: bool = Query(default=False),
     include_trends: bool = Query(default=False),
+    include_development: bool = Query(default=False),
 ) -> dict:
     """Compare selected complexes with local 84㎡-class monthly-median distributions."""
     try:
@@ -241,6 +245,14 @@ def area_benchmarks(
         for row in rows:
             trend_rows, as_of_month = _area_benchmark_trend_rows(row["region_name"])
             row["trends"] = build_trend_analysis(trend_rows, row, as_of_month) if trend_rows and as_of_month else None
+    if include_development:
+        with ThreadPoolExecutor(max_workers=min(4, len(rows))) as executor:
+            futures = {
+                executor.submit(DEVELOPMENT_OPPORTUNITIES.get, row["region_name"], row["dong"], row["apt_name"]): row
+                for row in rows
+            }
+            for future in as_completed(futures):
+                futures[future]["development"] = future.result()
     return {
         "basis": {
             "target": "전용 80~90㎡ 중 84㎡에 가장 가까운 최신 월별 중앙 실거래가",

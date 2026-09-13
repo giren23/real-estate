@@ -8,7 +8,8 @@
 <link rel="stylesheet" href="style.css?v=40">
 <link rel="stylesheet" href="graph-favorites.css?v=5">
 <link rel="stylesheet" href="graph-trade-tools.css?v=2">
-<link rel="stylesheet" href="area-benchmark.css?v=4">
+<link rel="stylesheet" href="area-benchmark.css?v=5">
+<link rel="stylesheet" href="reb-market-map.css?v=1">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <!-- 시험용 MANIA 스타일: 원복하려면 아래 CSS와 mania-theme.js 연결만 제거하세요. -->
 <link rel="stylesheet" href="mania-theme.css?v=5">
@@ -91,6 +92,38 @@
   <div class="sr-only" aria-hidden="true"><span id="resultCount">0개</span><div id="results"></div></div>
 </section>
 
+<details class="panel reb-market-panel" id="rebMarketPanel" open>
+  <summary class="reb-market-summary">
+    <span><b>전국 아파트 매매가격지수 변동률 지도</b><small>한국부동산원 R-ONE 월간 공식 통계 · 클릭하여 접기/펼치기</small></span>
+    <i aria-hidden="true"></i>
+  </summary>
+  <div class="reb-market-body">
+    <div id="rebMarketStatus" class="reb-market-loading">최신 지역별 변동률을 불러오는 중입니다…</div>
+    <div id="rebMarketContent" hidden>
+      <div class="reb-market-headline">
+        <div><span>전국</span><strong id="rebNationalValue">—</strong></div>
+        <p><b id="rebMarketPeriod">—</b> 아파트 매매가격지수 전월 대비 변동률입니다. 시도를 누르면 아래에서 모든 시·군·구를 비교할 수 있습니다.</p>
+      </div>
+      <div class="reb-market-layout">
+        <section class="reb-cartogram-wrap" aria-labelledby="rebCartogramTitle">
+          <h3 id="rebCartogramTitle">시도별 상승·하락 지도</h3>
+          <div id="rebProvinceMap" class="reb-cartogram" role="group" aria-label="시도별 아파트 매매가격지수 변동률"></div>
+          <div class="reb-map-legend" aria-label="변동률 색상 범례"><span>큰 폭 하락</span><i></i><i></i><i></i><i></i><i></i><span>큰 폭 상승</span></div>
+        </section>
+        <aside class="reb-rankings" aria-label="시도별 상승 하락 순위">
+          <section><h3>상승 상위</h3><ol id="rebProvinceTop"></ol></section>
+          <section><h3>하락 상위</h3><ol id="rebProvinceBottom"></ol></section>
+        </aside>
+      </div>
+      <section class="reb-city-panel">
+        <div class="reb-city-head"><div><h3 id="rebCityTitle">시·군·구 변동률</h3><span id="rebCityMeta"></span></div><label>정렬<select id="rebCitySort"><option value="high">상승률 높은 순</option><option value="low">하락률 낮은 순</option></select></label></div>
+        <div id="rebCityGrid" class="reb-city-grid"></div>
+      </section>
+      <p class="reb-market-note">가격 자체의 상승률이 아니라 <b>한국부동산원 표본으로 산출한 매매가격지수의 전월 대비 변동률</b>입니다. 실거래 신고 자료와 조사 목적·산식이 다르므로 단지 실거래 그래프와 같은 값으로 해석하면 안 됩니다. <a href="https://www.reb.or.kr/r-one/portal/main/indexPage.do" target="_blank" rel="noopener">R-ONE 공식 통계 확인</a></p>
+    </div>
+  </div>
+</details>
+
 <section class="panel compare-panel">
   <div class="panel-head graph-title-row">
     <div><span class="step">2</span><h2>장기 실거래 그래프</h2></div>
@@ -131,6 +164,6 @@
     <button class="admin-login-submit" type="submit">관리자 모드 열기</button>
   </form>
 </dialog>
-<script src="app.js?v=85"></script>
+<script src="app.js?v=87"></script>
 </body>
 </html>

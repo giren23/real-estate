@@ -218,12 +218,13 @@ async function localRealEstateApi(request, env, incoming) {
   }
   if (env.UPSTREAM_ORIGIN) {
     const target = new URL(incoming.pathname + incoming.search, env.UPSTREAM_ORIGIN);
+    const timeoutMs = incoming.pathname === "/api/area-benchmarks" && incoming.searchParams.get("include_development") === "true" ? 30000 : 4500;
     try {
       const upstream = await fetch(target, {
         method: request.method === "HEAD" ? "HEAD" : "GET",
         headers: { "user-agent": "korean-real-estate-readonly-gateway/1.0" },
         redirect: "follow",
-        signal: AbortSignal.timeout(4500),
+        signal: AbortSignal.timeout(timeoutMs),
       });
       if (upstream.ok || upstream.status < 500) {
         const headers = new Headers(upstream.headers);
