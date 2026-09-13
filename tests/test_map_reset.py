@@ -30,3 +30,13 @@ def test_map_marker_recovery_works_without_local_pc_api() -> None:
     assert '"실거래 단지 "+markers.size' in script
     assert "marker.__approximate&&bounds.contains(marker.getLatLng())" in script
     assert "SIDO_FALLBACK_CENTERS" in script
+
+
+def test_cloudflare_worker_proxies_public_map_sources_when_pc_is_off() -> None:
+    worker = (ROOT / "cloudflare-worker" / "worker.js").read_text(encoding="utf-8")
+
+    assert "async function publicMapApi" in worker
+    assert "nominatim.openstreetmap.org/search" in worker
+    assert "nominatim.openstreetmap.org/reverse" in worker
+    assert "overpass-api.de/api/interpreter" in worker
+    assert 'x-real-estate-source", "public-map-fallback"' in worker

@@ -212,6 +212,59 @@ async function archivedRealEstateApi(request, env, incoming) {
   return new Response(request.method === "HEAD" ? null : object.body, {headers});
 }
 
+function mapApiResponse(upstream) {
+  const headers = new Headers(upstream.headers);
+  headers.delete("set-cookie");
+  headers.set("content-type", "application/json; charset=utf-8");
+  headers.set("cache-control", "public, max-age=300");
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("x-real-estate-source", "public-map-fallback");
+  return new Response(upstream.body, {status: upstream.status, statusText: upstream.statusText, headers});
+}
+
+async function fetchPublicMapJson(url, timeoutMs = 10000) {
+  const response = await fetch(url, {
+    headers: {accept: "application/json", "accept-language": "ko", "user-agent": "korean-real-estate-public-map/1.0"},
+    redirect: "follow",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) {
+    await response.body?.cancel();
+    return null;
+  }
+  return response;
+}
+
+async function publicMapApi(incoming) {
+  if (incoming.pathname === "/api/geocode") {
+    const query = (incoming.searchParams.get("q") || "").trim().slice(0, 180);
+    const limit = Math.min(5, Math.max(1, Number(incoming.searchParams.get("limit") || 1)));
+    if (query.length < 2) return json({detail: "주소 검색어가 너무 짧습니다."}, 400);
+    const target = new URL("https://nominatim.openstreetmap.org/search");
+    target.search = new URLSearchParams({format: "jsonv2", countrycodes: "kr", addressdetails: "1", limit: String(limit), q: query}).toString();
+    try { const response = await fetchPublicMapJson(target); if (response) return mapApiResponse(response); } catch (_error) {}
+  }
+  if (incoming.pathname === "/api/reverse-geocode") {
+    const lat = Number(incoming.searchParams.get("lat")), lon = Number(incoming.searchParams.get("lon"));
+    const zoom = Math.min(18, Math.max(3, Number(incoming.searchParams.get("zoom") || 16)));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < 32 || lat > 40 || lon < 123 || lon > 133) return json({detail: "국내 지도 좌표가 아닙니다."}, 400);
+    const target = new URL("https://nominatim.openstreetmap.org/reverse");
+    target.search = new URLSearchParams({format: "jsonv2", addressdetails: "1", zoom: String(zoom), lat: String(lat), lon: String(lon)}).toString();
+    try { const response = await fetchPublicMapJson(target); if (response) return mapApiResponse(response); } catch (_error) {}
+  }
+  if (incoming.pathname === "/api/map-complexes") {
+    const south=Number(incoming.searchParams.get("south")),west=Number(incoming.searchParams.get("west")),north=Number(incoming.searchParams.get("north")),east=Number(incoming.searchParams.get("east"));
+    if (![south,west,north,east].every(Number.isFinite) || south>=north || west>=east || north-south>.2 || east-west>.2 || south<32 || north>40 || west<123 || east>133) return json({detail:"지도 조회 범위가 올바르지 않습니다."},400);
+    const box=[south,west,north,east].map(value=>value.toFixed(6)).join(",");
+    const query='[out:json][timeout:12];(nwr["building"="apartments"]["name"]('+box+');nwr["building"="residential"]["name"]('+box+');nwr["landuse"="residential"]["name"]('+box+'););out center 1200;';
+    for (const endpoint of ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]) {
+      const target = new URL(endpoint); target.searchParams.set("data", query);
+      try { const response = await fetchPublicMapJson(target, 15000); if (response) return mapApiResponse(response); } catch (_error) {}
+    }
+  }
+  return null;
+}
+
 async function localRealEstateApi(request, env, incoming) {
   if (!PUBLIC_REAL_ESTATE_APIS.has(incoming.pathname)) {
     return unavailableApi("이 API는 보안을 위해 로컬 PC에서만 사용할 수 있습니다.");
@@ -238,6 +291,10 @@ async function localRealEstateApi(request, env, incoming) {
       // Fall through to the last fully verified immutable cloud snapshot.
     }
   }
+  if (["/api/map-complexes", "/api/geocode", "/api/reverse-geocode"].includes(incoming.pathname)) {
+    const publicResponse = await publicMapApi(incoming);
+    if (publicResponse) return publicResponse;
+  }
   return archivedRealEstateApi(request, env, incoming);
 }
 
@@ -258,7 +315,7 @@ export default {
     responseHeaders.delete("set-cookie");
     responseHeaders.set("x-content-type-options", "nosniff");
     responseHeaders.set("referrer-policy", "strict-origin-when-cross-origin");
-    responseHeaders.set("x-real-estate-version", "2026-09-05-hybrid-real-estate");
+    responseHeaders.set("x-real-estate-version", "2026-09-14-nationwide-map-fallback");
     responseHeaders.set("cache-control", /\.(?:js|css|png|jpg|jpeg|svg|webp|woff2?)$/i.test(incoming.pathname)
       ? "public, max-age=300"
       : "public, max-age=60, must-revalidate");
