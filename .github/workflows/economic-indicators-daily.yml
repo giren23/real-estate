@@ -14,6 +14,8 @@ on:
       - "scripts/update_market_snapshot.py"
       - "scripts/update_editorial_analysis.py"
       - "scripts/update_investment_briefing.py"
+      - "tests/test_economic_context.py"
+      - "tests/test_investment_briefing.py"
 
 permissions:
   contents: write
