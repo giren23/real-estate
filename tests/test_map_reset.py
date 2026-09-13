@@ -28,3 +28,4 @@ def test_map_marker_recovery_works_without_local_pc_api() -> None:
     assert "seedApproximateMarkers" in script
     assert "동 중심 기준 임시 위치" in script
     assert '"실거래 단지 "+markers.size' in script
+    assert "marker.__approximate&&bounds.contains(marker.getLatLng())" in script

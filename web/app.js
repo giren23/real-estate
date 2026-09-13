@@ -1041,6 +1041,7 @@ function syncViewportMarkers(){
   visible.sort((a,b)=>a.distance-b.distance);
   const candidates=regionFilteredKeys?visible.filter(item=>regionFilteredKeys.has(item.group.key)):visible;
   const selected=candidates.slice(0,currentMarkerLimit()),selectedKeys=new Set(selected.map(item=>item.group.key));
+  markers.forEach((marker,key)=>{if(marker.__approximate&&bounds.contains(marker.getLatLng()))selectedKeys.add(key);});
   markers.forEach((marker,key)=>{if(!selectedKeys.has(key)){map.removeLayer(marker);markers.delete(key);}});
   selected.forEach(item=>ensureMapMarker(item.group,item.coord));
   byId("mapState").textContent=selected.length?"화면 중심 주변 "+selected.length+"개 단지":"이 화면에서 확인된 단지 좌표가 없습니다";
