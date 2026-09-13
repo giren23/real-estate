@@ -905,10 +905,11 @@ function currentMarkerLimit(){return regionFilteredKeys?MAX_REGION_MARKERS:MAX_V
 async function applyRegionSelection(){
   const selectionRunId=++regionSelectionRunId;
   const groups=regionHierarchy.get(regionSelection.sido)?.get(regionSelection.sigungu)?.get(regionSelection.dong)||[];
-  const selectedKeys=new Set(groups.map(group=>group.key));
+  const markerGroups=groups.filter(hasActualTradeData);
+  const selectedKeys=new Set(markerGroups.map(group=>group.key));
   regionFilteredKeys=selectedKeys;
   clearMapMarkers();viewportRefreshSuspended=false;
-  const known=groups.map(group=>({group,coord:cachedCoordinate(group)})).filter(item=>item.coord);
+  const known=markerGroups.map(group=>({group,coord:cachedCoordinate(group)})).filter(item=>item.coord);
   known.slice(0,MAX_REGION_MARKERS).forEach(item=>ensureMapMarker(item.group,item.coord));
   const label=[shortSido(regionSelection.sido),regionSelection.sigungu,regionSelection.dong].join(" ");
   setStatus(label+"의 등록 단지 "+groups.length+"개를 지도에서 확인합니다.");
@@ -920,7 +921,7 @@ async function applyRegionSelection(){
     center=await geocode(label);
     if(center){mapLocalityAnchor={coord:center,lawd_cd:groups[0]?.lawd_cd||"",group:groups[0]};map.setView([center.lat,center.lng],15);}
   }
-  if(center)populateRegionMarkers(groups,center,selectionRunId,label,selectedKeys);
+  if(center)populateRegionMarkers(markerGroups,center,selectionRunId,label,selectedKeys);
   // Region selection positions the map and seeds its markers. Once positioned,
   // free the viewport so panning into a neighbouring dong can discover markers.
   regionFilteredKeys=null;
@@ -928,33 +929,42 @@ async function applyRegionSelection(){
 }
 
 async function populateRegionMarkers(groups,center,selectionRunId,label,selectedKeys){
+  seedApproximateMarkers(groups,center,map.getBounds());
   let located=0;
   for(const group of groups){
     if(selectionRunId!==regionSelectionRunId||!selectedKeys.has(group.key))return;
     let coord=cachedCoordinate(group);
     if(!coord){
-      const query=[normalizeAdministrativeAddress(group.region_name),group.dong,apartmentGeocodeName(group.directory_name||group.apt_name)].filter(Boolean).join(" ");
-      coord=await geocode(query);
-      if(coord&&haversine(center,coord)>8){delete geoCache[query];localStorage.setItem("aptGeoCache",JSON.stringify(geoCache));coord=null;}
+      coord=await geocodeNearbyGroup(group,center);
     }
     if(!coord)continue;
-    groupCoordinates.set(group.key,coord);ensureMapMarker(group,coord);located++;
+    ensureMapMarker(group,coord);located++;
     byId("mapState").textContent="지역 단지 좌표 확인 중 · "+located+" / "+groups.length+"개";
   }
   if(selectionRunId!==regionSelectionRunId)return;
-  byId("mapState").textContent="지역 단지 표시 완료 · "+markers.size+" / "+groups.length+"개";
-  setStatus(label+"의 등록 단지 "+groups.length+"개 중 좌표가 확인된 "+markers.size+"개를 표시했습니다.");
+  const precision=mapMarkerPrecision();
+  byId("mapState").textContent="실거래 단지 "+markers.size+"개 · 정확 좌표 "+precision.verified+" · 동 중심 임시 "+precision.approximate;
+  setStatus(label+"의 실거래 단지 "+groups.length+"개를 모두 표시했습니다. 임시 위치 마커는 좌표가 확인되면 자동으로 정확한 위치로 바뀝니다.");
 }
 
-function ensureMapMarker(group,coord){
+function ensureMapMarker(group,coord,{approximate=false}={}){
   if(!map||!coord)return null;
-  groupCoordinates.set(group.key,coord);
+  if(!approximate)groupCoordinates.set(group.key,coord);
   let marker=markers.get(group.key);
-  if(marker)return marker;
-  marker=L.marker([coord.lat,coord.lng],{title:group.apt_name,alt:group.apt_name+" 단지 마커",keyboard:true}).addTo(map);
-  marker.bindPopup(mapPopupHtml(group),{closeOnClick:false});
+  if(marker){
+    if(marker.__approximate&&!approximate){
+      marker.setLatLng([coord.lat,coord.lng]);
+      marker.setOpacity(1);
+      marker.__approximate=false;
+      marker.bindPopup(mapPopupHtml(group,false),{closeOnClick:false});
+    }
+    return marker;
+  }
+  marker=L.marker([coord.lat,coord.lng],{title:group.apt_name+(approximate?" · 동 중심 임시 위치":""),alt:group.apt_name+" 단지 마커",keyboard:true,opacity:approximate ? .58 : 1}).addTo(map);
+  marker.__approximate=approximate;
+  marker.bindPopup(mapPopupHtml(group,approximate),{closeOnClick:false});
   marker.on("popupopen",event=>{
-    event.popup.setContent(mapPopupHtml(group));
+    event.popup.setContent(mapPopupHtml(group,Boolean(marker.__approximate)));
     const popupElement=event.popup.getElement();
     if(popupElement){
       L.DomEvent.disableClickPropagation(popupElement);
@@ -966,13 +976,39 @@ function ensureMapMarker(group,coord){
   return marker;
 }
 
-function mapPopupHtml(group){
+function mapPopupHtml(group,approximate=false){
   const latest=group.latest,area=Number(latest?.area_m2);
   const areaText=Number.isFinite(area)&&area>0?areaComparisonLabel(area):'';
   const priceText=latest?'최근 '+fmt(latest.price_eok)+'억원'+(areaText?' · '+areaText:''):'최근 거래 없음';
   const buildYear=Number(group.build_year||latest?.build_year);
   const yearText=Number.isFinite(buildYear)&&buildYear>0?' · '+buildYear+'년식':'';
-  return '<div class="map-popup"><b>'+esc(group.apt_name)+'</b><small>'+esc(addressOf(group))+yearText+'</small><strong>'+priceText+'</strong><button class="map-popup-add" type="button" data-key="'+esc(group.key)+'">'+esc(graphAddLabel(group))+'</button></div>';
+  const locationNote=approximate?'<small>동 중심 기준 임시 위치 · 단지 좌표 확인 중</small>':'';
+  return '<div class="map-popup"><b>'+esc(group.apt_name)+'</b><small>'+esc(addressOf(group))+yearText+'</small>'+locationNote+'<strong>'+priceText+'</strong><button class="map-popup-add" type="button" data-key="'+esc(group.key)+'">'+esc(graphAddLabel(group))+'</button></div>';
+}
+
+function stableMarkerHash(value){
+  let hash=2166136261;
+  for(const char of String(value||"")){hash^=char.charCodeAt(0);hash=Math.imul(hash,16777619);}
+  return hash>>>0;
+}
+
+function approximateCoordinate(group,center,index,total,bounds){
+  const safeTotal=Math.max(1,total),turn=(stableMarkerHash(group.key)%360)*Math.PI/180+index*2.399963;
+  const latSpan=Math.max(.002,Math.min(.014,(bounds.getNorth()-bounds.getSouth())*.34));
+  const lngSpan=Math.max(.002,Math.min(.018,(bounds.getEast()-bounds.getWest())*.34));
+  const radius=.18+.72*Math.sqrt((index+.5)/safeTotal);
+  return {lat:center.lat+Math.sin(turn)*latSpan*radius,lng:center.lng+Math.cos(turn)*lngSpan*radius};
+}
+
+function seedApproximateMarkers(groups,center,bounds){
+  const pending=groups.filter(group=>!cachedCoordinate(group)&&!markers.has(group.key)).slice(0,currentMarkerLimit()-markers.size);
+  pending.forEach((group,index)=>ensureMapMarker(group,approximateCoordinate(group,center,index,pending.length,bounds),{approximate:true}));
+}
+
+function mapMarkerPrecision(){
+  let approximate=0;
+  markers.forEach(marker=>{if(marker.__approximate)approximate++;});
+  return {approximate,verified:markers.size-approximate};
 }
 
 function indexCachedGroupCoordinates(){
@@ -1173,6 +1209,7 @@ async function discoverLocalViewportGroups(runId,bounds,center,lawdCd,localityTo
     const namedA=a.directory_name?1:0,namedB=b.directory_name?1:0;
     return viewportB-viewportA||sameDongB-sameDongA||namedB-namedA||(b.latest?.trade_date||"").localeCompare(a.latest?.trade_date||"");
   });
+  if(allowGeocode)seedApproximateMarkers(candidates.filter(group=>groupMatchesViewportLocality(group,localityTokens)),center,bounds);
   let added=0,geocoded=0;
   for(const group of candidates){
     if(runId!==buildingRequestId||viewportRefreshSuspended)return added;
@@ -1272,7 +1309,8 @@ async function refreshViewportBuildings(runId){
     syncViewportMarkers();
     await localFallbackPromise;
     await progressiveFallbackPromise;
-    byId("mapState").textContent=markers.size?"조회 완료 · 현재 화면 단지 "+markers.size+"개":"조회 완료 · 이 화면에 연결 가능한 단지 없음";
+    const precision=mapMarkerPrecision();
+    byId("mapState").textContent=markers.size?"실거래 단지 "+markers.size+"개 · 정확 좌표 "+precision.verified+" · 동 중심 임시 "+precision.approximate:"조회 완료 · 이 화면에 연결 가능한 단지 없음";
   }catch(error){
     if(error.name!=="AbortError"&&runId===buildingRequestId){
       const localityTokens=await localityPromise;
@@ -1281,7 +1319,8 @@ async function refreshViewportBuildings(runId){
       await localFallbackPromise;
       await progressiveFallbackPromise;
       if(runId!==buildingRequestId||viewportRefreshSuspended)return;
-      byId("mapState").textContent=markers.size?"외부 조회 실패 · 로컬 좌표 단지 "+markers.size+"개 표시":"외부 조회 실패 · 배율 문제 아님";
+      const precision=mapMarkerPrecision();
+      byId("mapState").textContent=markers.size?"실거래 단지 "+markers.size+"개 · 정확 좌표 "+precision.verified+" · 동 중심 임시 "+precision.approximate:"외부 조회 실패 · 배율 문제 아님";
     }
   }
 }

@@ -25,3 +25,6 @@ def test_map_marker_recovery_works_without_local_pc_api() -> None:
     assert "MAX_VIEWPORT_MARKERS = 120" in script
     assert "MAX_VIEWPORT_FALLBACK_GEOCODES = 30" in script
     assert "[region,group.dong,parcel,fullName]" in script
+    assert "seedApproximateMarkers" in script
+    assert "동 중심 기준 임시 위치" in script
+    assert '"실거래 단지 "+markers.size' in script
