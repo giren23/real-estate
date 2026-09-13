@@ -1453,6 +1453,7 @@ function renderGraphBoards(){
       '<span class="graph-size-actions"><button id="alignEconomicCharts" type="button">경제지표 그래프 정렬</button><button id="resetAllGraphScales" type="button">그래프 배율 초기화</button></span></div>'+
     '<div class="price-chart-scroll"><div class="chart-wrap graph-chart-wrap" style="'+chartSizeStyle+'"><canvas class="price-chart" aria-label="'+esc(board.name)+' '+chartHeading+' 그래프"></canvas></div></div></section>'+
     graphTradeHistoryHtml(board)+
+    areaBenchmarkHtml(board)+
     '<p class="chart-help">그래프 위를 움직이거나 누르면 모든 지표의 같은 연월을 잇는 세로선이 표시됩니다. 숫자 세로선은 아래 주요 정책 발표 시점입니다.</p>'+
     '<div class="economic-stack stacked">'+
       '<section class="stack-chart economic-indicator"><div class="economic-title"><b>원·달러 환율</b><span>월평균 · 원/USD</span></div><div class="economic-chart"><canvas class="exchange-chart" aria-label="원달러 환율 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> 1달러를 사는 데 필요한 원화입니다.</p><p><b>해석</b> 상승하면 원화 약세로 수입물가 부담이 커질 수 있고, 하락하면 원화 강세로 외국인 자금과 수입비용에 유리할 수 있습니다.</p></div></section>'+
@@ -1577,7 +1578,9 @@ function renderGraphBoards(){
     });
     card.querySelector(".remove-btn").addEventListener("click",()=>removeSeries(board.id,series.id));
   });
-  renderBoardChart(board,byId("graphBoards").querySelector(".graph-board"));
+  const renderedBoard=byId("graphBoards").querySelector(".graph-board");
+  renderBoardChart(board,renderedBoard);
+  loadAreaBenchmarks(board,renderedBoard);
   refreshResultButtons();
 }
 
@@ -2086,6 +2089,58 @@ function bindTaxEstimator(board,container){
   growthNumber.addEventListener("input",()=>{const value=clampGrowth(growthNumber.value);growthRange.value=value;growthValue.value=value+"%";render();});
   [purchase,official,homeCount,acquisitionYear,adjusted,urban].forEach(input=>input.addEventListener("input",render));
   render();
+}
+
+function areaBenchmarkHtml(board){
+  if(!board.series.length)return "";
+  if(!localApi)return '<section class="area-benchmark-panel"><div class="area-benchmark-head"><h3>전국 84㎡급 평당가 위치</h3><p>동·시·군 평균 대비</p></div><p class="area-benchmark-empty">메인 서버(로컬 PC)가 꺼져 있어 전국 비교 자료를 계산할 수 없습니다. PC 서버가 켜지면 자동으로 표시합니다.</p></section>';
+  return '<section class="area-benchmark-panel" data-area-benchmark-board="'+esc(board.id)+'" aria-live="polite"><div class="area-benchmark-head"><h3>전국 84㎡급 평당가 위치</h3><p>동·시·군 평균 대비</p></div><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 최신 월별 중앙 실거래가를 사용하며, 공급면적은 전용률 75% 가정으로 환산합니다.</p><p class="area-benchmark-loading">전국 비교 분포를 계산하는 중입니다…</p></section>';
+}
+
+function benchmarkPrice(value){return Number.isFinite(Number(value))?fmt(Math.round(Number(value)))+"만원/평":"자료 없음";}
+function benchmarkPosition(reference){
+  const z=Number(reference?.z_score);
+  if(!Number.isFinite(z))return 50;
+  return Math.max(2,Math.min(98,50+z/6*100));
+}
+function benchmarkPositionText(reference){
+  const count=Number(reference?.count)||0;
+  const z=Number(reference?.z_score),top=Number(reference?.top_percent);
+  if(count<2||!Number.isFinite(z))return "표본 "+fmt(count)+"개 · 표준편차 계산 불가";
+  const direction=z>0?"높음":z<0?"낮음":"같음";
+  const rank=Number.isFinite(top)?" · 상위 "+fmt(top)+"%":"";
+  return "평균 대비 "+(z>0?"+":"")+fmt(z)+"σ "+direction+rank+" · 표본 "+fmt(count)+"개";
+}
+function benchmarkReferenceHtml(label,reference,color){
+  const mean=benchmarkPrice(reference?.mean_manwon),position=benchmarkPosition(reference);
+  return '<article class="area-benchmark-reference"><div class="benchmark-reference-head"><b>'+esc(label)+' 평균 '+esc(mean)+'</b><span>'+esc(benchmarkPositionText(reference))+'</span></div><div class="sigma-track" style="--benchmark-position:'+position+'%;--benchmark-color:'+esc(color)+'"><i class="sigma-pin" aria-hidden="true"></i></div><div class="sigma-axis" aria-hidden="true"><span>저가 −3σ</span><span>평균</span><span>+3σ 고가</span></div></article>';
+}
+function areaBenchmarkCardHtml(item,color){
+  const title=item.apt_name+" · 전용 "+fmt(Number(item.area_m2))+"㎡급";
+  return '<article class="area-benchmark-card" style="--benchmark-color:'+esc(color)+'"><h4><i aria-hidden="true"></i>'+esc(title)+'</h4><div class="area-benchmark-price"><b>'+esc(benchmarkPrice(item.price_per_supply_pyeong_manwon))+'</b><span>추정 공급평 기준</span></div><p class="area-benchmark-meta">'+esc(item.region_name+" "+item.dong)+' · '+esc(String(item.month))+' 월 중앙가 · 거래 '+esc(fmt(Number(item.trade_count)))+'건</p><div class="area-benchmark-references">'+benchmarkReferenceHtml(item.dong+" 동",item.dong_reference,color)+benchmarkReferenceHtml(item.city_label+" 시·군",item.city_reference,color)+'</div></article>';
+}
+async function loadAreaBenchmarks(board,container){
+  const panel=container.querySelector('[data-area-benchmark-board="'+CSS.escape(board.id)+'"]');
+  if(!panel||!localApi||!board.series.length)return;
+  const groups=new Map(apartmentGroups.map(group=>[group.key,group]));
+  const requested=[...new Map(board.series.map(series=>{
+    const group=groups.get(series.key);
+    if(!group||!group.data_apt_name)return null;
+    const item={lawd_cd:String(group.lawd_cd||"").padStart(5,"0").slice(0,5),dong:String(group.dong||""),apt_name:String(group.data_apt_name)};
+    return [item.lawd_cd+"|"+item.dong+"|"+item.apt_name,{item,color:series.color}];
+  }).filter(Boolean)).values()];
+  if(!requested.length){panel.querySelector(".area-benchmark-loading").textContent="선택 단지의 비교용 지역 정보가 없어 전국 위치를 계산할 수 없습니다.";return;}
+  try{
+    const response=await fetch("/api/area-benchmarks?items="+encodeURIComponent(JSON.stringify(requested.map(entry=>entry.item))),{cache:"no-store"});
+    if(!response.ok)throw new Error("benchmark unavailable");
+    const payload=await response.json();
+    if(activeGraphId!==board.id||!panel.isConnected)return;
+    const colors=new Map(requested.map(entry=>[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name,entry.color]));
+    const cards=(payload.items||[]).map(item=>areaBenchmarkCardHtml(item,colors.get(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))||"#6040a0"));
+    panel.innerHTML='<div class="area-benchmark-head"><h3>전국 84㎡급 평당가 위치</h3><p>동·시·군 평균 대비</p></div><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 최신 월별 중앙 실거래가를 사용하며, 공급면적은 전용률 75% 가정으로 환산합니다.</p>'+(cards.length?'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'<p class="area-benchmark-disclaimer">분포는 각 단지의 최신 월별 중앙값 1개씩으로 계산합니다. 동·시·군 표본의 거래월과 단지별 전용률은 서로 다를 수 있으므로 상대 위치를 살피는 참고 지표입니다.</p>';
+  }catch(error){
+    if(panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="전국 비교 자료를 불러오지 못했습니다. 메인 서버 상태를 확인한 뒤 다시 열어보세요.";
+  }
 }
 
 function graphTradeHistoryHtml(board){

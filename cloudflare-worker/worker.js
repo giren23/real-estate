@@ -7,6 +7,7 @@ const PUBLIC_REAL_ESTATE_APIS = new Set([
   "/api/meta",
   "/api/history",
   "/api/trades",
+  "/api/area-benchmarks",
   "/api/map-complexes",
   "/api/geocode",
   "/api/reverse-geocode",

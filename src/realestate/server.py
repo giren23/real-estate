@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from realestate.area_benchmarks import build_index, resolve_requested
 from realestate.local_store import LocalStore
 from realestate.official_prices import OfficialPriceStore
 
@@ -39,6 +40,9 @@ _map_cache: list[dict] = []
 _geocode_cache: dict[str, object] = {}
 _nominatim_lock = threading.Lock()
 _last_nominatim_request = 0.0
+AREA_BENCHMARK_CACHE_SECONDS = 15 * 60
+_area_benchmark_cache: dict[str, object] = {"created_at": 0.0, "index": None}
+_area_benchmark_lock = threading.Lock()
 
 
 def _read_collection_state() -> dict:
@@ -160,6 +164,54 @@ def history(lawd_cd: str, dong: str, apt_name: str) -> list[dict]:
     if not rows:
         raise HTTPException(status_code=404, detail="이 단지의 공식 실거래 이력이 아직 없습니다.")
     return rows
+
+
+def _area_benchmark_index() -> tuple[dict, bool]:
+    now = time.monotonic()
+    with _area_benchmark_lock:
+        cached = _area_benchmark_cache.get("index")
+        created_at = float(_area_benchmark_cache.get("created_at") or 0)
+        if cached is not None and now - created_at < AREA_BENCHMARK_CACHE_SECONDS:
+            return cached, True
+        index = build_index(STORE.area_84_snapshot())
+        _area_benchmark_cache["index"] = index
+        _area_benchmark_cache["created_at"] = now
+        return index, False
+
+
+@app.get("/api/area-benchmarks")
+def area_benchmarks(items: str = Query(min_length=2, max_length=12000)) -> dict:
+    """Compare selected complexes with local 84㎡-class monthly-median distributions."""
+    try:
+        requested = json.loads(items)
+    except json.JSONDecodeError as error:
+        raise HTTPException(status_code=400, detail="비교할 단지 목록 형식이 올바르지 않습니다.") from error
+    if not isinstance(requested, list) or not requested or len(requested) > 20:
+        raise HTTPException(status_code=400, detail="비교할 단지는 1~20개여야 합니다.")
+    cleaned: list[dict] = []
+    for item in requested:
+        if not isinstance(item, dict):
+            continue
+        lawd_cd = str(item.get("lawd_cd") or "").zfill(5)[:5]
+        dong = str(item.get("dong") or "").strip()
+        apt_name = str(item.get("apt_name") or "").strip()
+        if lawd_cd and dong and apt_name and len(dong) <= 80 and len(apt_name) <= 160:
+            cleaned.append({"lawd_cd": lawd_cd, "dong": dong, "apt_name": apt_name})
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="비교할 단지 정보가 없습니다.")
+    index, cached = _area_benchmark_index()
+    rows = resolve_requested(index, cleaned)
+    return {
+        "basis": {
+            "target": "전용 80~90㎡ 중 84㎡에 가장 가까운 최신 월별 중앙 실거래가",
+            "supply_area": "공급면적은 전용률 75% 가정으로 환산",
+            "unit": "만원/추정 공급평",
+            "cache_seconds": AREA_BENCHMARK_CACHE_SECONDS,
+        },
+        "cached": cached,
+        "items": rows,
+        "unavailable_count": len(cleaned) - len(rows),
+    }
 
 
 @app.get("/api/trades")

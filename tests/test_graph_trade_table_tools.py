@@ -20,4 +20,4 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "--trade-pastel" in script
     assert "--trade-pastel" in stylesheet
     assert 'href="graph-trade-tools.css?v=1"' in html
-    assert 'src="app.js?v=77"' in html
+    assert 'src="app.js?v=78"' in html

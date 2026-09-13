@@ -387,6 +387,26 @@ class LocalStore:
                    ORDER BY area_m2, month""", (lawd_cd, dong, apt_name)
             )]
 
+    def area_84_snapshot(self) -> list[dict]:
+        """One latest, closest-to-84㎡ monthly median per complex for local benchmarks."""
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT lawd_cd, region_name, dong, apt_name, area_m2, month,
+                          median_price_eok, trade_count
+                   FROM (
+                       SELECT h.*,
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY lawd_cd, dong, apt_name
+                                  ORDER BY ABS(area_m2 - 84.0), month DESC, trade_count DESC
+                              ) AS row_number
+                       FROM monthly_history AS h
+                       WHERE area_m2 BETWEEN 80.0 AND 90.0
+                         AND median_price_eok > 0
+                   )
+                   WHERE row_number = 1"""
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def trades(self, lawd_cd: str, dong: str, apt_name: str, area_m2: float | None = None, limit: int = 1000) -> list[dict]:
         sql = "SELECT * FROM transactions WHERE lawd_cd=? AND dong=? AND apt_name=?"
         params: list = [lawd_cd, dong, apt_name]
