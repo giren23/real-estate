@@ -142,8 +142,9 @@ def shift_month(month: str, delta: int) -> str:
     return f"{serial // 12:04d}-{serial % 12 + 1:02d}"
 
 
-def _monthly_complex_values(rows: Iterable[dict]) -> tuple[dict[str, dict[str, float]], dict[str, dict]]:
+def _monthly_complex_values(rows: Iterable[dict]) -> tuple[dict[str, dict[str, float]], dict[str, dict], dict[str, dict[str, int]]]:
     buckets: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    trade_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     metadata: dict[str, dict] = {}
     for row in rows:
         key = complex_key(row["lawd_cd"], row["dong"], row["apt_name"])
@@ -151,6 +152,7 @@ def _monthly_complex_values(rows: Iterable[dict]) -> tuple[dict[str, dict[str, f
         if value <= 0:
             continue
         buckets[key][str(row["month"])].append(value)
+        trade_counts[key][str(row["month"])] += max(0, int(row.get("trade_count") or 0))
         metadata[key] = {
             "lawd_cd": str(row["lawd_cd"]).zfill(5)[:5],
             "region_name": str(row.get("region_name") or ""),
@@ -161,7 +163,7 @@ def _monthly_complex_values(rows: Iterable[dict]) -> tuple[dict[str, dict[str, f
         key: {month: sum(values) / len(values) for month, values in months.items()}
         for key, months in buckets.items()
     }
-    return monthly, metadata
+    return monthly, metadata, {key: dict(values) for key, values in trade_counts.items()}
 
 
 def _average(values: Iterable[float]) -> float | None:
@@ -194,7 +196,7 @@ def _trend_strength(month_values: dict[str, float]) -> float | None:
 
 def build_trend_analysis(rows: Iterable[dict], requested: dict, as_of_month: str) -> dict:
     """Rolling price location and trend-strength ranks for one selected complex."""
-    monthly, metadata = _monthly_complex_values(rows)
+    monthly, metadata, monthly_trade_counts = _monthly_complex_values(rows)
     target_key = complex_key(requested.get("lawd_cd", ""), requested.get("dong", ""), requested.get("apt_name", ""))
     target_meta = metadata.get(target_key, {
         "lawd_cd": str(requested.get("lawd_cd") or ""), "dong": str(requested.get("dong") or ""),
@@ -202,7 +204,7 @@ def build_trend_analysis(rows: Iterable[dict], requested: dict, as_of_month: str
     })
     target_city = city_label(target_meta.get("region_name", ""))
     province = str(target_meta.get("region_name") or "").split()[0] if target_meta.get("region_name") else "지역 미확인"
-    definitions = ((36, "최근 3년"), (12, "최근 1년"), (6, "최근 6개월"), (3, "최근 3개월"), (1, "최근 1개월"))
+    definitions = ((1, "최근 1개월"), (3, "최근 3개월"), (6, "최근 6개월"), (12, "최근 1년"), (36, "최근 3년"))
     labels = {months: label for months, label in definitions}
     fallback_windows = {
         36: (36,),
@@ -247,6 +249,7 @@ def build_trend_analysis(rows: Iterable[dict], requested: dict, as_of_month: str
         exact = scope_data(months)
         scoped = exact["values"]
         target_values = scoped.get(target_key, {})
+        target_trade_counts = monthly_trade_counts.get(target_key, {})
         target_average = _average(target_values.values())
         trend_basis_months = next(
             (window for window in fallback_windows[months] if scope_data(window)["strengths"].get(target_key) is not None),
@@ -262,6 +265,7 @@ def build_trend_analysis(rows: Iterable[dict], requested: dict, as_of_month: str
             "cutoff_month": exact["cutoff"],
             "latest_observation_month": max(target_values) if target_values else None,
             "observation_months": len(target_values),
+            "trade_count": sum(count for month, count in target_trade_counts.items() if exact["cutoff"] <= month <= as_of_month),
             "average_exclusive_pyeong_manwon": round(target_average, 1) if target_average is not None else None,
             "dong_price_position": _rank(target_average, (exact["price_averages"][key] for key in exact["dong_keys"])),
             "province_price_position": _rank(target_average, (exact["price_averages"][key] for key in exact["province_keys"])),

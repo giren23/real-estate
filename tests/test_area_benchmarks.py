@@ -39,10 +39,13 @@ def test_trend_analysis_marks_no_trade_and_ranks_available_windows() -> None:
     one_month = next(period for period in trend["periods"] if period["months"] == 1)
 
     assert trend["province_label"] == "경기도"
+    assert [period["months"] for period in trend["periods"]] == [1, 3, 6, 12, 36]
     assert three_months["status"] == "ok"
+    assert three_months["trade_count"] == 2
     assert three_months["trend_pct_per_month"] > 0
     assert three_months["dong_trend_rank"]["rank"] == 1
     assert one_month["status"] == "no_trade"
+    assert one_month["trade_count"] == 0
     assert one_month["trend_basis_months"] == 3
     assert one_month["trend_fallback_used"] is True
     assert one_month["trend_pct_per_month"] > 0
