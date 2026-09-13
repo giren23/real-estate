@@ -1274,7 +1274,7 @@ function addGraphBoard(){
 }
 
 function newGraphBoard(){
-  return {id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),periodYears:20,priceMode:"trade",chartWidth:100,chartHeight:0,economicWidth:100,tradeHistoryMonths:3,series:[]};
+  return {id:makeId("graph"),name:"그래프 "+(graphBoards.length+1),periodYears:20,priceMode:"trade",chartWidth:100,chartHeight:0,economicWidth:100,tradeHistoryMonths:3,tradeHistorySortKey:"date",tradeHistorySortDirection:"desc",tradeHistoryHiddenGroups:[],tradeHistoryHiddenAreas:[],tradeHistoryOpen:false,series:[]};
 }
 
 function ensureInitialGraphBoard(){
@@ -1342,6 +1342,11 @@ function restoreGraphBoards(){
       chartHeight:Number(board.chartHeight)>=260&&Number(board.chartHeight)<=720?Number(board.chartHeight):0,
       economicWidth:Math.min(200,Math.max(100,Number(board.economicWidth)||100)),
       tradeHistoryMonths:[3,6,12,36,60,120,0].includes(Number(board.tradeHistoryMonths))?Number(board.tradeHistoryMonths):3,
+      tradeHistorySortKey:["date","apt","area","price","floor"].includes(board.tradeHistorySortKey)?board.tradeHistorySortKey:"date",
+      tradeHistorySortDirection:board.tradeHistorySortDirection==="asc"?"asc":"desc",
+      tradeHistoryHiddenGroups:Array.isArray(board.tradeHistoryHiddenGroups)?board.tradeHistoryHiddenGroups.map(String):[],
+      tradeHistoryHiddenAreas:Array.isArray(board.tradeHistoryHiddenAreas)?board.tradeHistoryHiddenAreas.map(String):[],
+      tradeHistoryOpen:Boolean(board.tradeHistoryOpen),
       favorite:Boolean(board.favorite),
       // Keep series even when the currently loaded catalog is a reduced public snapshot.
       // Otherwise a temporary offline/mobile catalog would silently delete a favorite line.
@@ -1427,6 +1432,10 @@ function renderGraphBoards(){
   board.chartHeight=Number(board.chartHeight)>=260&&Number(board.chartHeight)<=720?Number(board.chartHeight):0;
   board.economicWidth=Math.min(200,Math.max(100,Number(board.economicWidth)||100));
   if(![3,6,12,36,60,120,0].includes(Number(board.tradeHistoryMonths)))board.tradeHistoryMonths=3;
+  if(!["date","apt","area","price","floor"].includes(board.tradeHistorySortKey))board.tradeHistorySortKey="date";
+  if(!["asc","desc"].includes(board.tradeHistorySortDirection))board.tradeHistorySortDirection="desc";
+  if(!Array.isArray(board.tradeHistoryHiddenGroups))board.tradeHistoryHiddenGroups=[];
+  if(!Array.isArray(board.tradeHistoryHiddenAreas))board.tradeHistoryHiddenAreas=[];
   const defaultChartHeight=window.matchMedia("(max-width:600px)").matches?320:390;
   const shownChartHeight=board.chartHeight||defaultChartHeight;
   const chartSizeStyle='width:'+board.chartWidth+'%;'+(board.chartHeight?'height:'+board.chartHeight+'px;':'');
@@ -1523,6 +1532,31 @@ function renderGraphBoards(){
     board.tradeHistoryMonths=Number(e.target.value);
     renderGraphBoards();markUnsaved("색상별 실거래 내역 기간을 변경했습니다.");
   });
+  const tradeHistory=byId("graphBoards").querySelector(".graph-trade-history");
+  tradeHistory.addEventListener("toggle",()=>{board.tradeHistoryOpen=tradeHistory.open;saveFavoriteGraphs();});
+  tradeHistory.querySelectorAll("[data-trade-sort]").forEach(button=>button.addEventListener("click",()=>{
+    const key=button.dataset.tradeSort;
+    if(board.tradeHistorySortKey===key)board.tradeHistorySortDirection=board.tradeHistorySortDirection==="asc"?"desc":"asc";
+    else{board.tradeHistorySortKey=key;board.tradeHistorySortDirection=key==="date"?"desc":"asc";}
+    board.tradeHistoryOpen=true;renderGraphBoards();markUnsaved("실거래 내역 정렬 순서를 변경했습니다.");
+  }));
+  tradeHistory.querySelectorAll("[data-trade-filter]").forEach(input=>input.addEventListener("change",()=>{
+    const property=input.dataset.tradeFilter==="group"?"tradeHistoryHiddenGroups":"tradeHistoryHiddenAreas";
+    const hidden=new Set(board[property]);
+    if(input.checked)hidden.delete(input.value);else hidden.add(input.value);
+    board[property]=[...hidden];board.tradeHistoryOpen=true;renderGraphBoards();markUnsaved("실거래 내역 필터를 변경했습니다.");
+  }));
+  tradeHistory.querySelectorAll("[data-trade-filter-all]").forEach(button=>button.addEventListener("click",()=>{
+    const property=button.dataset.tradeFilterAll==="group"?"tradeHistoryHiddenGroups":"tradeHistoryHiddenAreas";
+    board[property]=[];board.tradeHistoryOpen=true;renderGraphBoards();markUnsaved("실거래 내역 필터를 전체 선택했습니다.");
+  }));
+  tradeHistory.querySelectorAll("[data-trade-filter-only]").forEach(button=>button.addEventListener("click",e=>{
+    e.preventDefault();e.stopPropagation();
+    const kind=button.dataset.tradeFilterOnly,selector='[data-trade-filter="'+kind+'"]';
+    const property=kind==="group"?"tradeHistoryHiddenGroups":"tradeHistoryHiddenAreas";
+    board[property]=[...tradeHistory.querySelectorAll(selector)].map(input=>input.value).filter(value=>value!==button.value);
+    board.tradeHistoryOpen=true;renderGraphBoards();markUnsaved("선택한 "+(kind==="group"?"단지":"평형")+"만 표시합니다.");
+  }));
   byId("graphBoards").querySelectorAll(".series-item").forEach(card=>{
     const series=board.series.find(item=>item.id===card.dataset.seriesId);
     card.querySelector(".area-select").addEventListener("change",e=>{
@@ -2055,10 +2089,10 @@ function bindTaxEstimator(board,container){
 }
 
 function graphTradeHistoryHtml(board){
-  const rows=board.series.flatMap(series=>{
+  let rows=board.series.flatMap(series=>{
     const group=apartmentGroups.find(item=>item.key===series.key);if(!group)return [];
     return group.trades.filter(row=>Number(row.area_m2)===Number(series.area)).map(row=>({series,group,row}));
-  }).sort((a,b)=>String(b.row.trade_date||"").localeCompare(String(a.row.trade_date||"")));
+  });
   const periodMonths=[3,6,12,36,60,120,0].includes(Number(board.tradeHistoryMonths))?Number(board.tradeHistoryMonths):3;
   const latestDate=String(rows.find(item=>/^\d{4}-\d{2}-\d{2}/.test(String(item.row.trade_date||"")))?.row.trade_date||"");
   let filteredRows=rows;
@@ -2068,10 +2102,21 @@ function graphTradeHistoryHtml(board){
     const cutoffDate=cutoff.toISOString().slice(0,10);
     filteredRows=rows.filter(item=>String(item.row.trade_date||"")>=cutoffDate);
   }
+  const groupOptions=[...new Map(board.series.map(series=>{const group=apartmentGroups.find(item=>item.key===series.key);return group?[String(group.key),group]:null;}).filter(Boolean)).values()];
+  const areaOptions=[...new Map(board.series.map(series=>[String(Number(series.area)),series])).values()].sort((a,b)=>Number(a.area)-Number(b.area));
+  const hiddenGroups=new Set(board.tradeHistoryHiddenGroups||[]),hiddenAreas=new Set(board.tradeHistoryHiddenAreas||[]);
+  filteredRows=filteredRows.filter(item=>!hiddenGroups.has(String(item.group.key))&&!hiddenAreas.has(String(Number(item.series.area))));
+  const sortKey=board.tradeHistorySortKey||"date",direction=board.tradeHistorySortDirection==="asc"?1:-1;
+  const sortValue=(item,key)=>key==="date"?String(item.row.trade_date||""):key==="apt"?String(item.group.apt_name||""):key==="area"?Number(item.series.area)||0:key==="price"?Number(item.row.price_eok)||0:Number(item.row.floor)||0;
+  filteredRows.sort((a,b)=>{const left=sortValue(a,sortKey),right=sortValue(b,sortKey);return (typeof left==="string"?left.localeCompare(right,"ko"):(left-right))*direction;});
   const periodOptions=[[3,"최근 3개월"],[6,"최근 6개월"],[12,"최근 1년"],[36,"최근 3년"],[60,"최근 5년"],[120,"최근 10년"],[0,"전체 기간"]]
     .map(([value,label])=>'<option value="'+value+'" '+(periodMonths===value?"selected":"")+'>'+label+'</option>').join("");
-  const body=filteredRows.map(({series,group,row})=>'<tr><td><i class="trade-color" style="background:'+esc(series.color)+'"></i>'+esc(String(row.trade_date||"—"))+'</td><td>'+esc(group.apt_name)+'</td><td>'+esc(areaComparisonLabel(series.area,series.supplyPyeong))+'</td><td>'+esc(fmt(Number(row.price_eok)))+'억원</td><td>'+esc(String(row.floor||"—"))+'층</td></tr>').join("");
-  return '<details class="graph-trade-history"><summary><span>색상별 실거래 내역 <b>'+filteredRows.length+'건</b></span><label class="trade-history-period">표시 기간 <select id="tradeHistoryPeriod" aria-label="색상별 실거래 내역 표시 기간">'+periodOptions+'</select></label><em>펼쳐서 날짜·단지·평형·금액을 확인하세요</em></summary><div class="graph-trade-table-wrap"><table><thead><tr><th>거래일 · 그래프색</th><th>단지</th><th>평형</th><th>거래금액</th><th>층</th></tr></thead><tbody>'+(body||'<tr><td colspan="5">선택한 평형의 해당 기간 상세 거래가 없습니다.</td></tr>')+'</tbody></table></div></details>';
+  const pastel=color=>{const hex=String(color||"").replace("#","");if(!/^[0-9a-f]{6}$/i.test(hex))return "rgba(81,54,129,.08)";return `rgba(${parseInt(hex.slice(0,2),16)},${parseInt(hex.slice(2,4),16)},${parseInt(hex.slice(4,6),16)},.10)`;};
+  const body=filteredRows.map(({series,group,row})=>'<tr style="--trade-color:'+esc(series.color)+';--trade-pastel:'+pastel(series.color)+'"><td><i class="trade-color"></i>'+esc(String(row.trade_date||"—"))+'</td><td>'+esc(group.apt_name)+'</td><td>'+esc(areaComparisonLabel(series.area,series.supplyPyeong))+'</td><td>'+esc(fmt(Number(row.price_eok)))+'억원</td><td>'+esc(String(row.floor||"—"))+'층</td></tr>').join("");
+  const groupFilters=groupOptions.map(group=>'<label><input type="checkbox" data-trade-filter="group" value="'+esc(group.key)+'" '+(hiddenGroups.has(String(group.key))?"":"checked")+'><i style="background:'+esc(board.series.find(series=>series.key===group.key)?.color||"#64748b")+'"></i><span>'+esc(group.apt_name)+'</span><button type="button" data-trade-filter-only="group" value="'+esc(group.key)+'">이것만</button></label>').join("");
+  const areaFilters=areaOptions.map(series=>'<label><input type="checkbox" data-trade-filter="area" value="'+esc(String(Number(series.area)))+'" '+(hiddenAreas.has(String(Number(series.area)))?"":"checked")+'><span>'+esc(areaComparisonLabel(series.area,series.supplyPyeong))+'</span><button type="button" data-trade-filter-only="area" value="'+esc(String(Number(series.area)))+'">이것만</button></label>').join("");
+  const arrow=key=>sortKey===key?(direction===1?" ↑":" ↓"):" ↕";
+  return '<details class="graph-trade-history" '+(board.tradeHistoryOpen?'open':'')+'><summary><span>색상별 실거래 내역 <b>'+filteredRows.length+'건</b></span><label class="trade-history-period">표시 기간 <select id="tradeHistoryPeriod" aria-label="색상별 실거래 내역 표시 기간">'+periodOptions+'</select></label><em>열 제목을 눌러 정렬하고 단지·평형을 골라보세요</em></summary><div class="trade-history-filters"><fieldset><legend>단지 필터 <button type="button" data-trade-filter-all="group">전체 선택</button></legend><div>'+groupFilters+'</div></fieldset><fieldset><legend>평형 필터 <button type="button" data-trade-filter-all="area">전체 선택</button></legend><div>'+areaFilters+'</div></fieldset></div><div class="graph-trade-table-wrap"><table><thead><tr><th><button type="button" data-trade-sort="date">거래일 · 그래프색'+arrow("date")+'</button></th><th><button type="button" data-trade-sort="apt">단지'+arrow("apt")+'</button></th><th><button type="button" data-trade-sort="area">평형'+arrow("area")+'</button></th><th><button type="button" data-trade-sort="price">거래금액'+arrow("price")+'</button></th><th><button type="button" data-trade-sort="floor">층'+arrow("floor")+'</button></th></tr></thead><tbody>'+(body||'<tr><td colspan="5">선택한 조건의 상세 거래가 없습니다.</td></tr>')+'</tbody></table></div></details>';
 }
 
 function renderBoardChart(board,container){

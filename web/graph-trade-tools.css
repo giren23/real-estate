@@ -1,0 +1,32 @@
+.trade-history-filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid #e7edf0;
+  background: #fbfcfd;
+}
+.trade-history-filters fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid #dfe7ea;
+  border-radius: 9px;
+  background: #fff;
+}
+.trade-history-filters legend { padding: 0 4px; color: #344054; font-size: 11px; font-weight: 800; }
+.trade-history-filters legend button { margin-left: 5px; border: 0; background: transparent; color: #5b3d88; font-size: 9px; font-weight: 800; text-decoration: underline; cursor: pointer; }
+.trade-history-filters fieldset > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.trade-history-filters label { display: flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 7px; border: 1px solid #e4e7ec; border-radius: 999px; background: #f8fafc; color: #475467; font-size: 10px; cursor: pointer; }
+.trade-history-filters label:has(input:checked) { border-color: #c9bbdc; background: #f5f1fa; color: #3f2d59; }
+.trade-history-filters input { width: 13px; height: 13px; margin: 0; accent-color: #5b3d88; }
+.trade-history-filters label i { width: 8px; height: 8px; flex: none; border-radius: 50%; }
+.trade-history-filters label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trade-history-filters label > button { border: 0; border-left: 1px solid #d8d0e2; background: transparent; padding: 0 0 0 5px; color: #694b91; font-size: 9px; font-weight: 800; cursor: pointer; }
+.graph-trade-history th button { display: flex; align-items: center; width: 100%; border: 0; background: transparent; padding: 0; color: inherit; font: inherit; font-weight: 800; text-align: left; white-space: nowrap; cursor: pointer; }
+.graph-trade-history th button:hover,
+.graph-trade-history th button:focus { color: #513681; text-decoration: underline; }
+.graph-trade-history tbody tr { background: var(--trade-pastel, #fff); box-shadow: inset 4px 0 0 var(--trade-color, #cfd8dc); }
+.graph-trade-history tbody tr:hover { filter: saturate(1.15) brightness(.985); }
+.graph-trade-history .trade-color { background: var(--trade-color, #64748b); }
+@media (max-width: 600px) { .trade-history-filters { grid-template-columns: 1fr; } }
