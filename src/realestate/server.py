@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from realestate.area_benchmarks import build_index, build_trend_analysis, city_label, resolve_requested, shift_month
+from realestate.area_benchmarks import build_index, build_trend_analysis, resolve_requested, shift_month
 from realestate.development_opportunities import DevelopmentOpportunityStore
 from realestate.local_store import LocalStore
 from realestate.official_prices import OfficialPriceStore
@@ -184,14 +184,14 @@ def _area_benchmark_index() -> tuple[dict, bool]:
         return index, False
 
 
-def _area_benchmark_history(lawd_cd: str, dong: str, region_name: str) -> dict:
-    key = "|".join((lawd_cd, dong, city_label(region_name)))
+def _area_benchmark_history(lawd_cd: str, dong: str, city_scope_key: str) -> dict:
+    key = "|".join((lawd_cd, dong, city_scope_key))
     now = time.monotonic()
     with _area_benchmark_lock:
         cached = _area_benchmark_history_cache.get(key)
         if cached and now - float(cached["created_at"]) < AREA_BENCHMARK_CACHE_SECONDS:
             return cached["history"]
-    history = STORE.area_84_price_history(lawd_cd, dong, city_label(region_name))
+    history = STORE.area_84_price_history(lawd_cd, dong, city_scope_key)
     with _area_benchmark_lock:
         _area_benchmark_history_cache[key] = {"created_at": now, "history": history}
     return history
@@ -240,7 +240,7 @@ def area_benchmarks(
     rows = resolve_requested(index, cleaned)
     if include_history:
         for row in rows:
-            row["history"] = _area_benchmark_history(row["lawd_cd"], row["dong"], row["region_name"])
+            row["history"] = _area_benchmark_history(row["lawd_cd"], row["dong"], row.get("city_scope_key", ""))
     if include_trends:
         for row in rows:
             trend_rows, as_of_month = _area_benchmark_trend_rows(row["region_name"])

@@ -11,19 +11,107 @@ TARGET_AREA_M2 = 84.0
 ASSUMED_EXCLUSIVE_RATIO = 0.75
 PYEONG_M2 = 3.305785
 
+# General cities whose autonomous/non-autonomous districts are encoded as
+# separate five-digit LAWD codes. The source catalog joins the city and gu
+# names (for example, ``성남분당구``), so the hierarchy must be restored from
+# the stable administrative-code prefix before calculating peer groups.
+DIVIDED_CITY_BY_LAWD_PREFIX = {
+    "4111": "수원시",
+    "4113": "성남시",
+    "4117": "안양시",
+    "4119": "부천시",
+    "4127": "안산시",
+    "4128": "고양시",
+    "4146": "용인시",
+    "4159": "화성시",
+    "4311": "청주시",
+    "4413": "천안시",
+    "4511": "전주시",
+    "4711": "포항시",
+    "4812": "창원시",
+}
+
 
 def complex_key(lawd_cd: str, dong: str, apt_name: str) -> str:
     return "|".join((str(lawd_cd).zfill(5)[:5], str(dong), str(apt_name)))
 
 
-def city_label(region_name: str) -> str:
-    """Return a meaningful city/county comparator while keeping metro cities intact."""
+def administrative_scopes(region_name: str, lawd_cd: str, dong: str = "") -> list[dict]:
+    """Return broad-to-local peer scopes without merging city, gu and dong."""
     tokens = str(region_name or "").split()
+    code = str(lawd_cd or "").zfill(5)[:5]
     if not tokens:
-        return "지역 미확인"
-    if len(tokens) >= 2 and (tokens[1].endswith("시") or tokens[1].endswith("군")):
-        return " ".join(tokens[:2])
-    return tokens[0]
+        return []
+
+    province = tokens[0]
+    scopes = [{
+        "key": f"province:{province}",
+        "level": "province",
+        "level_label": "시도",
+        "label": province,
+        "full_label": province,
+    }]
+    district_token = tokens[1] if len(tokens) >= 2 else ""
+    mapped_city = DIVIDED_CITY_BY_LAWD_PREFIX.get(code[:4])
+    divided_city = mapped_city if mapped_city and district_token != mapped_city else None
+    if divided_city:
+        city_stem = divided_city[:-1]
+        district = district_token[len(city_stem):] if district_token.startswith(city_stem) else district_token
+        scopes.append({
+            "key": f"municipality:{code[:4]}",
+            "level": "municipality",
+            "level_label": "시·군",
+            "label": divided_city,
+            "full_label": f"{province} {divided_city}",
+        })
+        if district:
+            scopes.append({
+                "key": f"district:{code}",
+                "level": "district",
+                "level_label": "구",
+                "label": district,
+                "full_label": f"{province} {divided_city} {district}",
+            })
+    elif district_token.endswith(("시", "군")):
+        scopes.append({
+            "key": f"municipality:{code}",
+            "level": "municipality",
+            "level_label": "시·군",
+            "label": district_token,
+            "full_label": f"{province} {district_token}",
+        })
+    elif district_token.endswith("구"):
+        scopes.append({
+            "key": f"district:{code}",
+            "level": "district",
+            "level_label": "구",
+            "label": district_token,
+            "full_label": f"{province} {district_token}",
+        })
+
+    locality = str(dong or "").strip()
+    if locality:
+        scopes.append({
+            "key": f"locality:{code}:{locality}",
+            "level": "locality",
+            "level_label": "읍·면·동",
+            "label": locality,
+            "full_label": " ".join((*[scope["label"] for scope in scopes], locality)),
+        })
+    return scopes
+
+
+def _city_scope(scopes: list[dict]) -> dict | None:
+    """Prefer a whole city/county; metropolitan cities fall back to their gu."""
+    return next((scope for scope in scopes if scope["level"] == "municipality"), None) or next(
+        (scope for scope in scopes if scope["level"] == "district"), None
+    ) or next((scope for scope in scopes if scope["level"] == "province"), None)
+
+
+def city_label(region_name: str, lawd_cd: str = "") -> str:
+    scopes = administrative_scopes(region_name, lawd_cd)
+    selected = _city_scope(scopes)
+    return selected["full_label"] if selected else (scopes[0]["full_label"] if scopes else "지역 미확인")
 
 
 def estimated_supply_pyeong(area_m2: float) -> float:
@@ -55,6 +143,7 @@ def build_index(records: Iterable[dict]) -> dict:
     dong_values: dict[str, list[float]] = defaultdict(list)
     city_values: dict[str, list[float]] = defaultdict(list)
     province_values: dict[str, list[float]] = defaultdict(list)
+    scope_values: dict[str, list[float]] = defaultdict(list)
 
     for source in records:
         area_m2 = float(source["area_m2"])
@@ -74,18 +163,26 @@ def build_index(records: Iterable[dict]) -> dict:
         }
         key = complex_key(row["lawd_cd"], row["dong"], row["apt_name"])
         row["dong_key"] = "|".join((row["lawd_cd"], row["dong"]))
-        row["city_label"] = city_label(row["region_name"])
-        row["province_label"] = row["region_name"].split()[0] if row["region_name"] else "지역 미확인"
+        row["administrative_scopes"] = administrative_scopes(row["region_name"], row["lawd_cd"], row["dong"])
+        city_scope = _city_scope(row["administrative_scopes"])
+        row["city_label"] = city_scope["label"] if city_scope else "지역 미확인"
+        row["city_scope_key"] = city_scope["key"] if city_scope else ""
+        province_scope = next((scope for scope in row["administrative_scopes"] if scope["level"] == "province"), None)
+        row["province_label"] = province_scope["label"] if province_scope else "지역 미확인"
         complexes[key] = row
         dong_values[row["dong_key"]].append(value)
-        city_values[row["city_label"]].append(value)
+        city_values[row["city_scope_key"]].append(value)
         province_values[row["province_label"]].append(value)
+        for scope in row["administrative_scopes"]:
+            scope_values[scope["key"]].append(value)
 
     return {
         "complexes": complexes,
         "dongs": {key: _reference(values) for key, values in dong_values.items()},
         "cities": {key: _reference(values) for key, values in city_values.items()},
         "provinces": {key: _reference(values) for key, values in province_values.items()},
+        "administrative_scopes": {key: _reference(values) for key, values in scope_values.items()},
+        "administrative_values": dict(scope_values),
     }
 
 
@@ -111,10 +208,10 @@ def resolve_requested(index: dict, requested: Iterable[dict]) -> list[dict]:
             continue
         value = float(row["price_per_supply_pyeong_manwon"])
         dong_values = [item["price_per_supply_pyeong_manwon"] for item in index["complexes"].values() if item["dong_key"] == row["dong_key"]]
-        city_values = [item["price_per_supply_pyeong_manwon"] for item in index["complexes"].values() if item["city_label"] == row["city_label"]]
+        city_values = [item["price_per_supply_pyeong_manwon"] for item in index["complexes"].values() if item["city_scope_key"] == row["city_scope_key"]]
         province_values = [item["price_per_supply_pyeong_manwon"] for item in index["complexes"].values() if item["province_label"] == row["province_label"]]
         dong = _position(value, index["dongs"].get(row["dong_key"], {}))
-        city = _position(value, index["cities"].get(row["city_label"], {}))
+        city = _position(value, index["cities"].get(row["city_scope_key"], {}))
         province = _position(value, index["provinces"].get(row["province_label"], {}))
         if dong["count"] >= 2:
             dong["top_percent"] = round(sum(other >= value for other in dong_values) / dong["count"] * 100, 1)
@@ -122,11 +219,19 @@ def resolve_requested(index: dict, requested: Iterable[dict]) -> list[dict]:
             city["top_percent"] = round(sum(other >= value for other in city_values) / city["count"] * 100, 1)
         if province["count"] >= 2:
             province["top_percent"] = round(sum(other >= value for other in province_values) / province["count"] * 100, 1)
+        administrative_references = []
+        for scope in reversed(row.get("administrative_scopes", [])):
+            values = index.get("administrative_values", {}).get(scope["key"], [])
+            reference = _position(value, index.get("administrative_scopes", {}).get(scope["key"], {}))
+            if reference["count"] >= 2:
+                reference["top_percent"] = round(sum(other >= value for other in values) / reference["count"] * 100, 1)
+            administrative_references.append({**scope, "reference": reference})
         result.append({
             **{key: value for key, value in row.items() if key not in {"dong_key"}},
             "dong_reference": dong,
             "city_reference": city,
             "province_reference": province,
+            "administrative_references": administrative_references,
         })
     return result
 
@@ -159,6 +264,9 @@ def _monthly_complex_values(rows: Iterable[dict]) -> tuple[dict[str, dict[str, f
             "dong": str(row["dong"]),
             "apt_name": str(row["apt_name"]),
         }
+        metadata[key]["administrative_scopes"] = administrative_scopes(
+            metadata[key]["region_name"], metadata[key]["lawd_cd"], metadata[key]["dong"]
+        )
     monthly = {
         key: {month: sum(values) / len(values) for month, values in months.items()}
         for key, months in buckets.items()
@@ -202,7 +310,11 @@ def build_trend_analysis(rows: Iterable[dict], requested: dict, as_of_month: str
         "lawd_cd": str(requested.get("lawd_cd") or ""), "dong": str(requested.get("dong") or ""),
         "apt_name": str(requested.get("apt_name") or ""), "region_name": str(requested.get("region_name") or ""),
     })
-    target_city = city_label(target_meta.get("region_name", ""))
+    target_scopes = target_meta.get("administrative_scopes") or administrative_scopes(
+        target_meta.get("region_name", ""), target_meta.get("lawd_cd", ""), target_meta.get("dong", "")
+    )
+    target_city_scope = _city_scope(target_scopes)
+    target_city = target_city_scope["label"] if target_city_scope else "지역 미확인"
     province = str(target_meta.get("region_name") or "").split()[0] if target_meta.get("region_name") else "지역 미확인"
     definitions = ((1, "최근 1개월"), (3, "최근 3개월"), (6, "최근 6개월"), (12, "최근 1년"), (36, "최근 3년"))
     labels = {months: label for months, label in definitions}
@@ -214,6 +326,10 @@ def build_trend_analysis(rows: Iterable[dict], requested: dict, as_of_month: str
         1: (1, 3, 6, 12, 36),
     }
     scopes: dict[int, dict] = {}
+    administrative_members: dict[str, list[str]] = defaultdict(list)
+    for key, meta in metadata.items():
+        for scope in meta.get("administrative_scopes", []):
+            administrative_members[scope["key"]].append(key)
 
     def scope_data(months: int) -> dict:
         if months in scopes:
@@ -238,8 +354,12 @@ def build_trend_analysis(rows: Iterable[dict], requested: dict, as_of_month: str
             "province_keys": list(scoped),
             "city_keys": [
                 key for key, meta in metadata.items()
-                if city_label(meta["region_name"]) == target_city and key in scoped
+                if any(scope["key"] == (target_city_scope or {}).get("key") for scope in meta.get("administrative_scopes", [])) and key in scoped
             ],
+            "administrative_keys": {
+                scope["key"]: [key for key in administrative_members.get(scope["key"], []) if key in scoped]
+                for scope in target_scopes
+            },
         }
         return scopes[months]
 
@@ -258,6 +378,26 @@ def build_trend_analysis(rows: Iterable[dict], requested: dict, as_of_month: str
         trend_scope = scope_data(trend_basis_months) if trend_basis_months is not None else exact
         strengths = trend_scope["strengths"]
         target_strength = strengths.get(target_key)
+        administrative_price_positions = [{
+            **scope,
+            "position": _rank(
+                target_average,
+                (exact["price_averages"][key] for key in exact["administrative_keys"].get(scope["key"], [])),
+            ),
+        } for scope in reversed(target_scopes)]
+        administrative_trend_ranks = [{
+            **scope,
+            "rank": _rank(
+                target_strength,
+                (
+                    strengths[key]
+                    for key in trend_scope["administrative_keys"].get(scope["key"], [])
+                    if strengths.get(key) is not None
+                ),
+            ),
+        } for scope in reversed(target_scopes)]
+        position_by_level = {item["level"]: item["position"] for item in administrative_price_positions}
+        trend_rank_by_level = {item["level"]: item["rank"] for item in administrative_trend_ranks}
         periods.append({
             "months": months,
             "label": label,
@@ -267,15 +407,17 @@ def build_trend_analysis(rows: Iterable[dict], requested: dict, as_of_month: str
             "observation_months": len(target_values),
             "trade_count": sum(count for month, count in target_trade_counts.items() if exact["cutoff"] <= month <= as_of_month),
             "average_exclusive_pyeong_manwon": round(target_average, 1) if target_average is not None else None,
-            "dong_price_position": _rank(target_average, (exact["price_averages"][key] for key in exact["dong_keys"])),
-            "province_price_position": _rank(target_average, (exact["price_averages"][key] for key in exact["province_keys"])),
+            "dong_price_position": position_by_level.get("locality", _rank(None, [])),
+            "province_price_position": position_by_level.get("province", _rank(None, [])),
+            "administrative_price_positions": administrative_price_positions,
             "trend_pct_per_month": round(target_strength, 3) if target_strength is not None else None,
             "trend_basis_months": trend_basis_months,
             "trend_basis_label": labels.get(trend_basis_months) if trend_basis_months is not None else None,
             "trend_fallback_used": trend_basis_months is not None and trend_basis_months != months,
             "trend_observation_months": len(trend_scope["values"].get(target_key, {})),
-            "dong_trend_rank": _rank(target_strength, (strengths[key] for key in trend_scope["dong_keys"] if strengths.get(key) is not None)),
-            "city_trend_rank": _rank(target_strength, (strengths[key] for key in trend_scope["city_keys"] if strengths.get(key) is not None)),
+            "dong_trend_rank": trend_rank_by_level.get("locality", _rank(None, [])),
+            "city_trend_rank": trend_rank_by_level.get("municipality", trend_rank_by_level.get("district", _rank(None, []))),
+            "administrative_trend_ranks": administrative_trend_ranks,
         })
 
     return {
@@ -283,5 +425,6 @@ def build_trend_analysis(rows: Iterable[dict], requested: dict, as_of_month: str
         "province_label": province,
         "city_label": target_city,
         "dong_label": target_meta.get("dong", ""),
+        "administrative_scopes": list(reversed(target_scopes)),
         "periods": periods,
     }

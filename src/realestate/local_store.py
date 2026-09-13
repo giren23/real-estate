@@ -407,8 +407,8 @@ class LocalStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def area_84_price_history(self, lawd_cd: str, dong: str, city_name: str) -> dict[str, list[dict]]:
-        """Monthly unweighted complex averages for a dong and its city/county."""
+    def area_84_price_history(self, lawd_cd: str, dong: str, city_scope_key: str) -> dict[str, list[dict]]:
+        """Monthly unweighted complex averages for a locality and its city/county."""
         expression = "median_price_eok * 10000.0 / (area_m2 / 0.75 / 3.305785)"
         with self.connect() as db:
             dong_rows = db.execute(
@@ -419,13 +419,20 @@ class LocalStore:
                     GROUP BY month ORDER BY month""",
                 (lawd_cd, dong),
             ).fetchall()
+            scope_type, _, scope_value = str(city_scope_key or "").partition(":")
+            if scope_type == "municipality" and len(scope_value) == 4:
+                city_where, city_params = "SUBSTR(lawd_cd, 1, 4)=?", (scope_value,)
+            elif scope_type in {"municipality", "district"} and len(scope_value) == 5:
+                city_where, city_params = "lawd_cd=?", (scope_value,)
+            else:
+                city_where, city_params = "lawd_cd=?", (lawd_cd,)
             city_rows = db.execute(
                 f"""SELECT month, ROUND(AVG({expression}), 1) AS price_per_supply_pyeong_manwon,
                            COUNT(*) AS sample_count
                     FROM monthly_history
-                    WHERE region_name LIKE ? AND area_m2 BETWEEN 80.0 AND 90.0
+                    WHERE {city_where} AND area_m2 BETWEEN 80.0 AND 90.0
                     GROUP BY month ORDER BY month""",
-                (f"{city_name}%",),
+                city_params,
             ).fetchall()
         return {"dong": [dict(row) for row in dong_rows], "city": [dict(row) for row in city_rows]}
 

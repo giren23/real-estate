@@ -1,4 +1,4 @@
-from realestate.area_benchmarks import build_index, build_trend_analysis, resolve_requested
+from realestate.area_benchmarks import administrative_scopes, build_index, build_trend_analysis, resolve_requested
 
 
 def test_area_benchmark_reports_dong_and_city_percentile() -> None:
@@ -10,11 +10,44 @@ def test_area_benchmark_reports_dong_and_city_percentile() -> None:
     index = build_index(records)
     item = resolve_requested(index, [{"lawd_cd": "11110", "dong": "청운동", "apt_name": "가"}])[0]
 
-    assert item["city_label"] == "서울특별시"
+    assert item["city_label"] == "종로구"
     assert item["dong_reference"]["count"] == 2
     assert item["dong_reference"]["z_score"] > 0
     assert item["dong_reference"]["top_percent"] == 50.0
-    assert item["city_reference"]["count"] == 3
+    assert item["city_reference"]["count"] == 2
+    assert item["province_reference"]["count"] == 3
+    assert [scope["level"] for scope in item["administrative_references"]] == ["locality", "district", "province"]
+
+
+def test_divided_city_hierarchy_restores_city_gu_and_dong_levels() -> None:
+    scopes = administrative_scopes("경기도 성남분당구", "41135", "정자동")
+
+    assert [(scope["level"], scope["label"]) for scope in scopes] == [
+        ("province", "경기도"),
+        ("municipality", "성남시"),
+        ("district", "분당구"),
+        ("locality", "정자동"),
+    ]
+
+
+def test_divided_city_reference_uses_each_administrative_population() -> None:
+    records = [
+        {"lawd_cd": "41135", "region_name": "경기도 성남분당구", "dong": "정자동", "apt_name": "가", "area_m2": 84, "month": "2026-08", "median_price_eok": 14, "trade_count": 1},
+        {"lawd_cd": "41135", "region_name": "경기도 성남분당구", "dong": "정자동", "apt_name": "나", "area_m2": 84, "month": "2026-08", "median_price_eok": 12, "trade_count": 1},
+        {"lawd_cd": "41135", "region_name": "경기도 성남분당구", "dong": "서현동", "apt_name": "다", "area_m2": 84, "month": "2026-08", "median_price_eok": 10, "trade_count": 1},
+        {"lawd_cd": "41133", "region_name": "경기도 성남중원구", "dong": "성남동", "apt_name": "라", "area_m2": 84, "month": "2026-08", "median_price_eok": 8, "trade_count": 1},
+        {"lawd_cd": "41210", "region_name": "경기도 광명시", "dong": "철산동", "apt_name": "마", "area_m2": 84, "month": "2026-08", "median_price_eok": 6, "trade_count": 1},
+    ]
+
+    item = resolve_requested(
+        build_index(records), [{"lawd_cd": "41135", "dong": "정자동", "apt_name": "가"}]
+    )[0]
+    references = {scope["level"]: scope["reference"] for scope in item["administrative_references"]}
+
+    assert references["locality"]["count"] == 2
+    assert references["district"]["count"] == 3
+    assert references["municipality"]["count"] == 4
+    assert references["province"]["count"] == 5
 
 
 def test_area_benchmark_uses_84_square_meter_class_only() -> None:
