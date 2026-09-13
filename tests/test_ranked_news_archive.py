@@ -211,7 +211,7 @@ def test_news_pipeline_is_server_side_and_does_not_require_gpt() -> None:
     workflow = (ROOT / ".github" / "workflows" / "economic-indicators-daily.yml").read_text(encoding="utf-8")
     assert "openai" not in collector and "chatgpt" not in collector
     local_loop = "MARKET_REFRESH_HOURS = 4" in server and '("update_economic_news.py", ["--backfill-days", "2", "--limit-per-day", "60"])' in server
-    hosted_loop = 'cron: "15 */3 * * *"' in workflow and "python scripts/update_economic_news.py --backfill-days 2 --limit-per-day 60" in workflow
+    hosted_loop = 'cron: "15 */3 * * *"' in workflow and "python scripts/update_economic_news.py --backfill-days 1 --limit-per-day 60" in workflow
     assert local_loop or hosted_loop
 
 
@@ -264,7 +264,7 @@ def test_article_body_div_is_extracted_when_paragraph_tags_are_absent() -> None:
 def test_collector_enriches_current_and_archived_articles() -> None:
     collector = (ROOT / "scripts" / "update_economic_news.py").read_text(encoding="utf-8")
     assert "enrich_article_bodies(items)" in collector
-    assert "enrich_archived_bodies(archive_limit)" in collector
+    assert "enrich_archived_bodies(archive_limit, force_retry=" in collector
     assert 'parser.add_argument("--archive-enrich-limit"' in collector
     assert "rss.blog.naver.com/dealsite.xml" in collector
 
