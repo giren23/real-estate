@@ -84,3 +84,17 @@ def test_area_84_average_is_attached_by_official_district_code() -> None:
     value = payload["provinces"][0]["cities"][0]["area_84_price"]
     assert value["average_price_eok"] == 15.5
     assert payload["area_84_prices"]["matched_region_count"] == 1
+
+
+def test_area_84_average_is_also_added_to_volume_rankings() -> None:
+    payload = {
+        "provinces": [{"code": "11", "name": "서울", "cities": [{"code": "11110", "name": "종로구", "value": 0.2}]}],
+        "transaction_volume": {
+            "provinces": [{"code": "11", "name": "서울", "cities": [{"code": "11110", "name": "종로구", "value": 123}]}]
+        },
+    }
+    enrich_area_84_prices(payload, [
+        {"lawd_cd": "11110", "area_m2": 84.0, "price_eok": 15.5, "trade_date": "2026-09-01", "cancelled": False}
+    ])
+    ranking = payload["rankings"]["transaction_volume"]["top"][0]
+    assert ranking["area_84_price"]["average_price_eok"] == 15.5

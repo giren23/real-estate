@@ -2585,7 +2585,7 @@ function rebCombinedCities(province){
   const priceRows=Array.isArray(province?.cities)?province.cities:[],volumeRows=Array.isArray(rebVolumeProvince(province?.code)?.cities)?rebVolumeProvince(province.code).cities:[];
   const combined=new Map();
   priceRows.forEach(row=>combined.set(String(row.code),{code:row.code,name:row.name,price:Number(row.value),area84:row.area_84_price||null}));
-  volumeRows.forEach(row=>{const key=String(row.code),current=combined.get(key)||{code:row.code,name:row.name,price:null};current.volume=Number(row.value);combined.set(key,current);});
+  volumeRows.forEach(row=>{const key=String(row.code),current=combined.get(key)||{code:row.code,name:row.name,price:null,area84:row.area_84_price||null};current.volume=Number(row.value);if(!current.area84)current.area84=row.area_84_price||null;combined.set(key,current);});
   return [...combined.values()];
 }
 function renderRebCities(province){

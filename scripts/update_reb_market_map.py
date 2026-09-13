@@ -157,6 +157,26 @@ def enrich_area_84_prices(payload: dict, rows: list[dict]) -> dict:
                 "period_start": min(value["period_start"] for value in province_samples),
                 "period_end": max(value["period_end"] for value in province_samples),
             }
+    for province in payload.get("transaction_volume", {}).get("provinces", []):
+        province_samples = []
+        for city in province.get("cities", []):
+            value = prices.get(str(city.get("code") or "").zfill(5))
+            city.pop("area_84_price", None)
+            if value:
+                city["area_84_price"] = value
+                province_samples.append(value)
+        province.pop("area_84_price", None)
+        sample_count = sum(value["trade_count"] for value in province_samples)
+        if sample_count:
+            province["area_84_price"] = {
+                "average_price_eok": round(
+                    sum(value["average_price_eok"] * value["trade_count"] for value in province_samples) / sample_count,
+                    2,
+                ),
+                "trade_count": sample_count,
+                "period_start": min(value["period_start"] for value in province_samples),
+                "period_end": max(value["period_end"] for value in province_samples),
+            }
     payload["area_84_prices"] = {
         "label": "84㎡급 평균 실거래가격",
         "area_basis": "전용 80~90㎡",
