@@ -2166,10 +2166,11 @@ function renderAreaTrendCharts(panel,items,colors){
     return [line(item,dong,color,item.dong+" 동 내 위치"),line(item,province,color,item.province_label+" 시도 내 위치",[7,4])];
   });
   const finite=datasets.flatMap(dataset=>dataset.data).filter(value=>value!==null&&Number.isFinite(Number(value))).map(Number);
-  let yMin=finite.length?Math.max(0,Math.floor(Math.min(...finite)-10)):0;
-  let yMax=finite.length?Math.min(100,Math.ceil(Math.max(...finite)+10)):100;
-  if(yMin>=yMax){yMin=Math.max(0,yMin-10);yMax=Math.min(100,yMax+10);}
-  const chart=new Chart(canvas,{type:"line",data:{labels,datasets},options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"index",intersect:false},scales:{x:{grid:{display:false}},y:{min:yMin,max:yMax,reverse:true,title:{display:true,text:"전용 평당가 상대 위치 (0%=최상위)"},ticks:{callback:value=>value+"%"}}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:context=>context.raw==null?context.dataset.label+": 거래 없음":context.dataset.label+": "+fmt(context.raw)+"% 위치"}}}}});
+  const dataMin=finite.length?Math.min(...finite):0,dataMax=finite.length?Math.max(...finite):100;
+  const spread=Math.max(dataMax-dataMin,1),padding=Math.max(.75,Math.min(4,spread*.2));
+  let yMin=Math.max(-5,dataMin-padding),yMax=Math.min(105,dataMax+padding);
+  if(yMax-yMin<2){const center=(dataMin+dataMax)/2;yMin=Math.max(-5,center-1);yMax=Math.min(105,center+1);}
+  const chart=new Chart(canvas,{type:"line",data:{labels,datasets},options:{maintainAspectRatio:false,responsive:true,layout:{padding:{top:10,bottom:8}},interaction:{mode:"index",intersect:false},scales:{x:{grid:{display:false}},y:{min:yMin,max:yMax,reverse:true,title:{display:true,text:"전용 평당가 상대 위치 (0%=최상위)"},ticks:{callback:value=>value<0||value>100?"":fmt(value)+"%"}}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:context=>context.raw==null?context.dataset.label+": 거래 없음":context.dataset.label+": "+fmt(context.raw)+"% 위치"}}}}});
   charts.set("area-trend-comparison",chart);
 }
 function developmentOpportunityHtml(item){
@@ -2202,7 +2203,7 @@ async function loadAreaBenchmarks(board,container){
     if(activeGraphId!==board.id||!panel.isConnected)return;
     const colors=new Map(requested.map(entry=>[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name,entry.color]));
     const cards=(payload.items||[]).map(item=>areaBenchmarkCardHtml(item,colors.get(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))||"#6040a0"));
-    panel.innerHTML='<summary class="area-benchmark-summary"><span><b>시도별 84㎡급 전용 평당가 위치</b><small>동·시도 평균 대비 · 클릭하여 접기/펼치기</small></span><i aria-hidden="true"></i></summary><div class="area-benchmark-body"><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 실거래를 전용면적으로 나눈 전용 평당가 기준입니다. 아래 추세는 최근 1개월부터 3년까지 같은 기준으로 비교합니다.</p>'+(cards.length?'<section class="area-trend-comparison"><div class="area-trend-head"><h4>선택 단지 상대 위치 추세 비교</h4><span>모든 선택 단지를 한 그래프에 표시</span></div><div class="area-trend-chart"><canvas data-area-trend-comparison aria-label="선택 단지 전용 평당가 상대 위치 추세 비교"></canvas></div><p class="area-trend-axis-note">단지별 색상은 유지하고 동 비교는 실선, 시도 비교는 점선으로 표시합니다. 높은 전용 평단가일수록 0%에 가까우며 그래프 위쪽에 놓입니다. 축은 표시된 최상·최하 위치에서 위아래 10%p만 확장합니다.</p></section><div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'<p class="area-benchmark-disclaimer">분포와 순위는 현재 수집된 단지의 월별 중앙값으로 계산합니다. 가격 위치는 거래 없는 기간을 보간하지 않고, 상승 강도는 월별 전용평당가 회귀기울기로 계산해 표본이 부족하면 최대 3년까지 자동 확대합니다.</p></div>';
+    panel.innerHTML='<summary class="area-benchmark-summary"><span><b>시도별 84㎡급 전용 평당가 위치</b><small>동·시도 평균 대비 · 클릭하여 접기/펼치기</small></span><i aria-hidden="true"></i></summary><div class="area-benchmark-body"><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 실거래를 전용면적으로 나눈 전용 평당가 기준입니다. 아래 추세는 최근 1개월부터 3년까지 같은 기준으로 비교합니다.</p>'+(cards.length?'<section class="area-trend-comparison"><div class="area-trend-head"><h4>선택 단지 상대 위치 추세 비교</h4><span>모든 선택 단지를 한 그래프에 표시</span></div><div class="area-trend-chart"><canvas data-area-trend-comparison aria-label="선택 단지 전용 평당가 상대 위치 추세 비교"></canvas></div><p class="area-trend-axis-note">단지별 색상은 유지하고 동 비교는 실선, 시도 비교는 점선으로 표시합니다. 높은 전용 평단가일수록 0%에 가까우며 그래프 위쪽에 놓입니다. 비슷한 구간에 선이 모이면 실제 데이터 폭에 맞춰 자동 확대하고, 선들이 중앙 영역에 놓이도록 위아래 여백을 균형 있게 둡니다.</p></section><div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'<p class="area-benchmark-disclaimer">분포와 순위는 현재 수집된 단지의 월별 중앙값으로 계산합니다. 가격 위치는 거래 없는 기간을 보간하지 않고, 상승 강도는 월별 전용평당가 회귀기울기로 계산해 표본이 부족하면 최대 3년까지 자동 확대합니다.</p></div>';
     renderAreaTrendCharts(panel,payload.items||[],colors);
   }catch(error){
     if(panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="전국 비교 자료를 불러오지 못했습니다. 메인 서버 상태를 확인한 뒤 다시 열어보세요.";
