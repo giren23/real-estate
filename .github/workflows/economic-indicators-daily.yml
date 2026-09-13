@@ -38,8 +38,8 @@ jobs:
       - name: Build daily market snapshot
         run: python scripts/update_market_snapshot.py
 
-      - name: Refresh REB regional apartment price map
-        # 한국부동산원 R-ONE 메인 지도가 공개하는 월간 지역 통계를 서버에서 1회 검증해 정적 파일로 보존한다.
+      - name: Refresh REB regional apartment price and transaction volume
+        # 한국부동산원 R-ONE이 공개하는 월간 가격상승률·아파트 매매거래호수를 함께 검증해 정적 파일로 보존한다.
         # 새 응답 검증에 실패하면 스크립트가 종료되어 기존의 마지막 정상 파일을 덮어쓰지 않는다.
         continue-on-error: true
         run: python scripts/update_reb_market_map.py
