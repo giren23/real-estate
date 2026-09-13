@@ -203,33 +203,75 @@ def build_trend_analysis(rows: Iterable[dict], requested: dict, as_of_month: str
     target_city = city_label(target_meta.get("region_name", ""))
     province = str(target_meta.get("region_name") or "").split()[0] if target_meta.get("region_name") else "지역 미확인"
     definitions = ((36, "최근 3년"), (12, "최근 1년"), (6, "최근 6개월"), (3, "최근 3개월"), (1, "최근 1개월"))
+    labels = {months: label for months, label in definitions}
+    fallback_windows = {
+        36: (36,),
+        12: (12, 36),
+        6: (6, 12, 36),
+        3: (3, 6, 12, 36),
+        1: (1, 3, 6, 12, 36),
+    }
+    scopes: dict[int, dict] = {}
+
+    def scope_data(months: int) -> dict:
+        if months in scopes:
+            return scopes[months]
+        cutoff = shift_month(as_of_month, -(months - 1))
+        scoped = {
+            key: {month: value for month, value in values.items() if cutoff <= month <= as_of_month}
+            for key, values in monthly.items()
+        }
+        scoped = {key: values for key, values in scoped.items() if values}
+        price_averages = {key: _average(values.values()) for key, values in scoped.items()}
+        strengths = {key: _trend_strength(values) for key, values in scoped.items()}
+        scopes[months] = {
+            "cutoff": cutoff,
+            "values": scoped,
+            "price_averages": price_averages,
+            "strengths": strengths,
+            "dong_keys": [
+                key for key, meta in metadata.items()
+                if meta["lawd_cd"] == target_meta["lawd_cd"] and meta["dong"] == target_meta["dong"] and key in scoped
+            ],
+            "province_keys": list(scoped),
+            "city_keys": [
+                key for key, meta in metadata.items()
+                if city_label(meta["region_name"]) == target_city and key in scoped
+            ],
+        }
+        return scopes[months]
+
     periods: list[dict] = []
 
     for months, label in definitions:
-        cutoff = shift_month(as_of_month, -(months - 1))
-        scoped = {key: {month: value for month, value in values.items() if cutoff <= month <= as_of_month} for key, values in monthly.items()}
-        scoped = {key: values for key, values in scoped.items() if values}
+        exact = scope_data(months)
+        scoped = exact["values"]
         target_values = scoped.get(target_key, {})
         target_average = _average(target_values.values())
-        price_averages = {key: _average(values.values()) for key, values in scoped.items()}
-        dong_keys = [key for key, meta in metadata.items() if meta["lawd_cd"] == target_meta["lawd_cd"] and meta["dong"] == target_meta["dong"] and key in scoped]
-        province_keys = [key for key in scoped]
-        city_keys = [key for key, meta in metadata.items() if city_label(meta["region_name"]) == target_city and key in scoped]
-        strengths = {key: _trend_strength(values) for key, values in scoped.items()}
+        trend_basis_months = next(
+            (window for window in fallback_windows[months] if scope_data(window)["strengths"].get(target_key) is not None),
+            None,
+        )
+        trend_scope = scope_data(trend_basis_months) if trend_basis_months is not None else exact
+        strengths = trend_scope["strengths"]
         target_strength = strengths.get(target_key)
         periods.append({
             "months": months,
             "label": label,
             "status": "ok" if target_values else "no_trade",
-            "cutoff_month": cutoff,
+            "cutoff_month": exact["cutoff"],
             "latest_observation_month": max(target_values) if target_values else None,
             "observation_months": len(target_values),
             "average_exclusive_pyeong_manwon": round(target_average, 1) if target_average is not None else None,
-            "dong_price_position": _rank(target_average, (price_averages[key] for key in dong_keys)),
-            "province_price_position": _rank(target_average, (price_averages[key] for key in province_keys)),
+            "dong_price_position": _rank(target_average, (exact["price_averages"][key] for key in exact["dong_keys"])),
+            "province_price_position": _rank(target_average, (exact["price_averages"][key] for key in exact["province_keys"])),
             "trend_pct_per_month": round(target_strength, 3) if target_strength is not None else None,
-            "dong_trend_rank": _rank(target_strength, (strengths[key] for key in dong_keys if strengths.get(key) is not None)),
-            "city_trend_rank": _rank(target_strength, (strengths[key] for key in city_keys if strengths.get(key) is not None)),
+            "trend_basis_months": trend_basis_months,
+            "trend_basis_label": labels.get(trend_basis_months) if trend_basis_months is not None else None,
+            "trend_fallback_used": trend_basis_months is not None and trend_basis_months != months,
+            "trend_observation_months": len(trend_scope["values"].get(target_key, {})),
+            "dong_trend_rank": _rank(target_strength, (strengths[key] for key in trend_scope["dong_keys"] if strengths.get(key) is not None)),
+            "city_trend_rank": _rank(target_strength, (strengths[key] for key in trend_scope["city_keys"] if strengths.get(key) is not None)),
         })
 
     return {

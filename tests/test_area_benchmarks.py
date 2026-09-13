@@ -43,3 +43,26 @@ def test_trend_analysis_marks_no_trade_and_ranks_available_windows() -> None:
     assert three_months["trend_pct_per_month"] > 0
     assert three_months["dong_trend_rank"]["rank"] == 1
     assert one_month["status"] == "no_trade"
+    assert one_month["trend_basis_months"] == 3
+    assert one_month["trend_fallback_used"] is True
+    assert one_month["trend_pct_per_month"] > 0
+    assert one_month["dong_trend_rank"]["rank"] == 1
+
+
+def test_trend_analysis_expands_three_month_window_until_rank_is_available() -> None:
+    rows = []
+    for apt_name, prices in {
+        "가": [("2025-11", 8), ("2026-02", 10)],
+        "나": [("2025-11", 9), ("2026-02", 9)],
+    }.items():
+        for month, price in prices:
+            rows.append({"lawd_cd": "41110", "region_name": "경기도 수원시", "dong": "매산동", "apt_name": apt_name, "area_m2": 84, "month": month, "median_price_eok": price, "trade_count": 1})
+
+    trend = build_trend_analysis(rows, {"lawd_cd": "41110", "dong": "매산동", "apt_name": "가"}, "2026-03")
+    three_months = next(period for period in trend["periods"] if period["months"] == 3)
+
+    assert three_months["observation_months"] == 1
+    assert three_months["trend_basis_months"] == 6
+    assert three_months["trend_fallback_used"] is True
+    assert three_months["trend_observation_months"] == 2
+    assert three_months["dong_trend_rank"]["rank"] == 1

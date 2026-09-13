@@ -23,8 +23,14 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "include_history=true" in script
     assert "benchmarkOverlay:true" in script
     assert "borderDash:dash" in script
+    assert "trend_fallback_used" in script
+    assert "min:yMin,max:yMax" in script
+    assert "개발 호재·생활권 공식 확인" in script
+    assert "https://www.eum.go.kr/" in script
+    assert "https://www.gwanbo.go.kr/" in script
     assert "--trade-pastel" in script
     assert "--trade-pastel" in stylesheet
     assert "--filter-color" in stylesheet
     assert 'href="graph-trade-tools.css?v=2"' in html
-    assert 'src="app.js?v=81"' in html
+    assert 'href="area-benchmark.css?v=3"' in html
+    assert 'src="app.js?v=82"' in html
