@@ -48,7 +48,7 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert 'href="graph-trade-tools.css?v=2"' in html
     assert 'href="area-benchmark.css?v=7"' in html
     assert 'href="reb-market-map.css?v=3"' in html
-    assert 'src="app.js?v=95"' in html
+    assert 'src="app.js?v=96"' in html
 
 
 def test_every_collapsible_heading_has_a_leading_state_shape() -> None:
@@ -64,3 +64,19 @@ def test_every_collapsible_heading_has_a_leading_state_shape() -> None:
     for page in pages:
         html = (ROOT / "web" / page).read_text(encoding="utf-8")
         assert 'href="style.css?v=41"' in html
+
+
+def test_three_real_estate_foldable_panels_share_one_visual_contract() -> None:
+    script = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    stylesheet = (ROOT / "web" / "foldable-panels.css").read_text(encoding="utf-8")
+
+    assert 'reb-market-panel foldable-card' in html
+    assert 'reb-market-summary foldable-summary' in html
+    assert 'graph-trade-history foldable-card' in script
+    assert 'area-benchmark-panel foldable-card' in script
+    assert script.count('area-benchmark-summary foldable-summary') >= 2
+    assert 'href="foldable-panels.css?v=1"' in html
+    assert '.foldable-card>.foldable-summary' in stylesheet
+    assert 'content:"펼치기"' in stylesheet
+    assert 'content:"접기"' in stylesheet

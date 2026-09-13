@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <!-- 시험용 MANIA 스타일: 원복하려면 아래 CSS와 mania-theme.js 연결만 제거하세요. -->
 <link rel="stylesheet" href="mania-theme.css?v=5">
+<link rel="stylesheet" href="foldable-panels.css?v=1">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script src="mania-theme.js?v=2"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
@@ -92,10 +93,9 @@
   <div class="sr-only" aria-hidden="true"><span id="resultCount">0개</span><div id="results"></div></div>
 </section>
 
-<details class="panel reb-market-panel" id="rebMarketPanel" open>
-  <summary class="reb-market-summary">
-    <span><b>전국 아파트 매매가격·거래량 지도</b><small>한국부동산원 R-ONE 월간 공식 통계 · 클릭하여 접기/펼치기</small></span>
-    <i aria-hidden="true"></i>
+<details class="panel reb-market-panel foldable-card" id="rebMarketPanel" open>
+  <summary class="reb-market-summary foldable-summary">
+    <span class="foldable-title"><strong>전국 아파트 매매가격·거래량 지도</strong><small>한국부동산원 R-ONE 월간 공식 통계</small></span>
   </summary>
   <div class="reb-market-body">
     <div id="rebMarketStatus" class="reb-market-loading">최신 지역별 변동률을 불러오는 중입니다…</div>
@@ -174,6 +174,6 @@
     <button class="admin-login-submit" type="submit">관리자 모드 열기</button>
   </form>
 </dialog>
-<script src="app.js?v=95"></script>
+<script src="app.js?v=96"></script>
 </body>
 </html>
