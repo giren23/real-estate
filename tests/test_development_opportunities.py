@@ -1,4 +1,4 @@
-from realestate.development_opportunities import is_official_url, summarize_official_document
+from realestate.development_opportunities import is_official_url, same_event_title, summarize_official_document
 
 
 def test_only_public_official_hosts_are_accepted() -> None:
@@ -24,3 +24,14 @@ def test_official_document_summary_preserves_stage_and_numbers() -> None:
     assert result["stage"] == "착공·공사"
     assert "320억원" in result["summary"]
     assert result["scope"] == "선택 단지 직접 언급"
+
+
+def test_similar_headlines_for_the_same_event_are_grouped() -> None:
+    assert same_event_title(
+        "분당 이매동 아름마을 풍선효 통합재건축 2차 주민설명회",
+        "분당 이매동 아름마을 풍선효 통합재건축 주민설명회 개최",
+    )
+    assert not same_event_title(
+        "분당 이매동 아름마을 풍선효 통합재건축 주민설명회",
+        "이매동 성남역 광역교통 환승센터 계획",
+    )

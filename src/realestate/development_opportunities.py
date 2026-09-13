@@ -78,6 +78,18 @@ def location_terms(region_name: str, dong: str) -> list[str]:
     return list(dict.fromkeys(values))
 
 
+def title_terms(value: str) -> set[str]:
+    ignored = {"관련", "추진", "개최", "공개", "발표", "본격화", "된다", "위한"}
+    return {token.lower() for token in re.findall(r"[가-힣A-Za-z0-9]+", clean_text(value)) if len(token) >= 2 and token not in ignored}
+
+
+def same_event_title(left: str, right: str) -> bool:
+    left_terms, right_terms = title_terms(left), title_terms(right)
+    if not left_terms or not right_terms:
+        return False
+    return len(left_terms & right_terms) / min(len(left_terms), len(right_terms)) >= 0.72
+
+
 def category_for(text: str) -> str:
     scored = [(sum(text.lower().count(term.lower()) for term in terms), name) for name, terms in CATEGORY_TERMS.items()]
     score, category = max(scored)
@@ -203,7 +215,7 @@ class DevelopmentOpportunityStore:
 
     @staticmethod
     def _cache_key(region_name: str, dong: str, apt_name: str) -> str:
-        return f"{clean_text(region_name)}|{clean_text(dong)}|{clean_text(apt_name)}"
+        return f"v2|{clean_text(region_name)}|{clean_text(dong)}|{clean_text(apt_name)}"
 
     def get(self, region_name: str, dong: str, apt_name: str) -> dict:
         key = self._cache_key(region_name, dong, apt_name)
@@ -316,12 +328,12 @@ class DevelopmentOpportunityStore:
                     documents.append(value)
         documents.sort(key=lambda row: (row.get("official", False), row["scope"] == "선택 단지 직접 언급", row["stage_score"], row["published_at"]), reverse=True)
         unique_documents: list[dict] = []
-        seen_titles: set[str] = set()
+        seen_titles: list[str] = []
         for document in documents:
             title_key = re.sub(r"[^가-힣A-Za-z0-9]", "", document["title"]).lower()
-            if title_key in seen_titles:
+            if title_key in seen_titles or any(same_event_title(document["title"], row["title"]) for row in unique_documents):
                 continue
-            seen_titles.add(title_key)
+            seen_titles.append(title_key)
             unique_documents.append(document)
         items = unique_documents[:8]
         now = datetime.now(KST).isoformat(timespec="seconds")
