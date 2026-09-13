@@ -32,11 +32,13 @@ const geoCache = JSON.parse(localStorage.getItem("aptGeoCache") || "{}");
 const groupCoordinates = new Map();
 const mapNameGroupCache = new Map();
 const viewportLocalityCache = new Map();
-const MAX_VIEWPORT_MARKERS = 28, MIN_MARKER_ZOOM = 14;
+const PUBLIC_NOMINATIM="https://nominatim.openstreetmap.org";
+const PUBLIC_OVERPASS_ENDPOINTS=["https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter"];
+const MAX_VIEWPORT_MARKERS = 120, MIN_MARKER_ZOOM = 14;
 const MAX_REGION_MARKERS = 160;
 const MAX_NEARBY_GEOCODES = 0, NEARBY_RADIUS_KM = 3;
-const MIN_BUILDING_ZOOM = 14, MAX_BUILDING_MARKERS = 28;
-const MAX_VIEWPORT_FALLBACK_GEOCODES = 8;
+const MIN_BUILDING_ZOOM = 14, MAX_BUILDING_MARKERS = 120;
+const MAX_VIEWPORT_FALLBACK_GEOCODES = 30;
 let viewportMarkerTimer = null, viewportRefreshSuspended = false, viewportComplexCache = null, mapLocalityAnchor = null;
 let buildingRequestId = 0, buildingAbortController = null;
 let catalogRefreshChecking = false, lastCatalogRefreshCheck = 0;
@@ -546,6 +548,7 @@ async function load(){
       }
       lookup.set(identity(row),group);
       rememberTradeName(group,row.apt_name);
+      if(!group.jibun&&row.jibun)group.jibun=row.jibun;
       group.trades.push(row);
     });
     history.forEach(row=>{
@@ -1016,13 +1019,15 @@ function mapComplexName(value){
   return String(value||"").trim().replace(/\s*\d{1,4}동$/g,"").replace(/(?:아파트|공동주택)$/g,"").trim();
 }
 
+function hasActualTradeData(group){return Boolean(group?.latest||group?.trades?.length||group?.history?.length);}
+
 function groupForMapName(value,localityTokens=[],lawdCd=""){
   const name=mapComplexName(value),nameKey=compactName(name),cacheKey=nameKey+"|"+lawdCd+"|"+localityTokens.join("|");
   if(nameKey.length<3)return null;
   if(mapNameGroupCache.has(cacheKey))return mapNameGroupCache.get(cacheKey)||null;
   const ranked=[];
   const exactCandidates=groupsByMapName.get(nameKey)||[];
-  const candidates=exactCandidates.length?exactCandidates:(lawdCd?groupsByLawd.get(lawdCd)||[]:apartmentGroups);
+  const candidates=(exactCandidates.length?exactCandidates:(lawdCd?groupsByLawd.get(lawdCd)||[]:apartmentGroups)).filter(hasActualTradeData);
   candidates.forEach(group=>{
     if(lawdCd&&group.lawd_cd!==lawdCd)return;
     const place=compactName(group.region_name+" "+addressOf(group));
@@ -1043,18 +1048,60 @@ async function reverseMapLocality(center){
   if(elapsed<1100)await new Promise(resolve=>setTimeout(resolve,1100-elapsed));
   lastGeocodeAt=Date.now();
   try{
-    const url="/api/reverse-geocode?zoom=16&lat="+encodeURIComponent(center.lat)+"&lon="+encodeURIComponent(center.lng);
-    const response=await Promise.race([
-      fetch(url),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error("지도 지역 확인 시간 초과")),6000))
-    ]);
-    if(!response.ok)throw new Error("지도 지역 확인 실패");
-    const payload=await response.json();
+    let payload=null;
+    const urls=[
+      "/api/reverse-geocode?zoom=16&lat="+encodeURIComponent(center.lat)+"&lon="+encodeURIComponent(center.lng),
+      PUBLIC_NOMINATIM+"/reverse?format=jsonv2&addressdetails=1&zoom=16&lat="+encodeURIComponent(center.lat)+"&lon="+encodeURIComponent(center.lng)
+    ];
+    for(let index=0;index<urls.length;index++){
+      const url=urls[index];
+      try{
+        if(index>0){
+          const elapsed=Date.now()-lastGeocodeAt;
+          if(elapsed<1100)await new Promise(resolve=>setTimeout(resolve,1100-elapsed));
+          lastGeocodeAt=Date.now();
+        }
+        const response=await Promise.race([
+          fetch(url,{headers:{Accept:"application/json"}}),
+          new Promise((_,reject)=>setTimeout(()=>reject(new Error("지도 지역 확인 시간 초과")),7000))
+        ]);
+        if(!response.ok)throw new Error("지도 지역 확인 실패");
+        payload=await response.json();
+        if(payload)break;
+      }catch(error){payload=null;}
+    }
+    if(!payload)throw new Error("지도 지역 확인 실패");
     const address=payload.address||{};
     const tokens=[address.quarter,address.neighbourhood,address.suburb,address.village,address.town,address.hamlet,address.city_district,address.borough,address.county,address.city,address.municipality,address.province].map(compactName).filter((value,index,items)=>value&&value.length>=2&&items.indexOf(value)===index).slice(0,6);
     viewportLocalityCache.set(key,tokens);
     return tokens;
   }catch{return [];}
+}
+
+async function requestGeocodeRows(query,limit=5){
+  const urls=[
+    "/api/geocode?limit="+limit+"&q="+encodeURIComponent(query),
+    PUBLIC_NOMINATIM+"/search?format=jsonv2&countrycodes=kr&addressdetails=1&limit="+limit+"&q="+encodeURIComponent(query)
+  ];
+  let lastError=null;
+  for(let index=0;index<urls.length;index++){
+    const url=urls[index];
+    try{
+      if(index>0){
+        const elapsed=Date.now()-lastGeocodeAt;
+        if(elapsed<1100)await new Promise(resolve=>setTimeout(resolve,1100-elapsed));
+        lastGeocodeAt=Date.now();
+      }
+      const response=await Promise.race([
+        fetch(url,{headers:{Accept:"application/json"}}),
+        new Promise((_,reject)=>setTimeout(()=>reject(new Error("단지 좌표 검색 시간 초과")),10000))
+      ]);
+      if(!response.ok)throw new Error("단지 좌표 검색 실패");
+      const rows=await response.json();
+      if(Array.isArray(rows))return rows;
+    }catch(error){lastError=error;}
+  }
+  throw lastError||new Error("단지 좌표 검색 실패");
 }
 
 function lawdCodeForLocality(localityTokens){
@@ -1085,14 +1132,17 @@ async function geocodeNearbyGroup(group,center){
   try{
     const fullName=mapComplexName(group.directory_name||group.apt_name);
     const villageName=mapComplexName(group.apt_name).replace(/[（(].*?[）)]/g,"").replace(/\d+(?:단지|차)/g,"").trim();
-    const queries=[[group.dong,fullName].filter(Boolean).join(" "),[group.dong,villageName].filter(Boolean).join(" ")].filter((value,index,items)=>value&&items.indexOf(value)===index);
+    const region=group.region_name||group.sigungu||"";
+    const parcel=group.jibun||"";
+    const queries=[
+      [region,group.dong,parcel,fullName].filter(Boolean).join(" "),
+      [region,group.dong,fullName].filter(Boolean).join(" "),
+      [region,group.dong,villageName].filter(Boolean).join(" "),
+      [region,group.dong,parcel].filter(Boolean).join(" ")
+    ].filter((value,index,items)=>value&&items.indexOf(value)===index);
     let nearby=null;
     for(const query of queries){
-      const url="/api/geocode?limit=5&q="+encodeURIComponent(query);
-      const rows=await Promise.race([
-        fetch(url).then(response=>{if(!response.ok)throw new Error("단지 좌표 검색 실패");return response.json();}),
-        new Promise((_,reject)=>setTimeout(()=>reject(new Error("단지 좌표 검색 시간 초과")),10000))
-      ]);
+      const rows=await requestGeocodeRows(query,5);
       nearby=rows.map(row=>({lat:Number(row.lat),lng:Number(row.lon)})).filter(coord=>Number.isFinite(coord.lat)&&Number.isFinite(coord.lng)&&haversine(center,coord)<=5).sort((a,b)=>haversine(center,a)-haversine(center,b))[0]||null;
       if(nearby)break;
     }
@@ -1117,7 +1167,7 @@ function groupMatchesViewportLocality(group,localityTokens){
 async function discoverLocalViewportGroups(runId,bounds,center,lawdCd,localityTokens=[],allowGeocode=false){
   if(!lawdCd)return 0;
   const anchorDong=mapLocalityAnchor?.group?.dong||"";
-  const candidates=(groupsByLawd.get(lawdCd)||[]).filter(group=>!markers.has(group.key)&&(!regionFilteredKeys||regionFilteredKeys.has(group.key))).sort((a,b)=>{
+  const candidates=(groupsByLawd.get(lawdCd)||[]).filter(group=>hasActualTradeData(group)&&!markers.has(group.key)&&(!regionFilteredKeys||regionFilteredKeys.has(group.key))).sort((a,b)=>{
     const viewportA=groupMatchesViewportLocality(a,localityTokens)?1:0,viewportB=groupMatchesViewportLocality(b,localityTokens)?1:0;
     const sameDongA=a.dong===anchorDong?1:0,sameDongB=b.dong===anchorDong?1:0;
     const namedA=a.directory_name?1:0,namedB=b.directory_name?1:0;
@@ -1138,6 +1188,34 @@ async function discoverLocalViewportGroups(runId,bounds,center,lawdCd,localityTo
     if(markers.size>=currentMarkerLimit())break;
   }
   return added;
+}
+
+function overpassViewportQuery(bounds){
+  const box=[bounds.getSouth(),bounds.getWest(),bounds.getNorth(),bounds.getEast()].map(value=>Number(value).toFixed(6)).join(",");
+  return '[out:json][timeout:12];(nwr["building"="apartments"]["name"]('+box+');nwr["building"="residential"]["name"]('+box+');nwr["landuse"="residential"]["name"]('+box+'););out center 1200;';
+}
+
+async function requestViewportComplexes(bounds,signal){
+  const params=new URLSearchParams({south:bounds.getSouth(),west:bounds.getWest(),north:bounds.getNorth(),east:bounds.getEast()});
+  const attempts=["/api/map-complexes?"+params];
+  const query=overpassViewportQuery(bounds);
+  PUBLIC_OVERPASS_ENDPOINTS.forEach(endpoint=>attempts.push(endpoint+"?data="+encodeURIComponent(query)));
+  let lastError=null;
+  for(const url of attempts){
+    try{
+      const response=await Promise.race([
+        fetch(url,{signal,headers:{Accept:"application/json"}}),
+        new Promise((_,reject)=>setTimeout(()=>reject(new Error("주변 단지 조회 시간 초과")),15000))
+      ]);
+      if(!response.ok)throw new Error("주변 단지 조회 실패");
+      const payload=await response.json();
+      if(Array.isArray(payload?.elements))return payload;
+    }catch(error){
+      if(error.name==="AbortError")throw error;
+      lastError=error;
+    }
+  }
+  throw lastError||new Error("주변 단지 조회 실패");
 }
 
 async function refreshViewportBuildings(runId){
@@ -1166,15 +1244,7 @@ async function refreshViewportBuildings(runId){
   try{
     let payload=cachedViewport?{elements:viewportComplexCache.elements}:null;
     if(!payload){
-      try{
-        const params=new URLSearchParams({south:queryBounds.getSouth(),west:queryBounds.getWest(),north:queryBounds.getNorth(),east:queryBounds.getEast()});
-        const response=await fetch("/api/map-complexes?"+params,{signal:buildingAbortController.signal});
-        if(!response.ok)throw new Error("로컬 지도 조회 실패");
-        payload=await response.json();
-      }catch(localError){
-        if(localError.name==="AbortError")throw localError;
-        throw localError;
-      }
+      payload=await requestViewportComplexes(queryBounds,buildingAbortController.signal);
       viewportComplexCache={bounds:queryBounds,elements:payload.elements||[]};
     }
     if(runId!==buildingRequestId||viewportRefreshSuspended)return;
@@ -2515,11 +2585,7 @@ async function geocode(query){
   if(elapsed<1100) await new Promise(resolve=>setTimeout(resolve,1100-elapsed));
   lastGeocodeAt=Date.now();
   try{
-    const url="/api/geocode?limit=1&q="+encodeURIComponent(query);
-    const rows=await Promise.race([
-      fetch(url).then(r=>{if(!r.ok) throw new Error("주소 검색 실패");return r.json();}),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error("주소 검색 시간 초과")),10000))
-    ]);
+    const rows=await requestGeocodeRows(query,1);
     if(!rows.length) return null;
     const coord={lat:Number(rows[0].lat),lng:Number(rows[0].lon)};
     if(!isKoreanMapCoordinate(coord))throw new Error("국내 지도 좌표가 아닙니다.");

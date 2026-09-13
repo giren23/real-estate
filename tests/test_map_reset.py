@@ -12,3 +12,16 @@ def test_map_reset_button_restores_korea_bounds() -> None:
     assert "지도 위치 초기화" in html
     assert 'map.fitBounds([[33.0,124.3],[38.8,131.2]]' in script
     assert "mapLocalityAnchor=null" in script
+
+
+def test_map_marker_recovery_works_without_local_pc_api() -> None:
+    script = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert 'PUBLIC_NOMINATIM="https://nominatim.openstreetmap.org"' in script
+    assert "PUBLIC_OVERPASS_ENDPOINTS" in script
+    assert "requestViewportComplexes" in script
+    assert "requestGeocodeRows" in script
+    assert "hasActualTradeData(group)" in script
+    assert "MAX_VIEWPORT_MARKERS = 120" in script
+    assert "MAX_VIEWPORT_FALLBACK_GEOCODES = 30" in script
+    assert "[region,group.dong,parcel,fullName]" in script
