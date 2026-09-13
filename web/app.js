@@ -2154,16 +2154,22 @@ function renderAreaTrendCharts(panel,items,colors){
   const usable=(items||[]).filter(item=>item.trends?.periods?.length);
   if(!canvas||!usable.length)return;
   const labels=usable[0].trends.periods.map(period=>period.label);
-  const datasets=usable.map(item=>{
-    const key=String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name),data=item.trends.periods.map(period=>period.province_price_position?.top_percent??null),color=colors.get(key)||"#6040a0";
+  const rankPosition=rank=>Number(rank?.rank)&&Number(rank?.total)>1?Number(((Number(rank.rank)-1)/(Number(rank.total)-1)*100).toFixed(1)):null;
+  const line=(item,data,color,label,dash=[])=>{
     const lastIndex=(()=>{for(let index=data.length-1;index>=0;index--)if(data[index]!==null&&Number.isFinite(Number(data[index])))return index;return -1;})();
-    return {label:item.apt_name+" · "+item.province_label+" 내 상위%",data,borderColor:color,backgroundColor:color+(color.startsWith("#")?"18":""),borderWidth:2.7,pointRadius:data.map((value,index)=>value==null?0:index===lastIndex?6:3),pointHoverRadius:7,tension:.22,spanGaps:false,fill:false};
+    return {label:item.apt_name+" · "+label,data,borderColor:color,backgroundColor:color+(color.startsWith("#")?"18":""),borderWidth:dash.length?2.1:2.8,borderDash:dash,pointStyle:dash.length?"rectRot":"circle",pointRadius:data.map((value,index)=>value==null?0:index===lastIndex?6:3),pointHoverRadius:7,tension:.22,spanGaps:false,fill:false};
+  };
+  const datasets=usable.flatMap(item=>{
+    const key=String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name),color=colors.get(key)||"#6040a0";
+    const dong=item.trends.periods.map(period=>rankPosition(period.dong_price_position));
+    const province=item.trends.periods.map(period=>rankPosition(period.province_price_position));
+    return [line(item,dong,color,item.dong+" 동 내 위치"),line(item,province,color,item.province_label+" 시도 내 위치",[7,4])];
   });
   const finite=datasets.flatMap(dataset=>dataset.data).filter(value=>value!==null&&Number.isFinite(Number(value))).map(Number);
-  let yMin=finite.length?Math.max(1,Math.floor(Math.min(...finite)-10)):1;
+  let yMin=finite.length?Math.max(0,Math.floor(Math.min(...finite)-10)):0;
   let yMax=finite.length?Math.min(100,Math.ceil(Math.max(...finite)+10)):100;
-  if(yMin>=yMax){yMin=Math.max(1,yMin-10);yMax=Math.min(100,yMax+10);}
-  const chart=new Chart(canvas,{type:"line",data:{labels,datasets},options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"index",intersect:false},scales:{x:{grid:{display:false}},y:{min:yMin,max:yMax,reverse:true,title:{display:true,text:"시도 내 상위 비율 (%)"},ticks:{callback:value=>"상위 "+value+"%"}}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:7}},tooltip:{callbacks:{label:context=>context.raw==null?context.dataset.label+": 거래 없음":context.dataset.label+": "+fmt(context.raw)+"%"}}}}});
+  if(yMin>=yMax){yMin=Math.max(0,yMin-10);yMax=Math.min(100,yMax+10);}
+  const chart=new Chart(canvas,{type:"line",data:{labels,datasets},options:{maintainAspectRatio:false,responsive:true,interaction:{mode:"index",intersect:false},scales:{x:{grid:{display:false}},y:{min:yMin,max:yMax,reverse:true,title:{display:true,text:"전용 평당가 상대 위치 (0%=최상위)"},ticks:{callback:value=>value+"%"}}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:context=>context.raw==null?context.dataset.label+": 거래 없음":context.dataset.label+": "+fmt(context.raw)+"% 위치"}}}}});
   charts.set("area-trend-comparison",chart);
 }
 function developmentOpportunityHtml(item){
@@ -2196,7 +2202,7 @@ async function loadAreaBenchmarks(board,container){
     if(activeGraphId!==board.id||!panel.isConnected)return;
     const colors=new Map(requested.map(entry=>[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name,entry.color]));
     const cards=(payload.items||[]).map(item=>areaBenchmarkCardHtml(item,colors.get(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))||"#6040a0"));
-    panel.innerHTML='<summary class="area-benchmark-summary"><span><b>시도별 84㎡급 전용 평당가 위치</b><small>동·시도 평균 대비 · 클릭하여 접기/펼치기</small></span><i aria-hidden="true"></i></summary><div class="area-benchmark-body"><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 실거래를 전용면적으로 나눈 전용 평당가 기준입니다. 아래 추세는 최근 1개월부터 3년까지 같은 기준으로 비교합니다.</p>'+(cards.length?'<section class="area-trend-comparison"><div class="area-trend-head"><h4>선택 단지 상대 위치 추세 비교</h4><span>시도 내 상위 비율</span></div><div class="area-trend-chart"><canvas data-area-trend-comparison aria-label="선택 단지 전용 평당가 상대 위치 추세 비교"></canvas></div><p class="area-trend-axis-note">선택 단지들의 최상·최하 위치에서 위아래 10%p 범위만 표시합니다. 값이 작을수록 시도 내 상위권입니다.</p></section><div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'<p class="area-benchmark-disclaimer">분포와 순위는 현재 수집된 단지의 월별 중앙값으로 계산합니다. 가격 위치는 거래 없는 기간을 보간하지 않고, 상승 강도는 월별 전용평당가 회귀기울기로 계산해 표본이 부족하면 최대 3년까지 자동 확대합니다.</p></div>';
+    panel.innerHTML='<summary class="area-benchmark-summary"><span><b>시도별 84㎡급 전용 평당가 위치</b><small>동·시도 평균 대비 · 클릭하여 접기/펼치기</small></span><i aria-hidden="true"></i></summary><div class="area-benchmark-body"><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 실거래를 전용면적으로 나눈 전용 평당가 기준입니다. 아래 추세는 최근 1개월부터 3년까지 같은 기준으로 비교합니다.</p>'+(cards.length?'<section class="area-trend-comparison"><div class="area-trend-head"><h4>선택 단지 상대 위치 추세 비교</h4><span>모든 선택 단지를 한 그래프에 표시</span></div><div class="area-trend-chart"><canvas data-area-trend-comparison aria-label="선택 단지 전용 평당가 상대 위치 추세 비교"></canvas></div><p class="area-trend-axis-note">단지별 색상은 유지하고 동 비교는 실선, 시도 비교는 점선으로 표시합니다. 높은 전용 평단가일수록 0%에 가까우며 그래프 위쪽에 놓입니다. 축은 표시된 최상·최하 위치에서 위아래 10%p만 확장합니다.</p></section><div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'<p class="area-benchmark-disclaimer">분포와 순위는 현재 수집된 단지의 월별 중앙값으로 계산합니다. 가격 위치는 거래 없는 기간을 보간하지 않고, 상승 강도는 월별 전용평당가 회귀기울기로 계산해 표본이 부족하면 최대 3년까지 자동 확대합니다.</p></div>';
     renderAreaTrendCharts(panel,payload.items||[],colors);
   }catch(error){
     if(panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="전국 비교 자료를 불러오지 못했습니다. 메인 서버 상태를 확인한 뒤 다시 열어보세요.";
