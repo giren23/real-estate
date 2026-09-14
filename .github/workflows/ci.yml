@@ -1,0 +1,56 @@
+name: Validate application
+
+on:
+  push:
+    paths:
+      - ".github/workflows/**"
+      - "scripts/**"
+      - "src/**"
+      - "tests/**"
+      - "web/**"
+      - "requirements.txt"
+      - "pyproject.toml"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Python tests
+        id: pytest
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -q 2>&1 | tee pytest.log
+      - name: JavaScript syntax
+        id: javascript
+        continue-on-error: true
+        run: node --check web/app.js
+      - name: Publish concise failure annotation
+        if: steps.pytest.outcome == 'failure'
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path("pytest.log").read_text(encoding="utf-8", errors="replace")[-6000:]
+          text = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=pytest failure::{text}")
+          PY
+      - name: Fail validation after reporting details
+        if: steps.pytest.outcome == 'failure' || steps.javascript.outcome == 'failure'
+        run: exit 1

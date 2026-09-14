@@ -9,6 +9,7 @@ def test_all_public_data_families_have_at_least_daily_scheduled_refresh() -> Non
     markets = (ROOT / ".github" / "workflows" / "economic-indicators-daily.yml").read_text(encoding="utf-8")
 
     assert 'cron: "5 21 * * *"' in real_estate
+    assert "  push:" not in real_estate
     assert "--nationwide-coverage" in real_estate
     assert "retry-trades" in real_estate
     assert "publish_collection_status.py" in real_estate
@@ -23,6 +24,10 @@ def test_all_public_data_families_have_at_least_daily_scheduled_refresh() -> Non
     assert 'cron: "35 21 * * 6"' in directory
     assert "collect-complexes" in directory
     assert "publish_complex_directory.py" in directory
+
+    validation = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "pytest -q" in validation
+    assert "node --check web/app.js" in validation
 
     assert 'cron: "15 */3 * * *"' in markets
     for script in (

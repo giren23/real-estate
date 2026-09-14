@@ -1,18 +1,6 @@
 name: Daily real-estate update
 
 on:
-  push:
-    paths:
-      - ".github/workflows/daily-update.yml"
-      - "scripts/merge_incremental_public_data.py"
-      - "scripts/publish_collection_status.py"
-      - "scripts/build_public_trade_shards.py"
-      - "scripts/update_reb_market_map.py"
-      - "src/realestate/collectors/trades.py"
-      - "src/realestate/cli/main.py"
-      - "src/realestate/core/regions.py"
-      - "tests/test_daily_data_automation.py"
-      - "tests/test_incremental_public_merge.py"
   schedule:
     # 매일 한국시간 오전 6시 5분(UTC 전날 21시 5분)에 전국 갱신 1회를 실행함.
     - cron: "5 21 * * *"
