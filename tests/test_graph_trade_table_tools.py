@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     script = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
     stylesheet = (ROOT / "web" / "graph-trade-tools.css").read_text(encoding="utf-8")
+    area_stylesheet = (ROOT / "web" / "area-benchmark.css").read_text(encoding="utf-8")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
 
     for key in ("date", "apt", "area", "price", "floor"):
@@ -28,7 +29,10 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "data-area-trend-comparison" in script
     assert "data-area-trend-level" in script
     assert "activeLevels.includes" in script
-    assert "Math.max(0,Math.floor(Math.min(...finite)-10))" in script
+    assert "const scopeGroups=new Map()" in script
+    assert 'charts.set("area-trend-comparison:"+group.scope.key,chart)' in script
+    assert "같은 행정구역을 한 그래프로 묶음" in script
+    assert "Math.max(0,Math.floor(Math.min(...group.finite)-10))" in script
     assert "reverse:true" in script
     assert "tradeCounts" in script
     assert "tablePeriods=periods.filter" in script
@@ -57,8 +61,10 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "--trade-pastel" in script
     assert "--trade-pastel" in stylesheet
     assert "--filter-color" in stylesheet
+    assert ".area-trend-chart{height:320px" in area_stylesheet
+    assert ".area-trend-chart{height:280px" in area_stylesheet
     assert 'href="graph-trade-tools.css?v=2"' in html
-    assert 'href="area-benchmark.css?v=8"' in html
+    assert 'href="area-benchmark.css?v=9"' in html
     assert 'href="reb-market-map.css?v=5"' in html
     assert 'src="app.js?v=102"' in html
 

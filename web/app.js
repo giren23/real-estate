@@ -2425,38 +2425,43 @@ function areaTrendHtml(item,color){
   return '<section class="area-trend-panel" data-area-trend-key="'+esc(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))+'"><div class="area-trend-head"><h5>기간별 가격 위치·추세강도</h5><span>'+esc(trends.as_of_month)+' 기준</span></div>'+noRecent+'<div class="area-trend-table-wrap"><table><thead><tr><th>구간</th><th>기간 내 거래</th><th>평균 전용평당가</th><th>행정구역별 가격순위</th><th>추세강도</th><th>행정구역별 추세순위</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+rankScales+'</section>';
 }
 function renderAreaTrendCharts(panel,items,colors,enabledLevels=null){
-  const canvas=panel.querySelector("[data-area-trend-comparison]");
-  const usable=(items||[]).filter(item=>item.trends?.periods?.length);
-  if(!canvas||!usable.length)return;
-  const orderedPeriods=[...usable[0].trends.periods].sort((left,right)=>Number(right.months)-Number(left.months));
-  const labels=orderedPeriods.map(period=>period.label);
-  const activeLevels=enabledLevels===null?["locality","district","municipality","province"]:enabledLevels;
+  const host=panel.querySelector("[data-area-trend-groups]");
+  const usable=(items||[]).filter(item=>item.trends?.periods?.length),activeLevels=enabledLevels===null?["locality","district","municipality","province"]:enabledLevels;
+  [...charts.keys()].filter(key=>key==="area-trend-comparison"||key.startsWith("area-trend-comparison:")).forEach(key=>{charts.get(key)?.destroy();charts.delete(key);});
+  if(!host||!usable.length)return;
+  const scopeGroups=new Map();
+  usable.forEach(item=>(item.trends.administrative_scopes||[]).filter(scope=>activeLevels.includes(scope.level)).forEach(scope=>{
+    if(!scopeGroups.has(scope.key))scopeGroups.set(scope.key,{scope,items:[]});
+    scopeGroups.get(scope.key).items.push(item);
+  }));
+  const levelOrder={province:0,municipality:1,district:2,locality:3};
+  const groups=[...scopeGroups.values()].sort((left,right)=>(levelOrder[left.scope.level]??9)-(levelOrder[right.scope.level]??9)||String(left.scope.full_label||left.scope.label).localeCompare(String(right.scope.full_label||right.scope.label),"ko"));
   const rankPercent=rank=>hasFiniteNumber(rank?.top_percent)?Number(rank.top_percent):Number(rank?.rank)&&Number(rank?.total)?Number((Number(rank.rank)/Number(rank.total)*100).toFixed(1)):null;
-  const line=(data,tradeCounts,color,label,dash=[],width=2.8)=>{
+  const line=(data,tradeCounts,color,label)=>{
     const lastIndex=(()=>{for(let index=data.length-1;index>=0;index--)if(data[index]!==null&&Number.isFinite(Number(data[index])))return index;return -1;})();
-    return {label,data,tradeCounts,borderColor:color,backgroundColor:color+(color.startsWith("#")?"18":""),borderWidth:width,borderDash:dash,pointStyle:dash.length?"rectRot":"circle",pointRadius:data.map((value,index)=>value==null?0:index===lastIndex?6:3),pointHoverRadius:7,tension:.22,spanGaps:false,fill:false};
+    return {label,data,tradeCounts,borderColor:color,backgroundColor:color+(color.startsWith("#")?"18":""),borderWidth:2.8,pointStyle:"circle",pointRadius:data.map((value,index)=>value==null?0:index===lastIndex?6:3),pointHoverRadius:7,tension:.22,spanGaps:false,fill:false};
   };
-  const levelStyle={locality:{dash:[],width:3},district:{dash:[8,4],width:2.6},municipality:{dash:[3,4],width:2.4},province:{dash:[11,4],width:2.2}};
-  const datasets=usable.flatMap(item=>{
-    const key=String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name),color=colors.get(key)||"#6040a0";
-    const periodByMonths=new Map(item.trends.periods.map(period=>[Number(period.months),period]));
-    const tradeCounts=orderedPeriods.map(period=>Number(periodByMonths.get(Number(period.months))?.trade_count)||0);
-    return (item.trends.administrative_scopes||[]).filter(scope=>activeLevels.includes(scope.level)).map(scope=>{
-      const data=orderedPeriods.map(period=>{
-        const source=periodByMonths.get(Number(period.months));
-        const found=(source?.administrative_price_positions||[]).find(entry=>entry.key===scope.key);
+  const chartGroups=groups.map(group=>{
+    const orderedPeriods=[...group.items[0].trends.periods].sort((left,right)=>Number(right.months)-Number(left.months)),labels=orderedPeriods.map(period=>period.label);
+    const datasets=group.items.map(item=>{
+      const key=String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name),color=colors.get(key)||"#6040a0",periodByMonths=new Map(item.trends.periods.map(period=>[Number(period.months),period]));
+      const tradeCounts=orderedPeriods.map(period=>Number(periodByMonths.get(Number(period.months))?.trade_count)||0),data=orderedPeriods.map(period=>{
+        const source=periodByMonths.get(Number(period.months)),found=(source?.administrative_price_positions||[]).find(entry=>entry.key===group.scope.key);
         return rankPercent(found?.position);
       });
-      const style=levelStyle[scope.level]||{dash:[5,4],width:2.2};
-      return line(data,tradeCounts,color,item.apt_name+" · "+scope.label+" "+scope.level_label+" 내 위치",style.dash,style.width);
+      const label=group.scope.level==="locality"?item.apt_name:item.apt_name+" · "+item.dong;
+      return line(data,tradeCounts,color,label);
     });
+    const finite=datasets.flatMap(dataset=>dataset.data).filter(value=>value!==null&&Number.isFinite(Number(value))).map(Number);
+    return {...group,labels,datasets,finite};
+  }).filter(group=>group.finite.length);
+  if(!chartGroups.length){host.innerHTML='<p class="area-benchmark-empty">선택한 행정구역의 기간별 순위를 계산할 수 없습니다.</p>';return;}
+  host.innerHTML=chartGroups.map(group=>'<article class="area-trend-group"><div class="area-trend-group-head"><h5>'+esc(group.scope.label)+' <span>'+esc(group.scope.level_label)+'</span> 내 위치</h5><p>'+esc(fmt(group.items.length))+'개 선택 단지 · 같은 행정구역을 한 그래프로 묶음</p></div><div class="area-trend-chart"><canvas data-area-trend-comparison="'+esc(group.scope.key)+'" aria-label="'+esc(group.scope.full_label+' '+group.scope.level_label+' 내 선택 단지 가격 위치 추세')+'"></canvas></div></article>').join("");
+  chartGroups.forEach(group=>{
+    const canvas=host.querySelector('[data-area-trend-comparison="'+CSS.escape(group.scope.key)+'"]'),yMin=Math.max(0,Math.floor(Math.min(...group.finite)-10)),yMax=Math.min(100,Math.ceil(Math.max(...group.finite)+10));
+    const chart=new Chart(canvas,{type:"line",data:{labels:group.labels,datasets:group.datasets},options:{maintainAspectRatio:false,responsive:true,layout:{padding:{top:10,bottom:8}},interaction:{mode:"index",intersect:false},scales:{x:{grid:{display:false},title:{display:true,text:"15년 → 13년 → 11년 → 9년 → 7년 → 5년 → 3년 → 1년 → 6개월 → 3개월 → 1개월"}},y:{min:yMin,max:yMax,reverse:true,title:{display:true,text:"행정구역 내 상위 비율 (0%=최상위)"},ticks:{callback:value=>"상위 "+fmt(value)+"%"}}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:context=>context.raw==null?context.dataset.label+": 거래 없음":context.dataset.label+": 상위 "+fmt(context.raw)+"%",afterLabel:context=>"기간 내 거래 "+fmt(context.dataset.tradeCounts?.[context.dataIndex]||0)+"건"}}}}});
+    charts.set("area-trend-comparison:"+group.scope.key,chart);
   });
-  const finite=datasets.flatMap(dataset=>dataset.data).filter(value=>value!==null&&Number.isFinite(Number(value))).map(Number);
-  charts.get("area-trend-comparison")?.destroy();
-  if(!finite.length)return;
-  const yMin=Math.max(0,Math.floor(Math.min(...finite)-10)),yMax=Math.min(100,Math.ceil(Math.max(...finite)+10));
-  const chart=new Chart(canvas,{type:"line",data:{labels,datasets},options:{maintainAspectRatio:false,responsive:true,layout:{padding:{top:10,bottom:8}},interaction:{mode:"index",intersect:false},scales:{x:{grid:{display:false},title:{display:true,text:"15년 → 13년 → 11년 → 9년 → 7년 → 5년 → 3년 → 1년 → 6개월 → 3개월 → 1개월"}},y:{min:yMin,max:yMax,reverse:true,title:{display:true,text:"행정구역 내 상위 비율 (0%=최상위)"},ticks:{callback:value=>"상위 "+fmt(value)+"%"}}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:context=>context.raw==null?context.dataset.label+": 거래 없음":context.dataset.label+": 상위 "+fmt(context.raw)+"%",afterLabel:context=>"기간 내 거래 "+fmt(context.dataset.tradeCounts?.[context.dataIndex]||0)+"건"}}}}});
-  charts.set("area-trend-comparison",chart);
 }
 function developmentOpportunityHtml(item){
   const key=String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name),place=[item.region_name,item.dong,item.apt_name].filter(Boolean).join(" "),development=item.development;
@@ -2481,7 +2486,7 @@ function areaBenchmarkCardHtml(item,color,includeDevelopment=true){
   return '<article class="area-benchmark-card" style="--benchmark-color:'+esc(color)+'"><h4><i aria-hidden="true"></i>'+esc(title)+'</h4><div class="area-benchmark-price"><b>'+esc(benchmarkPrice(item.price_per_supply_pyeong_manwon))+'</b><span>전용면적 기준</span></div><p class="area-benchmark-meta">'+esc(item.region_name+" "+item.dong)+' · '+esc(String(item.month))+' 월 중앙가 · 거래 '+esc(fmt(Number(item.trade_count)))+'건</p><div class="area-benchmark-references">'+references+'</div>'+(item.trends?areaTrendHtml(item,color):"")+(includeDevelopment?developmentOpportunityHtml(item):"")+'</article>';
 }
 function areaTrendComparisonHtml(){
-  return '<section class="area-trend-comparison"><div class="area-trend-head"><h4>선택 단지 행정구역 내 가격 위치 추세</h4><span>15년부터 최근 1개월까지 · 오른쪽이 최근</span></div><fieldset class="area-trend-scope-controls"><legend>표시할 행정단계</legend><label><input type="checkbox" data-area-trend-level="locality" checked><span>동·읍·면</span></label><label><input type="checkbox" data-area-trend-level="district" checked><span>구</span></label><label><input type="checkbox" data-area-trend-level="municipality" checked><span>시·군</span></label><label><input type="checkbox" data-area-trend-level="province" checked><span>시도</span></label></fieldset><div class="area-trend-chart"><canvas data-area-trend-comparison aria-label="선택 단지의 행정구역별 전용 평당가 상위 비율 추세 비교"></canvas></div></section>';
+  return '<section class="area-trend-comparison"><div class="area-trend-head"><h4>공통 행정구역별 가격 위치 추세</h4><span>같은 구역의 단지들을 차트 하나로 묶었습니다 · 오른쪽이 최근</span></div><fieldset class="area-trend-scope-controls"><legend>표시할 행정단계</legend><label><input type="checkbox" data-area-trend-level="locality" checked><span>동·읍·면</span></label><label><input type="checkbox" data-area-trend-level="district" checked><span>구</span></label><label><input type="checkbox" data-area-trend-level="municipality" checked><span>시·군</span></label><label><input type="checkbox" data-area-trend-level="province" checked><span>시도</span></label></fieldset><div class="area-trend-chart-groups" data-area-trend-groups></div></section>';
 }
 function bindAreaTrendComparison(panel,items,colors){
   renderAreaTrendCharts(panel,items,colors);
