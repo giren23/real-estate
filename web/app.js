@@ -2215,9 +2215,9 @@ function bindTaxEstimator(board,container){
 
 function areaBenchmarkHtml(board){
   if(!board.series.length)return "";
-  const summary='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong><small>시도·시군구·읍면동 단계 비교</small></span></summary>';
+  const summary='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary>';
   if(!localApi)return '<details class="area-benchmark-panel foldable-card" data-area-benchmark-board="'+esc(board.id)+'" aria-live="polite" open>'+summary+'<div class="area-benchmark-body"><p class="area-benchmark-loading">GitHub에 저장된 전국 비교 자료를 불러오는 중입니다…</p></div></details>';
-  return '<details class="area-benchmark-panel foldable-card" data-area-benchmark-board="'+esc(board.id)+'" aria-live="polite" open>'+summary+'<div class="area-benchmark-body"><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 실거래를 전용면적으로 나눈 전용 평당가 기준입니다. 선택 단지를 읍·면·동, 구, 시·군, 시도 순으로 각각 같은 행정단계의 단지와 비교합니다.</p><p class="area-benchmark-loading">행정구역 단계별 비교 분포와 추세를 계산하는 중입니다…</p></div></details>';
+  return '<details class="area-benchmark-panel foldable-card" data-area-benchmark-board="'+esc(board.id)+'" aria-live="polite" open>'+summary+'<div class="area-benchmark-body"><p class="area-benchmark-loading">행정구역 단계별 비교 분포와 추세를 계산하는 중입니다…</p></div></details>';
 }
 
 function exclusivePyeongPrice(value){return Number.isFinite(Number(value))?fmt(Math.round(Number(value)))+"만원/전용평":"자료 없음";}
@@ -2266,7 +2266,7 @@ function areaTrendHtml(item,color){
   const rankBasis=latestRankPeriod?.trend_basis_label||latestRankPeriod?.label;
   const latestRanks=latestRankPeriod?.administrative_trend_ranks||[];
   const rankScales=latestRankPeriod?'<div class="trend-rank-latest"><p>가장 최근 순위 · <b>'+esc(rankBasis)+'</b> 월별 회귀기울기 사용'+(latestRankPeriod.trend_fallback_used?' (짧은 구간 표본 부족으로 자동 확대)':'')+'</p>'+latestRanks.map(entry=>trendRankScaleHtml(entry.label+" "+entry.level_label+" 추세강도",entry.rank,color)).join("")+'</div>':'';
-  return '<section class="area-trend-panel" data-area-trend-key="'+esc(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))+'"><div class="area-trend-head"><h5>기간별 가격 위치·추세강도</h5><span>'+esc(trends.as_of_month)+' 기준</span></div>'+noRecent+'<p class="area-trend-axis-note">가격 위치는 거래 없는 기간을 추정하지 않으며, 읍면동→구→시군→시도마다 별도 순위를 계산합니다. 추세 표본이 부족하면 1개월부터 최대 15년까지 단계적으로 기간을 확대합니다.</p><div class="area-trend-table-wrap"><table><thead><tr><th>구간</th><th>기간 내 거래</th><th>평균 전용평당가</th><th>행정구역별 가격순위</th><th>추세강도</th><th>행정구역별 추세순위</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+rankScales+'</section>';
+  return '<section class="area-trend-panel" data-area-trend-key="'+esc(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))+'"><div class="area-trend-head"><h5>기간별 가격 위치·추세강도</h5><span>'+esc(trends.as_of_month)+' 기준</span></div>'+noRecent+'<div class="area-trend-table-wrap"><table><thead><tr><th>구간</th><th>기간 내 거래</th><th>평균 전용평당가</th><th>행정구역별 가격순위</th><th>추세강도</th><th>행정구역별 추세순위</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+rankScales+'</section>';
 }
 function renderAreaTrendCharts(panel,items,colors,enabledLevels=[]){
   const canvas=panel.querySelector("[data-area-trend-comparison]");
@@ -2345,7 +2345,7 @@ async function loadAreaBenchmarks(board,container){
   if(!localApi){
     try{
       if(!staticAreaBenchmarkPayload){
-        const response=await fetch("data/area_benchmarks.json",{cache:"force-cache"});
+        const response=await fetch("data/area_benchmarks.json?updated="+Date.now(),{cache:"no-store"});
         if(!response.ok)throw new Error("static benchmark unavailable");
         staticAreaBenchmarkPayload=await response.json();
       }
@@ -2353,7 +2353,7 @@ async function loadAreaBenchmarks(board,container){
       const source=staticAreaBenchmarkPayload?.items||{};
       const cards=requested.map(entry=>source[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name]).filter(Boolean)
         .map(item=>areaBenchmarkCardHtml(item,requested.find(entry=>entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name===String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))?.color||"#6040a0"));
-      panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong><small>GitHub 공개 스냅샷 · PC가 꺼져도 조회 가능</small></span></summary><div class="area-benchmark-body"><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 월별 중앙 실거래가를 전용면적으로 나눈 전용 평당가 기준입니다. GitHub에 게시된 최신 공개 스냅샷으로 읍·면·동, 구, 시·군, 시도별 위치를 계산했습니다.</p>'+(cards.length?'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택 단지의 GitHub 공개 비교 자료가 아직 없습니다. 다음 공개 데이터 갱신 후 자동 반영됩니다.</p>')+'<p class="area-benchmark-disclaimer">PC가 꺼진 경우에는 GitHub 정적 스냅샷의 가격 위치만 표시합니다. 기간별 추세·개발호재 자료는 메인 서버 연결 시 제공됩니다.</p></div>';
+      panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary><div class="area-benchmark-body">'+(cards.length?'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택 단지의 GitHub 공개 비교 자료가 아직 없습니다. 다음 공개 데이터 갱신 후 자동 반영됩니다.</p>')+'</div>';
     }catch(_error){
       if(panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="GitHub 공개 비교 자료를 불러오지 못했습니다. 인터넷 연결 또는 다음 데이터 배포를 확인해 주세요.";
     }
@@ -2366,7 +2366,7 @@ async function loadAreaBenchmarks(board,container){
     if(activeGraphId!==board.id||!panel.isConnected)return;
     const colors=new Map(requested.map(entry=>[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name,entry.color]));
     const cards=(payload.items||[]).map(item=>areaBenchmarkCardHtml(item,colors.get(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))||"#6040a0"));
-    panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong><small>선택 단지 기본 표시 · 행정구역 평균선 선택 가능</small></span></summary><div class="area-benchmark-body"><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 실거래를 전용면적으로 나눈 전용 평당가 기준입니다. 그래프에는 선택 단지만 기본 표시하며, 필요한 행정구역 평균선만 직접 켤 수 있습니다.</p>'+(cards.length?'<section class="area-trend-comparison"><div class="area-trend-head"><h4>선택 단지 전용평당가 추세</h4><span>15년 전부터 최근 1개월까지 · 오른쪽이 최근</span></div><fieldset class="area-trend-scope-controls"><legend>행정구역 평균선 추가(기본 꺼짐)</legend><label><input type="checkbox" data-area-trend-level="locality"><span>동·읍·면</span></label><label><input type="checkbox" data-area-trend-level="district"><span>구</span></label><label><input type="checkbox" data-area-trend-level="municipality"><span>시·군</span></label><label><input type="checkbox" data-area-trend-level="province"><span>시도</span></label></fieldset><div class="area-trend-chart"><canvas data-area-trend-comparison aria-label="선택 단지와 선택한 행정구역의 84㎡급 전용 평당가 추세 비교"></canvas></div><p class="area-trend-axis-note">같은 동·읍·면, 구, 시·군, 시도 평균선은 여러 단지가 공유해도 한 번만 표시합니다. 세 단지가 같은 성남시·분당구라면 시·구선은 하나이고, 같은 동인 단지끼리는 동선도 하나로 통합됩니다.</p></section><div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'<p class="area-benchmark-disclaimer">분포와 순위는 현재 수집된 단지의 월별 중앙값으로 계산합니다. 새 전국 실거래가가 들어오면 서버가 같은 규칙으로 다시 계산하며 GPT를 사용하지 않습니다. 가격 위치는 거래 없는 기간을 보간하지 않고 상승 강도는 월별 전용평당가 회귀기울기로 계산해 표본이 부족하면 더 긴 기간으로 자동 확대합니다.</p></div>';
+    panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary><div class="area-benchmark-body">'+(cards.length?'<section class="area-trend-comparison"><div class="area-trend-head"><h4>선택 단지 전용평당가 추세</h4><span>15년 전부터 최근 1개월까지 · 오른쪽이 최근</span></div><fieldset class="area-trend-scope-controls"><legend>행정구역 평균선 추가(기본 꺼짐)</legend><label><input type="checkbox" data-area-trend-level="locality"><span>동·읍·면</span></label><label><input type="checkbox" data-area-trend-level="district"><span>구</span></label><label><input type="checkbox" data-area-trend-level="municipality"><span>시·군</span></label><label><input type="checkbox" data-area-trend-level="province"><span>시도</span></label></fieldset><div class="area-trend-chart"><canvas data-area-trend-comparison aria-label="선택 단지와 선택한 행정구역의 84㎡급 전용 평당가 추세 비교"></canvas></div></section><div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'</div>';
     renderAreaTrendCharts(panel,payload.items||[],colors);
     panel.querySelectorAll("[data-area-trend-level]").forEach(toggle=>toggle.addEventListener("change",()=>{
       const enabled=[...panel.querySelectorAll("[data-area-trend-level]:checked")].map(input=>input.dataset.areaTrendLevel);

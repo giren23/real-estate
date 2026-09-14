@@ -38,7 +38,7 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "행정구역별 84㎡급 전용 평당가 위치" in script
     assert "administrative_price_positions" in script
     assert "administrative_trend_ranks" in script
-    assert "시도·시군구·읍면동 단계 비교" in script
+    assert 'cache:"no-store"' in script
     assert "개발 호재·생활권 공식 요약" in script
     assert "include_development=true" in script
     assert "검증 본문" in script
@@ -46,9 +46,9 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "--trade-pastel" in stylesheet
     assert "--filter-color" in stylesheet
     assert 'href="graph-trade-tools.css?v=2"' in html
-    assert 'href="area-benchmark.css?v=7"' in html
+    assert 'href="area-benchmark.css?v=8"' in html
     assert 'href="reb-market-map.css?v=5"' in html
-    assert 'src="app.js?v=97"' in html
+    assert 'src="app.js?v=98"' in html
 
 
 def test_every_collapsible_heading_has_a_leading_state_shape() -> None:
