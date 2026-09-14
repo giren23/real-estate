@@ -23,15 +23,20 @@ def test_map_marker_recovery_works_without_local_pc_api() -> None:
     assert "requestGeocodeRows" in script
     assert "hasActualTradeData(group)" in script
     assert "MAX_VIEWPORT_MARKERS = 120" in script
-    assert "MAX_VIEWPORT_FALLBACK_GEOCODES = 30" in script
-    assert "[region,group.dong,parcel,fullName]" in script
-    assert 'const GEO_CACHE_STORAGE_KEY="aptGeoCacheV2"' in script
+    assert 'const MAP_SEARCH_CACHE_STORAGE_KEY="mapSearchCacheV1"' in script
     assert "validatedGeocodeCoordinate" in script
     assert "verifiedComplexCoordinate" in script
     assert "group?.data_apt_name" in script
     assert "seedApproximateMarkers" not in script
     assert "동 중심 기준 임시 위치" not in script
     assert "geoCache[apartmentGeocodeName(group.apt_name)]" not in script
+    assert "building\"=\"residential" not in script
+    assert "landuse\"=\"residential" not in script
+    assert "nameScore<980" in script
+    assert "groupCoordinates.get(group.key)||verifiedComplexCoordinate(group)||null" in script
+    assert "geocodeNearbyGroup" not in script
+    assert 'way["building"="apartments"]["name"]' in script
+    assert "candidates.length===1?candidates[0]:null" in script
     assert '"검증 좌표 단지 "+markers.size' in script
     assert "if(allowAddressFallback&&group.jibun)" in script
     assert "SIDO_FALLBACK_CENTERS" in script

@@ -34,10 +34,12 @@ const groupByKey = new Map(), groupsByLawd = new Map(), groupsByMapName = new Ma
 const regionHierarchy = new Map();
 let regionSelection={sido:"",sigungu:"",dong:""},regionFilteredKeys=null,regionSelectionRunId=0;
 let lastGeocodeAt = 0, searchRunId = 0, searchSuggestionTimer = null, localityFocusRunId = 0;
-// v2 deliberately drops the old cache. The previous cache accepted a bare
-// apartment-name result or a legal-dong centroid as an exact complex position.
-const GEO_CACHE_STORAGE_KEY="aptGeoCacheV2";
-const geoCache = JSON.parse(localStorage.getItem(GEO_CACHE_STORAGE_KEY) || "{}");
+// Keep only general locality searches in local storage. Apartment coordinates
+// are resolved per session from an exact map feature or a separately verified
+// coordinate. Older caches included weak name matches, so they must never be
+// allowed back into the nationwide marker pipeline.
+const MAP_SEARCH_CACHE_STORAGE_KEY="mapSearchCacheV1";
+const mapSearchCache = JSON.parse(localStorage.getItem(MAP_SEARCH_CACHE_STORAGE_KEY) || "{}");
 const groupCoordinates = new Map();
 const mapNameGroupCache = new Map();
 const viewportLocalityCache = new Map();
@@ -48,7 +50,7 @@ const MAX_VIEWPORT_MARKERS = 120, MIN_MARKER_ZOOM = 14;
 const MAX_REGION_MARKERS = 160;
 const MAX_NEARBY_GEOCODES = 0, NEARBY_RADIUS_KM = 3;
 const MIN_BUILDING_ZOOM = 14, MAX_BUILDING_MARKERS = 120;
-const MAX_VIEWPORT_FALLBACK_GEOCODES = 30;
+const MAX_GEOCODE_DISTANCE_KM = 1.5;
 let viewportMarkerTimer = null, viewportRefreshSuspended = false, viewportComplexCache = null, mapLocalityAnchor = null;
 let buildingRequestId = 0, buildingAbortController = null;
 let catalogRefreshChecking = false, lastCatalogRefreshCheck = 0;
@@ -104,11 +106,11 @@ function graphLineStyle(value){return graphLineStyles.find(style=>style.value===
 // selected apartment. IDs can be added as they are verified.
 const verifiedNaverComplexes = [
   {lawdCd:"41135",dong:"서현동",aptNames:["서현효자촌임광","효자촌임광"],complexNo:"1777"},
-  // The coordinate is the center published with Naver complex 1840. Keeping a
-  // separately verified override prevents a dong-centroid fallback when the
-  // public apartment directory has no parcel number.
-  {lawdCd:"41135",dong:"서현동",aptNames:["시범우성"],complexNo:"1840",coord:{lat:37.379838,lng:127.1280839}},
-  {lawdCd:"41135",dong:"서현동",aptNames:["시범한신"],complexNo:"1821"},
+  // Samsung/Hanshin is at the public road address 중앙공원로 53 (서현동 87).
+  // The coordinate was checked against that address; a prior map-centre value
+  // was deliberately removed because it placed the complex in the wrong area.
+  {lawdCd:"41135",dong:"서현동",aptNames:["시범한신","삼성한신"],complexNo:"1821",coord:{lat:37.3876973,lng:127.1136256}},
+  {lawdCd:"41135",dong:"서현동",aptNames:["시범우성"],complexNo:"1840"},
   {lawdCd:"41135",dong:"정자동",aptNames:["상록마을(보성)","상록임광보성"],complexNo:"2637"}
 ];
 function verifiedNaverComplexNo(group){
@@ -1039,10 +1041,7 @@ async function populateRegionMarkers(groups,center,selectionRunId,label,selected
   let located=0;
   for(const group of groups){
     if(selectionRunId!==regionSelectionRunId||!selectedKeys.has(group.key))return;
-    let coord=cachedCoordinate(group);
-    if(!coord){
-      coord=await geocodeNearbyGroup(group,center);
-    }
+    const coord=cachedCoordinate(group);
     if(!coord)continue;
     ensureMapMarker(group,coord);located++;
     byId("mapState").textContent="지역 단지 좌표 확인 중 · "+located+" / "+groups.length+"개";
@@ -1088,7 +1087,7 @@ function mapPopupHtml(group){
 function indexCachedGroupCoordinates(){
   groupCoordinates.clear();
   apartmentGroups.forEach(group=>{
-    const coord=verifiedComplexCoordinate(group)||geoCache[geocodeQueryOf(group)];
+    const coord=verifiedComplexCoordinate(group);
     if(coord&&Number.isFinite(Number(coord.lat))&&Number.isFinite(Number(coord.lng)))groupCoordinates.set(group.key,{lat:Number(coord.lat),lng:Number(coord.lng)});
   });
 }
@@ -1135,18 +1134,15 @@ function groupForMapName(value,localityTokens=[],lawdCd=""){
   const name=mapComplexName(value),nameKey=compactName(name),cacheKey=nameKey+"|"+lawdCd+"|"+localityTokens.join("|");
   if(nameKey.length<3)return null;
   if(mapNameGroupCache.has(cacheKey))return mapNameGroupCache.get(cacheKey)||null;
-  const ranked=[];
-  const exactCandidates=groupsByMapName.get(nameKey)||[];
-  const candidates=(exactCandidates.length?exactCandidates:(lawdCd?groupsByLawd.get(lawdCd)||[]:apartmentGroups)).filter(hasActualTradeData);
-  candidates.forEach(group=>{
-    if(lawdCd&&group.lawd_cd!==lawdCd)return;
-    const place=compactName(group.region_name+" "+addressOf(group));
-    if(localityTokens.length&&!localityTokens.every(token=>place.includes(token)))return;
-    const score=Math.max(0,...(group.search_names||[group.apt_name]).map(candidate=>apartmentNameScore(mapComplexName(candidate),name)));
-    if(score>=(localityTokens.length||lawdCd?860:940))ranked.push({group,score});
-  });
-  ranked.sort((a,b)=>b.score-a.score);
-  const matched=ranked.length&&(!ranked[1]||ranked[0].score-ranked[1].score>=20)?ranked[0].group:null;
+  // A viewport feature is an authoritative coordinate only when its displayed
+  // name exactly matches one catalogue alias. Similar names (e.g. 한신,
+  // 현대, 우성) are common nationwide and must never create a marker.
+  let candidates=(groupsByMapName.get(nameKey)||[]).filter(group=>hasActualTradeData(group)&&(!lawdCd||group.lawd_cd===lawdCd));
+  if(candidates.length>1&&localityTokens.length){
+    const local=candidates.filter(group=>groupMatchesViewportLocality(group,localityTokens));
+    if(local.length)candidates=local;
+  }
+  const matched=candidates.length===1?candidates[0]:null;
   mapNameGroupCache.set(cacheKey,matched||false);
   return matched;
 }
@@ -1233,36 +1229,6 @@ function lawdCodeForLocality(localityTokens){
   return ranked.length&&ranked[0][1]>=4&&(!ranked[1]||ranked[0][1]>ranked[1][1])?ranked[0][0]:"";
 }
 
-async function geocodeNearbyGroup(group,center){
-  const cacheKey=geocodeQueryOf(group),verified=verifiedComplexCoordinate(group),cached=verified||geoCache[cacheKey];
-  if(cached&&isKoreanMapCoordinate(cached)&&haversine(center,cached)<=5)return cached;
-  const elapsed=Date.now()-lastGeocodeAt;
-  if(elapsed<1100)await new Promise(resolve=>setTimeout(resolve,1100-elapsed));
-  lastGeocodeAt=Date.now();
-  try{
-    const fullName=mapComplexName(group.directory_name||group.apt_name);
-    const villageName=mapComplexName(group.apt_name).replace(/[（(].*?[）)]/g,"").replace(/\d+(?:단지|차)/g,"").trim();
-    const region=group.region_name||group.sigungu||"";
-    const parcel=group.jibun||"";
-    const queries=[
-      [region,group.dong,parcel,fullName].filter(Boolean).join(" "),
-      [region,group.dong,fullName].filter(Boolean).join(" "),
-      [region,group.dong,villageName].filter(Boolean).join(" ")
-    ].filter((value,index,items)=>value&&items.indexOf(value)===index);
-    let nearby=null;
-    for(const query of queries){
-      const rows=await requestGeocodeRows(query,5);
-      nearby=validatedGeocodeCoordinate(group,rows,center);
-      if(nearby)break;
-    }
-    if(!nearby)return null;
-    geoCache[cacheKey]=nearby;
-    localStorage.setItem(GEO_CACHE_STORAGE_KEY,JSON.stringify(geoCache));
-    groupCoordinates.set(group.key,nearby);
-    return nearby;
-  }catch{return null;}
-}
-
 function localityToken(value){return compactName(value).replace(/\d/g,"").replace(/^제(?=.+동$)/,"");}
 
 function groupMatchesViewportLocality(group,localityTokens){
@@ -1273,7 +1239,7 @@ function groupMatchesViewportLocality(group,localityTokens){
   });
 }
 
-async function discoverLocalViewportGroups(runId,bounds,center,lawdCd,localityTokens=[],allowGeocode=false){
+async function discoverLocalViewportGroups(runId,bounds,center,lawdCd,localityTokens=[]){
   if(!lawdCd)return 0;
   const anchorDong=mapLocalityAnchor?.group?.dong||"";
   const candidates=(groupsByLawd.get(lawdCd)||[]).filter(group=>hasActualTradeData(group)&&!markers.has(group.key)&&(!regionFilteredKeys||regionFilteredKeys.has(group.key))).sort((a,b)=>{
@@ -1282,15 +1248,10 @@ async function discoverLocalViewportGroups(runId,bounds,center,lawdCd,localityTo
     const namedA=a.directory_name?1:0,namedB=b.directory_name?1:0;
     return viewportB-viewportA||sameDongB-sameDongA||namedB-namedA||(b.latest?.trade_date||"").localeCompare(a.latest?.trade_date||"");
   });
-  let added=0,geocoded=0;
+  let added=0;
   for(const group of candidates){
     if(runId!==buildingRequestId||viewportRefreshSuspended)return added;
     let coord=cachedCoordinate(group);
-    if(!coord&&allowGeocode&&geocoded<MAX_VIEWPORT_FALLBACK_GEOCODES&&groupMatchesViewportLocality(group,localityTokens)){
-      geocoded++;
-      byId("mapState").textContent="주변 단지 좌표 복구 중 · "+geocoded+" / "+MAX_VIEWPORT_FALLBACK_GEOCODES;
-      coord=await geocodeNearbyGroup(group,center);
-    }
     if(!coord||!bounds.pad(.08).contains([coord.lat,coord.lng]))continue;
     ensureMapMarker(group,coord);added++;
     byId("mapState").textContent="보조 좌표 확인 중 · 현재 화면 단지 "+markers.size+"개";
@@ -1301,7 +1262,7 @@ async function discoverLocalViewportGroups(runId,bounds,center,lawdCd,localityTo
 
 function overpassViewportQuery(bounds){
   const box=[bounds.getSouth(),bounds.getWest(),bounds.getNorth(),bounds.getEast()].map(value=>Number(value).toFixed(6)).join(",");
-  return '[out:json][timeout:12];(nwr["building"="apartments"]["name"]('+box+');nwr["building"="residential"]["name"]('+box+');nwr["landuse"="residential"]["name"]('+box+'););out center 1200;';
+  return '[out:json][timeout:12];(way["building"="apartments"]["name"]('+box+');relation["building"="apartments"]["name"]('+box+'););out center 1200;';
 }
 
 async function requestViewportComplexes(bounds,signal){
@@ -1348,7 +1309,7 @@ async function refreshViewportBuildings(runId){
     const tokens=await localityPromise;
     if(runId!==buildingRequestId||viewportRefreshSuspended)return 0;
     const fallbackLawdCd=anchorLawdCd||lawdCodeForLocality(tokens);
-    return discoverLocalViewportGroups(runId,bounds,center,fallbackLawdCd,tokens,true);
+    return discoverLocalViewportGroups(runId,bounds,center,fallbackLawdCd,tokens);
   })();
   try{
     let payload=cachedViewport?{elements:viewportComplexCache.elements}:null;
@@ -1371,13 +1332,9 @@ async function refreshViewportBuildings(runId){
       buckets.set(group.key,bucket);
     });
     const selected=[...buckets.values()].map(bucket=>({group:bucket.group,coord:{lat:bucket.lat/bucket.count,lng:bucket.lng/bucket.count}})).sort((a,b)=>haversine(center,a.coord)-haversine(center,b.coord)).slice(0,regionFilteredKeys?MAX_REGION_MARKERS:MAX_BUILDING_MARKERS);
-    let geoCacheChanged=false;
     selected.forEach(item=>{
       groupCoordinates.set(item.group.key,item.coord);
-      const key=geocodeQueryOf(item.group),cached=geoCache[key];
-      if(!cached||haversine(cached,item.coord)>.03){geoCache[key]=item.coord;geoCacheChanged=true;}
     });
-    if(geoCacheChanged)localStorage.setItem(GEO_CACHE_STORAGE_KEY,JSON.stringify(geoCache));
     syncViewportMarkers();
     await localFallbackPromise;
     await progressiveFallbackPromise;
@@ -1396,7 +1353,7 @@ async function refreshViewportBuildings(runId){
 }
 
 function cachedCoordinate(group){
-  return groupCoordinates.get(group.key)||verifiedComplexCoordinate(group)||geoCache[geocodeQueryOf(group)]||null;
+  return groupCoordinates.get(group.key)||verifiedComplexCoordinate(group)||null;
 }
 
 async function selectSearchGroup(group,runId){
@@ -1411,7 +1368,7 @@ async function selectSearchGroup(group,runId){
 
 async function showNearbyMarkers(selectedGroup,centerCoord,runId){
   viewportRefreshSuspended=true;
-  let newGeocodes=0,shown=1;
+  let shown=1;
   const candidates=apartmentGroups.filter(group=>group.key!==selectedGroup.key&&group.lawd_cd===selectedGroup.lawd_cd).sort((a,b)=>{
     const sameDongA=a.dong===selectedGroup.dong?1:0,sameDongB=b.dong===selectedGroup.dong?1:0;
     const cachedA=cachedCoordinate(a)?1:0,cachedB=cachedCoordinate(b)?1:0;
@@ -1421,12 +1378,7 @@ async function showNearbyMarkers(selectedGroup,centerCoord,runId){
   for(const group of candidates){
     if(runId!==searchRunId){viewportRefreshSuspended=false;return;}
     if(shown>=MAX_VIEWPORT_MARKERS)break;
-    let coord=cachedCoordinate(group);
-    if(!coord){
-      if(newGeocodes>=MAX_NEARBY_GEOCODES)continue;
-      newGeocodes++;
-      coord=await geocodeGroup(group,false);
-    }
+    const coord=cachedCoordinate(group);
     if(!coord||haversine(centerCoord,coord)>NEARBY_RADIUS_KM)continue;
     ensureMapMarker(group,coord);
     shown++;
@@ -2883,7 +2835,7 @@ function initMap(){
 }
 
 async function geocode(query){
-  if(geoCache[query]) return geoCache[query];
+  if(mapSearchCache[query]) return mapSearchCache[query];
   const elapsed=Date.now()-lastGeocodeAt;
   if(elapsed<1100) await new Promise(resolve=>setTimeout(resolve,1100-elapsed));
   lastGeocodeAt=Date.now();
@@ -2892,8 +2844,8 @@ async function geocode(query){
     if(!rows.length) return null;
     const coord={lat:Number(rows[0].lat),lng:Number(rows[0].lon)};
     if(!isKoreanMapCoordinate(coord))throw new Error("국내 지도 좌표가 아닙니다.");
-    geoCache[query]=coord;
-    localStorage.setItem(GEO_CACHE_STORAGE_KEY,JSON.stringify(geoCache));
+    mapSearchCache[query]=coord;
+    localStorage.setItem(MAP_SEARCH_CACHE_STORAGE_KEY,JSON.stringify(mapSearchCache));
     return coord;
   }catch(error){
     setStatus("지도 주소 검색이 잠시 원활하지 않습니다. 단지명 검색 결과는 계속 이용할 수 있습니다.",true);
@@ -2917,23 +2869,23 @@ function validatedGeocodeCoordinate(group,rows,center=null){
   const ranked=(rows||[]).map(row=>{
     const coord=geocodeRowCoordinate(row),text=geocodeRowText(row);
     if(!coord||!text||!dong||!text.includes(dong))return null;
-    if(center&&haversine(center,coord)>5)return null;
+    if(center&&haversine(center,coord)>MAX_GEOCODE_DISTANCE_KM)return null;
     const nameScore=Math.max(0,...names.map(name=>apartmentNameScore(mapComplexName(name),row.name||row.display_name||"")));
     const parcelMatch=Boolean(parcel)&&text.includes(compactName(parcel));
-    if(nameScore<860&&!parcelMatch)return null;
+    // Parcel-only and partial-name results frequently identify a neighbouring
+    // complex. Require an almost exact complex name even when a parcel is set.
+    if(nameScore<980)return null;
     return {coord,score:nameScore+(parcelMatch?120:0)-(center?haversine(center,coord):0)};
   }).filter(Boolean).sort((a,b)=>b.score-a.score);
   return ranked[0]?.coord||null;
 }
 
 async function geocodeGroupQuery(group,query,center=null){
-  const cacheKey=geocodeQueryOf(group),cached=verifiedComplexCoordinate(group)||geoCache[cacheKey];
-  if(cached&&isKoreanMapCoordinate(cached)&&(!center||haversine(center,cached)<=5))return cached;
+  const cached=verifiedComplexCoordinate(group)||groupCoordinates.get(group.key);
+  if(cached&&isKoreanMapCoordinate(cached)&&(!center||haversine(center,cached)<=MAX_GEOCODE_DISTANCE_KM))return cached;
   try{
     const rows=await requestGeocodeRows(query,5),coord=validatedGeocodeCoordinate(group,rows,center);
     if(!coord)return null;
-    geoCache[cacheKey]=coord;
-    localStorage.setItem(GEO_CACHE_STORAGE_KEY,JSON.stringify(geoCache));
     groupCoordinates.set(group.key,coord);
     return coord;
   }catch{return null;}
