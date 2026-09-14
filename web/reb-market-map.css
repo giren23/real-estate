@@ -9,9 +9,10 @@
 /* The regional breakdowns are optional drill-downs, so keep the dense lists closed
    until a visitor explicitly opens them. */
 .reb-city-panel,.reb-top20-panel{overflow:hidden;padding:0}
-.reb-city-panel>.reb-city-head,.reb-top20-panel>.reb-top20-head{display:flex;align-items:center;gap:10px;margin:0;padding:14px;cursor:pointer;list-style:none}
+.reb-city-panel>.reb-city-head,.reb-top20-panel>.reb-top20-head{--fold-marker-left:14px;--fold-summary-padding-left:54px;display:flex;align-items:center;gap:10px;margin:0;padding:14px;cursor:pointer;list-style:none}
 .reb-city-panel>.reb-city-head::-webkit-details-marker,.reb-top20-panel>.reb-top20-head::-webkit-details-marker{display:none}
-.reb-city-panel>.reb-city-head::before,.reb-top20-panel>.reb-top20-head::before{content:"›";display:grid;flex:0 0 21px;width:21px;height:21px;border:1px solid #d3c8e1;border-radius:7px;background:#fff;color:#5a3a8a;font-size:17px;font-weight:900;line-height:1;place-items:center;transition:transform .16s ease}
-.reb-city-panel[open]>.reb-city-head::before,.reb-top20-panel[open]>.reb-top20-head::before{transform:rotate(90deg);background:#f0eaf8}
+.reb-city-panel>.reb-city-head::marker,.reb-top20-panel>.reb-top20-head::marker{content:""}
+.reb-city-panel>.reb-city-head::before,.reb-top20-panel>.reb-top20-head::before{content:"›";position:absolute;top:50%;left:var(--fold-marker-left);display:grid;width:21px;height:21px;border:1px solid #d3c8e1;border-radius:7px;background:#fff;color:#5a3a8a;font-size:17px;font-weight:900;line-height:1;place-items:center;transform:translateY(-50%);transition:transform .16s ease}
+.reb-city-panel[open]>.reb-city-head::before,.reb-top20-panel[open]>.reb-top20-head::before{transform:translateY(-50%) rotate(90deg);background:#f0eaf8}
 .reb-city-panel>.reb-city-head>div{flex:1}.reb-top20-panel>.reb-top20-head h3{flex:1}
 .reb-city-panel>.reb-city-grid,.reb-top20-panel>.reb-top20-grid{margin-top:0;padding:0 14px 14px}
