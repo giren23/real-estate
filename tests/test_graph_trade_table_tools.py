@@ -76,7 +76,7 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert 'href="graph-trade-tools.css?v=2"' in html
     assert 'href="area-benchmark.css?v=9"' in html
     assert 'href="reb-market-map.css?v=6"' in html
-    assert 'src="app.js?v=106"' in html
+    assert 'src="app.js?v=107"' in html
     assert 'href="development-opportunities.css?v=1"' in html
     assert script.index("areaBenchmarkHtml(board)") < script.index("developmentOpportunityPanelHtml(board)")
     assert 'class="development-opportunity-panel foldable-card"' in script

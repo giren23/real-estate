@@ -368,7 +368,14 @@ def _nominatim(path: str, params: dict[str, object]) -> object:
 def geocode(q: str = Query(min_length=2, max_length=180), limit: int = Query(default=1, ge=1, le=5)) -> object:
     return _nominatim(
         "search",
-        {"format": "jsonv2", "limit": limit, "countrycodes": "kr", "accept-language": "ko", "q": q},
+        {
+            "format": "jsonv2",
+            "limit": limit,
+            "countrycodes": "kr",
+            "addressdetails": 1,
+            "accept-language": "ko",
+            "q": q,
+        },
     )
 
 
