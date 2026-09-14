@@ -39,6 +39,10 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "[1,3,6,12,36].includes" in script
     assert "AREA_TREND_WINDOWS" in script
     assert "addStaticAreaTrends" in script
+    assert "staticAreaTrendDistrictCodes" in script
+    assert "loadStaticAreaTrendRows" in script
+    assert "rows.forEach(row=>consumeRow(row))" in script
+    assert "84㎡급 거래 " in script
     assert 'districtToken===mappedCity?(tokens[2]||"")' in script
     assert 'value!==null&&value!==undefined&&value!==""' in script
     assert "population.filter(hasFiniteNumber)" in script
@@ -66,7 +70,7 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert 'href="graph-trade-tools.css?v=2"' in html
     assert 'href="area-benchmark.css?v=9"' in html
     assert 'href="reb-market-map.css?v=5"' in html
-    assert 'src="app.js?v=103"' in html
+    assert 'src="app.js?v=104"' in html
 
 
 def test_every_collapsible_heading_has_a_leading_state_shape() -> None:

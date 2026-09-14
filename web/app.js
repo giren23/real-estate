@@ -451,6 +451,11 @@ function rememberTradeName(group,name,weight=1){
   if(normalized(group.directory_name||group.apt_name)!==normalized(label)) group.tradeAliases.add(label);
 }
 async function fetchJson(path){ try{const response=await fetch(path);return response.ok?response.json():[];}catch{return [];} }
+function publicDistrictPayload(lawdCd){
+  const code=String(lawdCd||"").padStart(5,"0").slice(0,5);
+  if(!publicDistrictCache.has(code))publicDistrictCache.set(code,fetchJson("data/shards/"+code+".json"));
+  return publicDistrictCache.get(code);
+}
 function scopedArchiveRows(payload,group){
   const source=Array.isArray(payload)?payload:(Array.isArray(payload?.rows)?payload.rows:[]);
   if(!payload||payload.scope!=="district")return source;
@@ -470,10 +475,7 @@ async function hydrateGroup(group){
       history=scopedArchiveRows(history,group);
       trades=scopedArchiveRows(trades,group).slice(-5000);
     }else{
-      if(!publicDistrictCache.has(group.lawd_cd)){
-        publicDistrictCache.set(group.lawd_cd,fetchJson("data/shards/"+group.lawd_cd+".json"));
-      }
-      const payload=await publicDistrictCache.get(group.lawd_cd);
+      const payload=await publicDistrictPayload(group.lawd_cd);
       const districtHistory=expandHistory(payload?.history);
       const districtTrades=Array.isArray(payload?.trades)?payload.trades:[];
       const names=[...new Set(districtHistory.concat(districtTrades).filter(row=>String(row.dong||"")===String(group.dong||"")).map(row=>String(row.apt_name||"")).filter(Boolean))];
@@ -2314,7 +2316,7 @@ function benchmarkReferenceHtml(label,reference,color){
 function trendRankText(rank){
   if(!Number(rank?.rank)||!Number(rank?.total))return "산정 불가";
   const percent=Number(rank.top_percent);
-  return (Number.isFinite(percent)?"상위 "+fmt(percent)+"% · ":"")+"전체 "+fmt(rank.total)+"단지 중 "+fmt(rank.rank)+"등";
+  return (Number.isFinite(percent)?"상위 "+fmt(percent)+"% · ":"")+"84㎡급 거래 "+fmt(rank.total)+"단지 중 "+fmt(rank.rank)+"등";
 }
 function administrativeRankList(entries,field){
   const rows=Array.isArray(entries)?entries:[];
@@ -2368,21 +2370,59 @@ function staticAreaRank(value,population){
   const rank=1+values.filter(item=>item>Number(value)).length;
   return {rank,total:values.length,top_percent:Number((rank/values.length*100).toFixed(1))};
 }
-function buildStaticAreaTrendIndex(){
-  if(staticAreaTrendIndex)return staticAreaTrendIndex;
+function staticAreaTrendDistrictCodes(items){
+  const districts=Array.isArray(publicShardManifest?.districts)?publicShardManifest.districts:[],codes=new Set();
+  const provinces=new Set(),municipalities=new Set();
+  (items||[]).forEach(item=>{
+    const ownCode=String(item.lawd_cd||"").padStart(5,"0").slice(0,5);
+    if(ownCode)codes.add(ownCode);
+    (item.administrative_references||[]).forEach(scope=>{
+      if(scope.level==="province")provinces.add(String(scope.label||scope.full_label||"").trim().split(/\s+/)[0]);
+      if(scope.level==="municipality")municipalities.add(String(scope.key||"").split(":").at(-1));
+    });
+  });
+  districts.forEach(district=>{
+    const code=String(district.lawd_cd||"").padStart(5,"0").slice(0,5),province=String(district.region_name||"").trim().split(/\s+/)[0];
+    if(provinces.has(province)||[...municipalities].some(value=>value.length===4?code.startsWith(value):code===value))codes.add(code);
+  });
+  return [...codes].filter(code=>/^\d{5}$/.test(code)).sort();
+}
+async function loadStaticAreaTrendRows(codes){
+  const rows=[];
+  for(let offset=0;offset<codes.length;offset+=6){
+    const batch=codes.slice(offset,offset+6),payloads=await Promise.all(batch.map(publicDistrictPayload));
+    payloads.forEach((payload,index)=>{
+      const code=batch[index];
+      if(!payload||String(payload.lawd_cd||"").padStart(5,"0").slice(0,5)!==code||!payload.history){
+        publicDistrictCache.delete(code);
+        throw new Error("public district history unavailable: "+code);
+      }
+      rows.push(...expandHistory(payload.history));
+    });
+  }
+  return rows;
+}
+async function buildStaticAreaTrendIndex(items=[]){
+  const shardCodes=staticAreaTrendDistrictCodes(items),signature=publicShardManifest?(String(publicShardManifest.generated_at||publicShardManifest.latest_date||"")+"|"+shardCodes.join(",")):"legacy";
+  if(staticAreaTrendIndex?.signature===signature)return staticAreaTrendIndex;
   const entries=new Map(),scopeMembers=new Map();
-  let asOfSerial=null,asOfMonth="";
-  apartmentGroups.forEach(group=>(group.history||[]).forEach(row=>{
+  const manifestMonth=String(publicShardManifest?.latest_date||"").slice(0,7);
+  let asOfSerial=areaMonthSerial(manifestMonth),asOfMonth=asOfSerial===null?"":manifestMonth;
+  const consumeRow=(row,group=null)=>{
     const area=Number(row.area_m2),priceEok=Number(row.median_price_eok),serial=areaMonthSerial(row.month);
     if(area<80||area>90||priceEok<=0||serial===null)return;
-    const lawdCd=String(row.lawd_cd||group.lawd_cd||"").padStart(5,"0").slice(0,5),dong=String(row.dong||group.dong||""),aptName=String(row.apt_name||group.data_apt_name||group.apt_name||"");
+    const lawdCd=String(row.lawd_cd||group?.lawd_cd||"").padStart(5,"0").slice(0,5),dong=String(row.dong||group?.dong||""),aptName=String(row.apt_name||group?.data_apt_name||group?.apt_name||"");
     if(!aptName)return;
-    const key=lawdCd+"|"+dong+"|"+aptName,regionName=String(row.region_name||group.region_name||"");
+    const key=lawdCd+"|"+dong+"|"+aptName,regionName=String(row.region_name||group?.region_name||"");
     if(!entries.has(key))entries.set(key,{key,lawd_cd:lawdCd,region_name:regionName,dong,apt_name:aptName,scopes:staticAreaScopes(regionName,lawdCd,dong),months:new Map()});
     const entry=entries.get(key),month=String(row.month),bucket=entry.months.get(month)||{serial,priceSum:0,priceCount:0,tradeCount:0};
     bucket.priceSum+=priceEok*10000/(area/3.305785);bucket.priceCount+=1;bucket.tradeCount+=Math.max(0,Number(row.trade_count)||0);entry.months.set(month,bucket);
     if(asOfSerial===null||serial>asOfSerial){asOfSerial=serial;asOfMonth=month;}
-  }));
+  };
+  if(publicShardManifest){
+    const rows=await loadStaticAreaTrendRows(shardCodes);
+    rows.forEach(row=>consumeRow(row));
+  }else apartmentGroups.forEach(group=>(group.history||[]).forEach(row=>consumeRow(row,group)));
   entries.forEach(entry=>{
     const points=[...entry.months.entries()].map(([month,bucket])=>({month,serial:bucket.serial,price:bucket.priceSum/bucket.priceCount,tradeCount:bucket.tradeCount})).sort((left,right)=>left.serial-right.serial);
     entry.calculations=new Map(AREA_TREND_WINDOWS.map(([months,label])=>{
@@ -2393,11 +2433,11 @@ function buildStaticAreaTrendIndex(){
     entry.scopes.forEach(scope=>{if(!scopeMembers.has(scope.key))scopeMembers.set(scope.key,[]);scopeMembers.get(scope.key).push(entry);});
     delete entry.months;
   });
-  staticAreaTrendIndex={entries,scopeMembers,asOfMonth};
+  staticAreaTrendIndex={signature,entries,scopeMembers,asOfMonth};
   return staticAreaTrendIndex;
 }
-function addStaticAreaTrends(items){
-  const index=buildStaticAreaTrendIndex();
+async function addStaticAreaTrends(items){
+  const index=await buildStaticAreaTrendIndex(items);
   return items.map(item=>{
     const key=String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name),target=index.entries.get(key);
     const scopes=(item.administrative_references||[]).map(entry=>({key:entry.key,level:entry.level,level_label:entry.level_label,label:entry.label,full_label:entry.full_label}));
@@ -2503,7 +2543,7 @@ async function renderStaticAreaBenchmarks(board,panel,requested){
       staticAreaBenchmarkPayload=await response.json();
     }
     if(activeGraphId!==board.id||!panel.isConnected)return true;
-    const source=staticAreaBenchmarkPayload?.items||{},matched=requested.map(entry=>source[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name]).filter(Boolean),items=addStaticAreaTrends(matched);
+    const source=staticAreaBenchmarkPayload?.items||{},matched=requested.map(entry=>source[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name]).filter(Boolean),items=await addStaticAreaTrends(matched);
     const colors=new Map(requested.map(entry=>[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name,entry.color]));
     const cards=items.map(item=>areaBenchmarkCardHtml(item,colors.get(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))||"#6040a0",false));
     panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary><div class="area-benchmark-body">'+(cards.length?areaTrendComparisonHtml()+'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택 단지의 GitHub 공개 비교 자료가 아직 없습니다. 다음 공개 데이터 갱신 후 자동 반영됩니다.</p>')+'</div>';
