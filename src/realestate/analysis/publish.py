@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import bisect
 import json
+import math
+from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
 
 from realestate.analysis.metrics import apartment_metrics, monthly_metrics
 from realestate.collectors.population import load_population_csv
+from realestate.area_benchmarks import (
+    administrative_scopes,
+    price_per_estimated_supply_pyeong,
+)
 
 
 HISTORY_VERSION = 2
@@ -102,6 +109,86 @@ def _write_json(path: Path, payload: object) -> None:
     )
 
 
+def area_benchmark_snapshot(history: pd.DataFrame) -> dict:
+    """Precalculate the 84㎡ comparison cards for GitHub Pages.
+
+    The browser receives only the selected-complex cards and their peer summaries,
+    never the local server database.  This keeps the same calculation available
+    when the PC and its API are offline.
+    """
+    columns = ["lawd_cd", "region_name", "dong", "apt_name", "area_m2", "month", "median_price_eok", "trade_count"]
+    candidates = history.loc[
+        history["area_m2"].between(80.0, 90.0) & (history["median_price_eok"] > 0), columns
+    ].copy()
+    if candidates.empty:
+        return {"schema_version": 1, "basis": "전용 80~90㎡ 중 84㎡에 가장 가까운 최신 월별 중앙 실거래가", "items": {}}
+
+    candidates["distance_to_84"] = (candidates["area_m2"] - 84.0).abs()
+    candidates = candidates.sort_values(
+        ["lawd_cd", "dong", "apt_name", "distance_to_84", "month", "trade_count"],
+        ascending=[True, True, True, True, False, False],
+    ).drop_duplicates(["lawd_cd", "dong", "apt_name"], keep="first")
+
+    rows: list[dict] = []
+    scope_values: dict[str, list[float]] = defaultdict(list)
+    for source in candidates.to_dict(orient="records"):
+        lawd_cd = str(source["lawd_cd"]).zfill(5)[:5]
+        value = price_per_estimated_supply_pyeong(float(source["median_price_eok"]), float(source["area_m2"]))
+        if value <= 0:
+            continue
+        scopes = administrative_scopes(str(source["region_name"]), lawd_cd, str(source["dong"]))
+        row = {
+            "lawd_cd": lawd_cd,
+            "region_name": str(source["region_name"]),
+            "dong": str(source["dong"]),
+            "apt_name": str(source["apt_name"]),
+            "area_m2": round(float(source["area_m2"]), 2),
+            "month": str(source["month"]),
+            "trade_count": int(source["trade_count"]),
+            "price_per_supply_pyeong_manwon": round(value, 1),
+            "administrative_scopes": scopes,
+        }
+        rows.append(row)
+        for scope in scopes:
+            scope_values[scope["key"]].append(value)
+
+    summaries: dict[str, dict] = {}
+    for key, values in scope_values.items():
+        ordered = sorted(values)
+        count = len(ordered)
+        mean = sum(ordered) / count
+        variance = sum((value - mean) ** 2 for value in ordered) / count
+        summaries[key] = {"values": ordered, "count": count, "mean_manwon": mean, "stddev_manwon": math.sqrt(variance)}
+
+    items: dict[str, dict] = {}
+    for row in rows:
+        value = row["price_per_supply_pyeong_manwon"]
+        references = []
+        for scope in reversed(row["administrative_scopes"]):
+            summary = summaries[scope["key"]]
+            count = summary["count"]
+            stddev = summary["stddev_manwon"]
+            z_score = (value - summary["mean_manwon"]) / stddev if count >= 2 and stddev else None
+            references.append({
+                **scope,
+                "reference": {
+                    "count": count,
+                    "mean_manwon": round(summary["mean_manwon"], 1),
+                    "stddev_manwon": round(stddev, 1),
+                    "z_score": round(z_score, 2) if z_score is not None else None,
+                    "top_percent": round((count - bisect.bisect_left(summary["values"], value)) / count * 100, 1) if count >= 2 else None,
+                },
+            })
+        key = "|".join((row["lawd_cd"], row["dong"], row["apt_name"]))
+        items[key] = {key: value for key, value in row.items() if key != "administrative_scopes"}
+        items[key]["administrative_references"] = references
+    return {
+        "schema_version": 1,
+        "basis": "전용 80~90㎡ 중 84㎡에 가장 가까운 최신 월별 중앙 실거래가 · 공급면적은 전용률 75% 가정으로 환산",
+        "items": items,
+    }
+
+
 def build_public_data(root: Path) -> None:
     trades = load_parquets(root / "data/raw/trades")
     population = load_population_csv(
@@ -195,6 +282,7 @@ def build_public_data(root: Path) -> None:
             apartments.sort_values("latest_trade_date", ascending=False)
         ),
         "apartment_history.json": compact_history(trade_history),
+        "area_benchmarks.json": area_benchmark_snapshot(trade_history),
         "complexes.json": records(complexes),
         "monthly.json": records(monthly),
         "regions.json": records(

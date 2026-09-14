@@ -5,3 +5,13 @@
 .reb-city-values small{color:#786c80;font-size:.58rem;font-weight:700;white-space:nowrap}
 .reb-top20-grid li b>span{display:grid;gap:1px;min-width:0}
 .reb-top20-grid li b small{overflow:hidden;color:#82778a;font-size:.58rem;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+
+/* The regional breakdowns are optional drill-downs, so keep the dense lists closed
+   until a visitor explicitly opens them. */
+.reb-city-panel,.reb-top20-panel{overflow:hidden;padding:0}
+.reb-city-panel>.reb-city-head,.reb-top20-panel>.reb-top20-head{display:flex;align-items:center;gap:10px;margin:0;padding:14px;cursor:pointer;list-style:none}
+.reb-city-panel>.reb-city-head::-webkit-details-marker,.reb-top20-panel>.reb-top20-head::-webkit-details-marker{display:none}
+.reb-city-panel>.reb-city-head::before,.reb-top20-panel>.reb-top20-head::before{content:"›";display:grid;flex:0 0 21px;width:21px;height:21px;border:1px solid #d3c8e1;border-radius:7px;background:#fff;color:#5a3a8a;font-size:17px;font-weight:900;line-height:1;place-items:center;transition:transform .16s ease}
+.reb-city-panel[open]>.reb-city-head::before,.reb-top20-panel[open]>.reb-top20-head::before{transform:rotate(90deg);background:#f0eaf8}
+.reb-city-panel>.reb-city-head>div{flex:1}.reb-top20-panel>.reb-top20-head h3{flex:1}
+.reb-city-panel>.reb-city-grid,.reb-top20-panel>.reb-top20-grid{margin-top:0;padding:0 14px 14px}

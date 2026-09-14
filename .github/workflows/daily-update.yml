@@ -10,8 +10,9 @@ on:
       - "tests/test_incremental_public_merge.py"
       - "tests/test_ranked_news_archive.py"
   schedule:
-    # 매일 한국시간 오전 6시 10분(UTC 전날 21시 10분)
-    - cron: "10 21 * * *"
+    # 매일 한국시간 자정 직후인 오전 0시 5분부터 실행 대기(UTC 전날 15시 5분).
+    # GitHub Actions의 예약 작업 특성상 실제 시작은 다소 지연될 수 있음.
+    - cron: "5 15 * * *"
   workflow_dispatch:
 
 permissions:
@@ -59,6 +60,11 @@ jobs:
         env:
           PYTHONPATH: src
         run: python scripts/merge_incremental_public_data.py
+
+      - name: Build GitHub 84㎡ benchmark snapshot
+        env:
+          PYTHONPATH: src
+        run: python scripts/build_public_area_benchmarks.py
 
       - name: Refresh regional 84sqm average transaction prices
         run: python scripts/update_reb_market_map.py --local-prices-only

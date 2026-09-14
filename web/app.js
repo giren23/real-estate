@@ -1,5 +1,6 @@
 let allTrades = [], apartmentGroups = [], graphBoards = [], activeGraphId = null, map, infoWindow;
 const areaBenchmarkHistoryCache = new Map();
+let staticAreaBenchmarkPayload = null;
 let localApi = false, localMeta = {};
 const minorVersion = location.hostname.endsWith(".github.io") || new URLSearchParams(location.search).get("minor") === "1";
 const minorVersionBadge = document.getElementById("minorVersionBadge");
@@ -2215,7 +2216,7 @@ function bindTaxEstimator(board,container){
 function areaBenchmarkHtml(board){
   if(!board.series.length)return "";
   const summary='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong><small>시도·시군구·읍면동 단계 비교</small></span></summary>';
-  if(!localApi)return '<details class="area-benchmark-panel foldable-card" open>'+summary+'<div class="area-benchmark-body"><p class="area-benchmark-empty">메인 서버(로컬 PC)가 꺼져 있어 전국 비교 자료를 계산할 수 없습니다. PC 서버가 켜지면 자동으로 표시합니다.</p></div></details>';
+  if(!localApi)return '<details class="area-benchmark-panel foldable-card" data-area-benchmark-board="'+esc(board.id)+'" aria-live="polite" open>'+summary+'<div class="area-benchmark-body"><p class="area-benchmark-loading">GitHub에 저장된 전국 비교 자료를 불러오는 중입니다…</p></div></details>';
   return '<details class="area-benchmark-panel foldable-card" data-area-benchmark-board="'+esc(board.id)+'" aria-live="polite" open>'+summary+'<div class="area-benchmark-body"><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 실거래를 전용면적으로 나눈 전용 평당가 기준입니다. 선택 단지를 읍·면·동, 구, 시·군, 시도 순으로 각각 같은 행정단계의 단지와 비교합니다.</p><p class="area-benchmark-loading">행정구역 단계별 비교 분포와 추세를 계산하는 중입니다…</p></div></details>';
 }
 
@@ -2330,15 +2331,34 @@ function areaBenchmarkCardHtml(item,color){
 }
 async function loadAreaBenchmarks(board,container){
   const panel=container.querySelector('[data-area-benchmark-board="'+CSS.escape(board.id)+'"]');
-  if(!panel||!localApi||!board.series.length)return;
+  if(!panel||!board.series.length)return;
   const groups=new Map(apartmentGroups.map(group=>[group.key,group]));
   const requested=[...new Map(board.series.map(series=>{
     const group=groups.get(series.key);
-    if(!group||!group.data_apt_name)return null;
-    const item={lawd_cd:String(group.lawd_cd||"").padStart(5,"0").slice(0,5),dong:String(group.dong||""),apt_name:String(group.data_apt_name)};
+    if(!group)return null;
+    const aptName=group.data_apt_name||group.apt_name;
+    if(!aptName)return null;
+    const item={lawd_cd:String(group.lawd_cd||"").padStart(5,"0").slice(0,5),dong:String(group.dong||""),apt_name:String(aptName)};
     return [item.lawd_cd+"|"+item.dong+"|"+item.apt_name,{item,color:series.color}];
   }).filter(Boolean)).values()];
   if(!requested.length){panel.querySelector(".area-benchmark-loading").textContent="선택 단지의 비교용 지역 정보가 없어 전국 위치를 계산할 수 없습니다.";return;}
+  if(!localApi){
+    try{
+      if(!staticAreaBenchmarkPayload){
+        const response=await fetch("data/area_benchmarks.json",{cache:"force-cache"});
+        if(!response.ok)throw new Error("static benchmark unavailable");
+        staticAreaBenchmarkPayload=await response.json();
+      }
+      if(activeGraphId!==board.id||!panel.isConnected)return;
+      const source=staticAreaBenchmarkPayload?.items||{};
+      const cards=requested.map(entry=>source[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name]).filter(Boolean)
+        .map(item=>areaBenchmarkCardHtml(item,requested.find(entry=>entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name===String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))?.color||"#6040a0"));
+      panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong><small>GitHub 공개 스냅샷 · PC가 꺼져도 조회 가능</small></span></summary><div class="area-benchmark-body"><p class="area-benchmark-note">전용 80~90㎡ 가운데 84㎡에 가장 가까운 월별 중앙 실거래가를 전용면적으로 나눈 전용 평당가 기준입니다. GitHub에 게시된 최신 공개 스냅샷으로 읍·면·동, 구, 시·군, 시도별 위치를 계산했습니다.</p>'+(cards.length?'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택 단지의 GitHub 공개 비교 자료가 아직 없습니다. 다음 공개 데이터 갱신 후 자동 반영됩니다.</p>')+'<p class="area-benchmark-disclaimer">PC가 꺼진 경우에는 GitHub 정적 스냅샷의 가격 위치만 표시합니다. 기간별 추세·개발호재 자료는 메인 서버 연결 시 제공됩니다.</p></div>';
+    }catch(_error){
+      if(panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="GitHub 공개 비교 자료를 불러오지 못했습니다. 인터넷 연결 또는 다음 데이터 배포를 확인해 주세요.";
+    }
+    return;
+  }
   try{
     const response=await fetch("/api/area-benchmarks?include_trends=true&items="+encodeURIComponent(JSON.stringify(requested.map(entry=>entry.item))),{cache:"no-store"});
     if(!response.ok)throw new Error("benchmark unavailable");
