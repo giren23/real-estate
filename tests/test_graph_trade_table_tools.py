@@ -35,6 +35,10 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "Math.max(0,Math.floor(Math.min(...group.finite)-10))" in script
     assert "reverse:true" in script
     assert "tradeCounts" in script
+    assert "areaTrendPointLabels" in script
+    assert "maxTicksLimit:5" in script
+    assert "includeBounds:false" in script
+    assert 'ctx.fillText(label,point.x,point.y-offset)' in script
     assert "tablePeriods=periods.filter" in script
     assert "[1,3,6,12,36].includes" in script
     assert "AREA_TREND_WINDOWS" in script
@@ -53,6 +57,8 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "위쪽일수록 최상위에 가까움" in script
     assert "표시할 행정단계" in script
     assert "기간 내 거래" in script
+    assert "trend-strength-badge" in script
+    assert "trend-rank-latest" not in script
     assert "area-benchmark-summary" in script
     assert "행정구역별 84㎡급 전용 평당가 위치" in script
     assert "administrative_price_positions" in script
@@ -72,11 +78,11 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "--trade-pastel" in stylesheet
     assert "--filter-color" in stylesheet
     assert ".area-trend-chart{height:320px" in area_stylesheet
-    assert ".area-trend-chart{height:280px" in area_stylesheet
+    assert ".area-trend-chart{height:300px" in area_stylesheet
     assert 'href="graph-trade-tools.css?v=2"' in html
-    assert 'href="area-benchmark.css?v=9"' in html
+    assert 'href="area-benchmark.css?v=10"' in html
     assert 'href="reb-market-map.css?v=6"' in html
-    assert 'src="app.js?v=108"' in html
+    assert 'src="app.js?v=109"' in html
     assert 'href="development-opportunities.css?v=1"' in html
     assert script.index("areaBenchmarkHtml(board)") < script.index("developmentOpportunityPanelHtml(board)")
     assert 'class="development-opportunity-panel foldable-card"' in script
