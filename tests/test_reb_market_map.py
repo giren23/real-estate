@@ -49,15 +49,20 @@ def test_reb_frontend_renders_price_and_volume_top20() -> None:
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     script = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
 
-    for element_id in ("rebNationalVolume", "rebPriceTop20", "rebPriceBottom20", "rebVolumeTop20", "rebVolumeBottom20"):
+    for element_id in ("rebNationalVolume", "rebNationalArea84", "rebMapLegend", "rebPriceTop20", "rebPriceBottom20", "rebVolumeTop20", "rebVolumeBottom20"):
         assert f'id="{element_id}"' in html
-    for sort_mode in ("price_high", "price_low", "volume_high", "volume_low"):
+    for map_mode in ("change", "price", "volume"):
+        assert f'data-reb-map-mode="{map_mode}"' in html
+    for sort_mode in ("price_high", "price_low", "area84_high", "area84_low", "volume_high", "volume_low"):
         assert f'value="{sort_mode}"' in html
     assert "renderRebTop20" in script
     assert "rebCombinedCities" in script
     assert "transaction_volume" in script
     assert "rebArea84" in script
     assert "84㎡급 평균" in script
+    assert "renderRebProvinceMap" in script
+    assert "rebSequentialStyle" in script
+    assert "국토교통부 공개 실거래" in html
     assert '<details open><summary>상승률 높은 지역 Top 20' not in html
     assert '<details open><summary>상승률 낮은 지역 Top 20' not in html
     assert '<details open><summary>매매량 많은 지역 Top 20' not in html
@@ -87,6 +92,8 @@ def test_area_84_average_is_attached_by_official_district_code() -> None:
     ])
     value = payload["provinces"][0]["cities"][0]["area_84_price"]
     assert value["average_price_eok"] == 15.5
+    assert payload["provinces"][0]["area_84_price"]["average_price_eok"] == 15.5
+    assert payload["country"]["area_84_price"]["average_price_eok"] == 15.5
     assert payload["area_84_prices"]["matched_region_count"] == 1
 
 

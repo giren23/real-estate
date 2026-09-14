@@ -133,9 +133,26 @@ def calculate_area_84_prices(rows: list[dict]) -> dict[str, dict]:
     }
 
 
+def aggregate_area_84_prices(values: list[dict]) -> dict | None:
+    """거래 건수를 가중치로 사용해 하위 지역 실거래 평균을 상위 지역으로 합칩니다."""
+    sample_count = sum(int(value.get("trade_count") or 0) for value in values)
+    if not sample_count:
+        return None
+    return {
+        "average_price_eok": round(
+            sum(float(value["average_price_eok"]) * int(value["trade_count"]) for value in values) / sample_count,
+            2,
+        ),
+        "trade_count": sample_count,
+        "period_start": min(str(value["period_start"]) for value in values),
+        "period_end": max(str(value["period_end"]) for value in values),
+    }
+
+
 def enrich_area_84_prices(payload: dict, rows: list[dict]) -> dict:
     prices = calculate_area_84_prices(rows)
     matched = 0
+    country_samples = []
     for province in payload.get("provinces", []):
         province_samples = []
         for city in province.get("cities", []):
@@ -146,17 +163,14 @@ def enrich_area_84_prices(payload: dict, rows: list[dict]) -> dict:
                 province_samples.append(value)
                 matched += 1
         province.pop("area_84_price", None)
-        sample_count = sum(value["trade_count"] for value in province_samples)
-        if sample_count:
-            province["area_84_price"] = {
-                "average_price_eok": round(
-                    sum(value["average_price_eok"] * value["trade_count"] for value in province_samples) / sample_count,
-                    2,
-                ),
-                "trade_count": sample_count,
-                "period_start": min(value["period_start"] for value in province_samples),
-                "period_end": max(value["period_end"] for value in province_samples),
-            }
+        province_average = aggregate_area_84_prices(province_samples)
+        if province_average:
+            province["area_84_price"] = province_average
+            country_samples.append(province_average)
+    payload.setdefault("country", {}).pop("area_84_price", None)
+    country_average = aggregate_area_84_prices(country_samples)
+    if country_average:
+        payload["country"]["area_84_price"] = country_average
     for province in payload.get("transaction_volume", {}).get("provinces", []):
         province_samples = []
         for city in province.get("cities", []):
@@ -166,17 +180,9 @@ def enrich_area_84_prices(payload: dict, rows: list[dict]) -> dict:
                 city["area_84_price"] = value
                 province_samples.append(value)
         province.pop("area_84_price", None)
-        sample_count = sum(value["trade_count"] for value in province_samples)
-        if sample_count:
-            province["area_84_price"] = {
-                "average_price_eok": round(
-                    sum(value["average_price_eok"] * value["trade_count"] for value in province_samples) / sample_count,
-                    2,
-                ),
-                "trade_count": sample_count,
-                "period_start": min(value["period_start"] for value in province_samples),
-                "period_end": max(value["period_end"] for value in province_samples),
-            }
+        province_average = aggregate_area_84_prices(province_samples)
+        if province_average:
+            province["area_84_price"] = province_average
     payload["area_84_prices"] = {
         "label": "84㎡급 평균 실거래가격",
         "area_basis": "전용 80~90㎡",

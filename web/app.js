@@ -2923,6 +2923,9 @@ function rebArea84(value){
   if(!value||!Number.isFinite(Number(value.average_price_eok)))return "";
   return "84㎡급 평균 "+Number(value.average_price_eok).toLocaleString("ko-KR",{maximumFractionDigits:2})+"억원 · "+fmt(value.trade_count)+"건";
 }
+function rebArea84Value(value){
+  return value&&Number.isFinite(Number(value.average_price_eok))?Number(value.average_price_eok).toLocaleString("ko-KR",{maximumFractionDigits:2})+"억원":"—";
+}
 function rebArea84Title(value){return value?"전용 80~90㎡ · "+String(value.period_start||"?")+"~"+String(value.period_end||"?")+" · 국토부 실거래 공개 최신 표본":"";}
 function rebPalette(value){
   const number=Number(value)||0;
@@ -2934,13 +2937,20 @@ function rebPalette(value){
   return {bg:"#e26d6d",ink:"#651b1b"};
 }
 function rebStyle(value,maxMagnitude=1){const color=rebPalette(value),bar=Math.min(1,Math.abs(Number(value)||0)/Math.max(.01,maxMagnitude));return "--reb-bg:"+color.bg+";--reb-ink:"+color.ink+";--reb-bar:"+bar;}
-let rebSelectedProvince=null,rebTransactionVolume=null;
+function rebSequentialStyle(value,minimum,maximum,mode){
+  const number=Number(value);
+  if(!Number.isFinite(number))return "--reb-bg:#f0edf2;--reb-ink:#81798a;--reb-bar:0";
+  const range=Math.max(.0001,maximum-minimum),raw=(number-minimum)/range,ratio=mode==="volume"?Math.log1p(Math.max(0,raw)*9)/Math.log(10):Math.max(0,Math.min(1,raw));
+  const hue=mode==="price"?38:166,saturation=mode==="price"?92:57,lightness=96-ratio*43,ink=ratio>.63?"#fff":(mode==="price"?"#674100":"#145648");
+  return "--reb-bg:hsl("+hue+" "+saturation+"% "+lightness+"%);--reb-ink:"+ink+";--reb-bar:"+ratio;
+}
+let rebSelectedProvince=null,rebTransactionVolume=null,rebMarketPayload=null,rebMapMode="change";
 function rebVolumeProvince(code){return rebTransactionVolume?.provinces?.find(row=>String(row.code)===String(code))||null;}
 function rebCombinedCities(province){
   const priceRows=Array.isArray(province?.cities)?province.cities:[],volumeRows=Array.isArray(rebVolumeProvince(province?.code)?.cities)?rebVolumeProvince(province.code).cities:[];
   const combined=new Map();
-  priceRows.forEach(row=>combined.set(String(row.code),{code:row.code,name:row.name,price:Number(row.value),area84:row.area_84_price||null}));
-  volumeRows.forEach(row=>{const key=String(row.code),current=combined.get(key)||{code:row.code,name:row.name,price:null,area84:row.area_84_price||null};current.volume=Number(row.value);if(!current.area84)current.area84=row.area_84_price||null;combined.set(key,current);});
+  priceRows.forEach(row=>combined.set(String(row.code),{code:row.code,name:row.name,price:Number(row.value),area84:row.area_84_price||null,area84Price:Number(row.area_84_price?.average_price_eok)}));
+  volumeRows.forEach(row=>{const key=String(row.code),current=combined.get(key)||{code:row.code,name:row.name,price:null,area84:row.area_84_price||null,area84Price:Number(row.area_84_price?.average_price_eok)};current.volume=Number(row.value);if(!current.area84){current.area84=row.area_84_price||null;current.area84Price=Number(row.area_84_price?.average_price_eok);}combined.set(key,current);});
   return [...combined.values()];
 }
 function renderRebCities(province){
@@ -2951,9 +2961,9 @@ function renderRebCities(province){
   byId("rebCityMeta").textContent=cities.length?"공표지역 "+fmt(cities.length)+"곳 · 상승률/거래호수":"시도 단일 공표지역";
   if(!cities.length){byId("rebCityGrid").innerHTML='<p class="reb-market-loading">별도로 나뉜 시·군·구 공표값이 없습니다.</p>';return;}
   const maximum=Math.max(.01,...cities.map(row=>Math.abs(Number(row.price)||0)));
-  const mode=byId("rebCitySort")?.value||"price_high",field=mode.startsWith("volume")?"volume":"price",lowFirst=mode.endsWith("low");
+  const mode=byId("rebCitySort")?.value||"price_high",field=mode.startsWith("volume")?"volume":mode.startsWith("area84")?"area84Price":"price",lowFirst=mode.endsWith("low");
   const sorted=[...cities].sort((a,b)=>{const av=Number.isFinite(a[field])?a[field]:(lowFirst?Infinity:-Infinity),bv=Number.isFinite(b[field])?b[field]:(lowFirst?Infinity:-Infinity);return lowFirst?av-bv:bv-av;});
-  const rankLabel=field==="volume"?(lowFirst?"거래 적은":"거래 많은"):(lowFirst?"상승 낮은":"상승 높은");
+  const rankLabel=field==="volume"?(lowFirst?"거래 적은":"거래 많은"):field==="area84Price"?(lowFirst?"84㎡급 낮은":"84㎡급 높은"):(lowFirst?"상승 낮은":"상승 높은");
   byId("rebCityGrid").innerHTML=sorted.map((row,index)=>'<div class="reb-city-row" style="'+rebStyle(row.price,maximum)+'"><b>'+esc(rankLabel+" "+(index+1)+"위 · "+row.name)+'</b><span class="reb-city-values"><strong class="'+(Number(row.price)>=0?"up":"down")+'">'+esc(rebSigned(row.price))+'</strong><em>'+esc(rebVolume(row.volume))+'</em>'+(row.area84?'<small title="'+esc(rebArea84Title(row.area84))+'">'+esc(rebArea84(row.area84))+'</small>':'')+'</span></div>').join("");
 }
 function renderRebTop20(payload){
@@ -2964,22 +2974,45 @@ function renderRebTop20(payload){
   draw("rebVolumeTop20",rankings.transaction_volume?.top,"volume");
   draw("rebVolumeBottom20",rankings.transaction_volume?.bottom,"volume");
 }
+function rebNationalArea84(payload){
+  if(payload.country?.area_84_price)return payload.country.area_84_price;
+  const samples=(payload.provinces||[]).map(row=>row.area_84_price).filter(value=>value&&Number.isFinite(Number(value.average_price_eok))&&Number(value.trade_count)>0),tradeCount=samples.reduce((sum,value)=>sum+Number(value.trade_count),0);
+  if(!tradeCount)return null;
+  return {average_price_eok:samples.reduce((sum,value)=>sum+Number(value.average_price_eok)*Number(value.trade_count),0)/tradeCount,trade_count:tradeCount,period_start:samples.map(value=>value.period_start).filter(Boolean).sort()[0],period_end:samples.map(value=>value.period_end).filter(Boolean).sort().at(-1)};
+}
+function rebMapMetric(row,mode){
+  if(mode==="price")return Number(row.area_84_price?.average_price_eok);
+  if(mode==="volume")return Number(rebVolumeProvince(row.code)?.value);
+  return Number(row.value);
+}
+function rebMapDisplay(mode,value){
+  if(!Number.isFinite(Number(value)))return "자료 없음";
+  if(mode==="price")return Number(value).toLocaleString("ko-KR",{maximumFractionDigits:2})+"억원";
+  return mode==="volume"?rebVolume(value):rebSigned(value);
+}
+function renderRebProvinceMap(payload){
+  const provinces=Array.isArray(payload.provinces)?payload.provinces:[],values=provinces.map(row=>rebMapMetric(row,rebMapMode)).filter(Number.isFinite),minimum=values.length?Math.min(...values):0,maximum=values.length?Math.max(...values):1;
+  const definitions={change:{title:"시도별 상승·하락 지도",aria:"시도별 아파트 매매가격지수 변동률",low:"큰 폭 하락",high:"큰 폭 상승"},price:{title:"시도별 84㎡급 평균 실거래가",aria:"시도별 전용 80~90제곱미터 평균 실거래가격",low:rebMapDisplay("price",minimum),high:rebMapDisplay("price",maximum)},volume:{title:"시도별 아파트 매매량",aria:"시도별 아파트 매매거래호수",low:rebMapDisplay("volume",minimum),high:rebMapDisplay("volume",maximum)}},definition=definitions[rebMapMode];
+  byId("rebCartogramTitle").textContent=definition.title;byId("rebProvinceMap").setAttribute("aria-label",definition.aria);
+  document.querySelectorAll("[data-reb-map-mode]").forEach(button=>{const active=button.dataset.rebMapMode===rebMapMode;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active));});
+  byId("rebProvinceMap").innerHTML=provinces.map((row,index)=>{const position=REB_TILE_POSITIONS[String(row.code)]||[(index%7)+1,Math.floor(index/7)+1],value=rebMapMetric(row,rebMapMode),style=rebMapMode==="change"?rebStyle(value):rebSequentialStyle(value,minimum,maximum,rebMapMode),detail=rebMapMode==="price"?rebArea84Title(row.area_84_price):"";return '<button class="reb-region-tile'+(String(rebSelectedProvince?.code)===String(row.code)?' active':'')+'" type="button" data-code="'+esc(row.code)+'" style="grid-column:'+position[0]+';grid-row:'+position[1]+';'+style+'" aria-label="'+esc(row.name+" "+rebMapDisplay(rebMapMode,value))+'" title="'+esc(detail)+'"><b>'+esc(row.name)+'</b><span>'+esc(rebMapDisplay(rebMapMode,value))+'</span></button>';}).join("");
+  const legend=byId("rebMapLegend");legend.classList.toggle("dynamic",rebMapMode!=="change");legend.innerHTML='<span>'+esc(definition.low)+'</span>'+[0,.25,.5,.75,1].map(step=>'<i style="'+(rebMapMode==="change"?"":rebSequentialStyle(minimum+(maximum-minimum)*step,minimum,maximum,rebMapMode))+'"></i>').join("")+'<span>'+esc(definition.high)+'</span>';
+}
 function renderRebMarketMap(payload){
-  const provinces=Array.isArray(payload.provinces)?payload.provinces:[];rebTransactionVolume=payload.transaction_volume||null;
+  const provinces=Array.isArray(payload.provinces)?payload.provinces:[];rebMarketPayload=payload;rebTransactionVolume=payload.transaction_volume||null;
   byId("rebMarketStatus").hidden=true;byId("rebMarketContent").hidden=false;
   byId("rebNationalValue").textContent=rebSigned(payload.country?.value);
   byId("rebNationalVolume").textContent=rebVolume(rebTransactionVolume?.country?.value);
+  const nationalArea84=rebNationalArea84(payload);byId("rebNationalArea84").textContent=rebArea84Value(nationalArea84);byId("rebNationalArea84").title=rebArea84Title(nationalArea84);
   byId("rebMarketPeriod").textContent="가격 "+String(payload.period||"기준월 미확인");
   byId("rebVolumePeriod").textContent="거래량 "+String(rebTransactionVolume?.period||"기준월 미확인");
   const sorted=[...provinces].sort((a,b)=>Number(b.value)-Number(a.value));
   const rankingHtml=(rows,label)=>rows.map((row,index)=>'<li><b>'+esc(label+" "+(index+1)+"위 · "+row.name)+'</b><strong class="'+(Number(row.value)>=0?"up":"down")+'">'+esc(rebSigned(row.value))+'</strong></li>').join("");
   byId("rebProvinceTop").innerHTML=rankingHtml(sorted.slice(0,4),"상승");
   byId("rebProvinceBottom").innerHTML=rankingHtml(sorted.slice(-4).reverse(),"하락");
-  byId("rebProvinceMap").innerHTML=provinces.map((row,index)=>{
-    const position=REB_TILE_POSITIONS[String(row.code)]||[(index%7)+1,Math.floor(index/7)+1];
-    return '<button class="reb-region-tile" type="button" data-code="'+esc(row.code)+'" style="grid-column:'+position[0]+';grid-row:'+position[1]+';'+rebStyle(row.value)+'" aria-label="'+esc(row.name+" "+rebSigned(row.value))+'"><b>'+esc(row.name)+'</b><span>'+esc(rebSigned(row.value))+'</span></button>';
-  }).join("");
+  renderRebProvinceMap(payload);
   byId("rebProvinceMap").addEventListener("click",event=>{const button=event.target.closest(".reb-region-tile");if(!button)return;const province=provinces.find(row=>String(row.code)===button.dataset.code);if(province)renderRebCities(province);});
+  document.querySelector(".reb-map-modes")?.addEventListener("click",event=>{const button=event.target.closest("[data-reb-map-mode]");if(!button||button.dataset.rebMapMode===rebMapMode)return;rebMapMode=button.dataset.rebMapMode;renderRebProvinceMap(rebMarketPayload);});
   byId("rebCitySort")?.addEventListener("change",()=>{if(rebSelectedProvince)renderRebCities(rebSelectedProvince);});
   renderRebTop20(payload);
   const initial=provinces.find(row=>String(row.code)==="11")||sorted[0];if(initial)renderRebCities(initial);
