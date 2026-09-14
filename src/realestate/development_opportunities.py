@@ -26,20 +26,24 @@ NUMBER_PATTERN = re.compile(r"\d[\d,.]*(?:\s*(?:조원|억원|만원|원|km|m|�
 NOISE_PATTERN = re.compile(r"로그인|회원가입|개인정보처리방침|저작권|무단전재|메뉴|바로가기|검색어를 입력", re.I)
 
 CATEGORY_TERMS = {
-    "정비·주거": ("재개발", "재건축", "정비구역", "도시재생", "주택정비", "공공주택", "택지", "지구단위계획"),
+    "재개발": ("재개발", "재건축", "정비구역", "도시재생", "주택정비", "공공주택", "택지", "지구단위계획"),
     "교통": ("철도", "광역교통", "GTX", "도시철도", "지하철", "역세권", "환승", "도로", "IC", "개통"),
-    "교육": ("학교", "초등학교", "중학교", "고등학교", "교육지원청", "학군", "도서관"),
-    "생활·공공시설": ("공원", "병원", "의료원", "복지관", "체육", "문화시설", "공공시설", "복합개발", "청사"),
-    "산업·일자리": ("산업단지", "업무지구", "기업유치", "연구개발", "첨단산업", "일자리", "테크노밸리"),
+    "교육": ("학교", "초등학교", "중학교", "고등학교", "교육지원청", "학군", "학원", "학원가", "학세권", "통학구역", "도서관"),
+    "공공시설": ("공원", "병원", "의료원", "복지관", "체육", "문화시설", "공공시설", "복합개발", "청사", "산업단지", "업무지구", "기업유치", "연구개발", "첨단산업", "일자리", "테크노밸리"),
 }
 ALL_TERMS = tuple(dict.fromkeys(term for terms in CATEGORY_TERMS.values() for term in terms))
 STAGE_RULES = (
     ("준공·개통", 6, re.compile(r"준공(?:했|됐|되었)|개통(?:했|됐|되었)|운영을?\s*시작|완료(?:했|됐|되었)")),
     ("착공·공사", 5, re.compile(r"착공(?:했|됐|되었)|첫\s*삽|공사(?:를|가)?\s*시작|공사\s*중|공사에\s*들어")),
     ("인허가·보상", 4, re.compile(r"사업시행인가|관리처분인가|실시계획인가|보상(?:계획|착수|공고)|토지\s*수용")),
-    ("결정·고시/예산", 3, re.compile(r"결정\s*고시|지정\s*고시|고시(?:했|됐|되었)|예산\s*(?:반영|확정)|의결(?:했|됐|되었)|확정(?:했|됐|되었)")),
+    ("결정·고시/예산", 3, re.compile(r"결정\s*고시|지정\s*고시|고시(?:했|됐|되었)|공고(?:했|됐|되었)|예산\s*(?:반영|확정|편성)|의결(?:했|됐|되었)|확정(?:했|됐|되었)")),
     ("계획 반영·추진", 2, re.compile(r"기본계획|계획에\s*반영|추진(?:한다|중|할)|사업\s*계획|정비구역\s*지정")),
     ("검토·용역", 1, re.compile(r"검토|용역|제안|건의|후보|타당성\s*조사")),
+)
+RUMOR_PATTERN = re.compile(
+    r"추진설|개통설|이전설|유치설|검토설|가능성(?:이|을)?\s*(?:제기|거론)|"
+    r"유력(?:하다는|할\s*것이라는)?\s*(?:관측|전망)|확정되지\s*않|미확인|소문|루머|기대감만",
+    re.I,
 )
 OFFICIAL_EXACT_HOSTS = {
     "korea.kr", "www.korea.kr", "eum.go.kr", "www.eum.go.kr", "data.go.kr", "www.data.go.kr",
@@ -101,6 +105,11 @@ def stage_for(text: str) -> tuple[str, int]:
         if pattern.search(text):
             return label, score
     return "발표·공개", 0
+
+
+def is_rumor_evidence(text: str, official: bool = False) -> bool:
+    """Return True only when a non-official document uses explicit rumor language."""
+    return not official and bool(RUMOR_PATTERN.search(clean_text(text)))
 
 
 class OfficialPageParser(HTMLParser):
@@ -298,11 +307,31 @@ class DevelopmentOpportunityStore:
             if not summary:
                 return None
             url = response.url.split("#", 1)[0]
+            official = is_official_url(url)
+            rumor = is_rumor_evidence(f"{row['title']} {summary['summary']}", official)
+            if rumor:
+                summary["stage"] = "공식 단계 미확인"
+                summary["stage_score"] = -1
+            distance_check_required = summary["scope"] != "선택 단지 직접 언급"
             return {
                 "id": hashlib.sha256(url.encode("utf-8")).hexdigest()[:16], "title": row["title"][:220],
                 "publisher": row["publisher"][:80], "published_at": row["published_at"], "url": url,
-                "source_type": "공식기관 원문" if is_official_url(url) else "언론 공개 본문",
-                "official": is_official_url(url), **summary,
+                "source_type": "공식기관 원문" if official else "언론 공개 본문",
+                "official": official,
+                "is_rumor": rumor,
+                "evidence_label": "공식 원문" if official else ("[루머]" if rumor else "보도 확인"),
+                "verification": (
+                    "공식 원문에서 사업 단계 확인"
+                    if official and summary["stage_score"] >= 3
+                    else "공식 원문에서 초기 단계 확인"
+                    if official
+                    else "공식 원문을 찾지 못한 소문성 보도"
+                    if rumor
+                    else "공개 전문 보도 확인·공식 원문 미확인"
+                ),
+                "distance_check_required": distance_check_required,
+                "distance_status": "사업 경계와 단지 간 실제 거리 확인 필요" if distance_check_required else "선택 단지 직접 언급",
+                **summary,
             }
         except (requests.RequestException, ValueError, UnicodeError):
             return None
@@ -326,7 +355,16 @@ class DevelopmentOpportunityStore:
                 if value and value["id"] not in seen:
                     seen.add(value["id"])
                     documents.append(value)
-        documents.sort(key=lambda row: (row.get("official", False), row["scope"] == "선택 단지 직접 언급", row["stage_score"], row["published_at"]), reverse=True)
+        documents.sort(
+            key=lambda row: (
+                row.get("official", False),
+                not row.get("is_rumor", False),
+                row["scope"] == "선택 단지 직접 언급",
+                row["stage_score"],
+                row["published_at"],
+            ),
+            reverse=True,
+        )
         unique_documents: list[dict] = []
         seen_titles: list[str] = []
         for document in documents:
@@ -335,12 +373,24 @@ class DevelopmentOpportunityStore:
                 continue
             seen_titles.append(title_key)
             unique_documents.append(document)
-        items = unique_documents[:8]
+        official_items = [row for row in unique_documents if row.get("official")][:8]
+        reported_items = [row for row in unique_documents if not row.get("official") and not row.get("is_rumor")][: max(0, 8 - len(official_items))]
+        rumor_items = [row for row in unique_documents if row.get("is_rumor")][:2]
+        items = (official_items + reported_items + rumor_items)[:10]
         now = datetime.now(KST).isoformat(timespec="seconds")
         return {
             "status": "ok" if items else "empty",
             "message": "공식기관 원문을 우선하고 공개 전문이 확보된 보도를 보조자료로 정리함" if items else "최근 5년 공개 검색 범위에서 본문까지 확인된 개발·생활권 자료가 없음",
             "generated_at": now, "region_name": region_name, "dong": dong, "items": items,
-            "method": "공식기관 공개 원문을 최우선으로 수집하고, 부족할 때만 공개 전문이 확보된 보도를 보조자료로 사용해 사업 단계와 단지 연관 범위를 규칙 기반으로 분류",
-            "caution": "‘언론 공개 본문’은 공식 확정 자료가 아니며, 법정동·시군구 연관 자료는 단지 경계나 출입구까지의 실제 거리 및 소음·혼잡 같은 반대 영향을 별도로 확인해야 함.",
+            "official_count": len(official_items),
+            "reported_count": len(reported_items),
+            "rumor_count": len([row for row in items if row.get("is_rumor")]),
+            "method": "지자체·정부·공공기관의 고시·공고·예산·인허가·착공 원문을 먼저 확인하고, 부족할 때만 공개 전문이 확보된 보도를 사용함. 재개발·교통·교육·공공시설로 분류하고 사업 단계, 발표일, 단지 직접 언급 여부를 판정함.",
+            "decision_criteria": [
+                "공식기관 도메인의 본문과 날짜가 확인된 자료를 최우선으로 채택",
+                "고시·공고·예산·인허가·착공·준공 표현에 따라 사업 단계를 구분",
+                "단지명 직접 언급, 법정동 직접 언급, 시·군·구 생활권 연관 순으로 범위를 구분",
+                "공식 원문 없이 추진설·유치설·관측만 있는 보도는 [루머]로 분리",
+            ],
+            "caution": "‘보도 확인’과 ‘[루머]’는 공식 확정 자료가 아님. 법정동·시군구 연관 자료는 단지 경계나 출입구까지의 실제 거리, 사업 영향권 및 소음·혼잡 같은 반대 영향을 별도로 확인해야 함.",
         }

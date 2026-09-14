@@ -1,0 +1,61 @@
+.development-opportunity-panel-body {
+  padding: 14px 15px 16px;
+  background: linear-gradient(145deg, #fbfffe, #fff);
+}
+
+.development-guide {
+  padding: 12px 13px;
+  border: 1px solid #d9e8e4;
+  border-radius: 11px;
+  background: #f5fbf9;
+}
+
+.development-guide h4 { margin: 0 0 9px; color: #28594f; font-size: .9rem; }
+.development-guide ol {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: guide;
+}
+.development-guide li { position: relative; padding: 8px 9px 8px 32px; border-radius: 8px; background: #fff; counter-increment: guide; }
+.development-guide li::before {
+  content: counter(guide);
+  position: absolute;
+  left: 9px;
+  top: 9px;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #dff2ed;
+  color: #236458;
+  font-size: .65rem;
+  font-weight: 900;
+  place-items: center;
+}
+.development-guide li b, .development-guide li span { display: block; }
+.development-guide li b { color: #314e48; font-size: .75rem; }
+.development-guide li span { margin-top: 2px; color: #63746f; font-size: .69rem; line-height: 1.45; }
+.development-guide p { margin: 9px 0 0; color: #65736f; font-size: .68rem; line-height: 1.5; }
+.development-guide a { color: #28685d; font-weight: 800; }
+
+.development-complex-list { display: grid; gap: 12px; margin-top: 12px; }
+.development-complex { padding: 13px; border: 1px solid #e2e9e7; border-radius: 12px; background: #fff; }
+.development-complex > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 9px; border-bottom: 1px solid #edf1f0; }
+.development-complex > header h4 { margin: 0; color: #2e3f3b; font-size: .92rem; }
+.development-complex > header span, .development-complex > header small { display: block; color: #75817e; font-size: .68rem; line-height: 1.4; }
+.development-complex > header small { text-align: right; }
+.development-evidence { background: #e8f5f1 !important; color: #28695e !important; font-weight: 850; }
+.development-evidence.rumor { background: #fff0f0 !important; color: #a23d47 !important; }
+.development-event.rumor { border-left-color: #ca6670; background: #fffafa; }
+.development-verification { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; padding: 7px 8px; border-radius: 7px; background: #f7f9f8; color: #68736f; font-size: .66rem; }
+.development-verification strong { color: #76512b; font-size: .66rem; text-align: right; }
+
+@media (max-width: 600px) {
+  .development-guide ol { grid-template-columns: 1fr; }
+  .development-event footer, .development-verification, .development-complex > header { align-items: flex-start; flex-direction: column; }
+  .development-complex > header small, .development-verification strong { text-align: left; }
+}

@@ -1644,6 +1644,7 @@ function renderGraphBoards(){
     '<div class="price-chart-scroll"><div class="chart-wrap graph-chart-wrap" style="'+chartSizeStyle+'"><canvas class="price-chart" aria-label="'+esc(board.name)+' '+chartHeading+' 그래프"></canvas></div></div></section>'+
     graphTradeHistoryHtml(board)+
     areaBenchmarkHtml(board)+
+    developmentOpportunityPanelHtml(board)+
     '<p class="chart-help">그래프 위를 움직이거나 누르면 모든 지표의 같은 연월을 잇는 세로선이 표시됩니다. 숫자 세로선은 아래 주요 정책 발표 시점입니다.</p>'+
     '<div class="economic-stack stacked">'+
       '<section class="stack-chart economic-indicator"><div class="economic-title"><b>원·달러 환율</b><span>월평균 · 원/USD</span></div><div class="economic-chart"><canvas class="exchange-chart" aria-label="원달러 환율 그래프"></canvas></div><div class="indicator-description"><p><b>의미</b> 1달러를 사는 데 필요한 원화입니다.</p><p><b>해석</b> 상승하면 원화 약세로 수입물가 부담이 커질 수 있고, 하락하면 원화 강세로 외국인 자금과 수입비용에 유리할 수 있습니다.</p></div></section>'+
@@ -2293,6 +2294,12 @@ function areaBenchmarkHtml(board){
   return '<details class="area-benchmark-panel foldable-card" data-area-benchmark-board="'+esc(board.id)+'" aria-live="polite" open>'+summary+'<div class="area-benchmark-body"><p class="area-benchmark-loading">행정구역 단계별 비교 분포와 추세를 계산하는 중입니다…</p></div></details>';
 }
 
+function developmentOpportunityPanelHtml(board){
+  if(!board.series.length)return "";
+  const summary='<summary class="development-opportunity-summary foldable-summary"><span class="foldable-title"><strong>개발 호재·생활권 공식 요약</strong><small>재개발·교통·교육·공공시설 · 공식 원문 우선</small></span></summary>';
+  return '<details class="development-opportunity-panel foldable-card" data-development-board="'+esc(board.id)+'" aria-live="polite">'+summary+'<div class="development-opportunity-panel-body"><p class="development-loading">선택 단지의 지역명·동명을 기준으로 공식 고시와 발표를 확인하는 중입니다…</p></div></details>';
+}
+
 function exclusivePyeongPrice(value){return Number.isFinite(Number(value))?fmt(Math.round(Number(value)))+"만원/전용평":"자료 없음";}
 function hasFiniteNumber(value){return value!==null&&value!==undefined&&value!==""&&Number.isFinite(Number(value));}
 function benchmarkPrice(value){return exclusivePyeongPrice(Number(value)/.75);}
@@ -2466,9 +2473,10 @@ function areaTrendHtml(item,color){
 }
 function renderAreaTrendCharts(panel,items,colors,enabledLevels=null){
   const host=panel.querySelector("[data-area-trend-groups]");
-  const usable=(items||[]).filter(item=>item.trends?.periods?.length),activeLevels=enabledLevels===null?["locality","district","municipality","province"]:enabledLevels;
+  const usable=(items||[]).filter(item=>item.trends?.periods?.length),activeLevels=enabledLevels===null?[]:enabledLevels;
   [...charts.keys()].filter(key=>key==="area-trend-comparison"||key.startsWith("area-trend-comparison:")).forEach(key=>{charts.get(key)?.destroy();charts.delete(key);});
   if(!host||!usable.length)return;
+  if(!activeLevels.length){host.innerHTML='<p class="area-benchmark-empty">선택 단지만 표시 중입니다. 비교할 동·읍·면, 구, 시·군 또는 시도를 위에서 선택하면 해당 행정구역 기준 그래프가 나타납니다.</p>';return;}
   const scopeGroups=new Map();
   usable.forEach(item=>(item.trends.administrative_scopes||[]).filter(scope=>activeLevels.includes(scope.level)).forEach(scope=>{
     if(!scopeGroups.has(scope.key))scopeGroups.set(scope.key,{scope,items:[]});
@@ -2505,28 +2513,34 @@ function renderAreaTrendCharts(panel,items,colors,enabledLevels=null){
 }
 function developmentOpportunityHtml(item){
   const key=String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name),place=[item.region_name,item.dong,item.apt_name].filter(Boolean).join(" "),development=item.development;
-  if(!development)return '<details class="development-opportunity" data-development-key="'+esc(key)+'"><summary><b>개발 호재·생활권 공식 요약</b><span>공식 원문 자동 확인 중</span></summary><div class="development-opportunity-body"><p class="development-loading">'+esc(place)+' 주변의 재개발·교통·교육·공공시설 공식 자료를 서버가 직접 확인하고 있습니다.</p></div></details>';
+  if(!development)return '<article class="development-complex" data-development-key="'+esc(key)+'"><header><h4>'+esc(item.apt_name||"선택 단지")+'</h4><span>'+esc(place)+'</span></header><p class="development-loading">공식 원문 자동 확인 중입니다.</p></article>';
   const items=Array.isArray(development.items)?development.items:[],checked=String(development.generated_at||"").slice(0,10);
   let body="";
   if(items.length){
-    const includesNews=items.some(event=>!event.official),lead=includesNews?'공식기관 원문을 우선하고, 원문이 검색되지 않은 항목은 공개된 언론 본문으로 보완했습니다.':'서버가 공식기관 원문을 직접 읽어 정리한 결과입니다.';
-    const eventCards=items.map(event=>'<article class="development-event"><div class="development-event-tags"><b>'+esc(event.category||"공식계획")+'</b><span class="development-stage-tag">'+esc(event.stage||"발표·공개")+'</span><time>'+esc(event.published_at||"날짜 미확인")+'</time></div><h6>'+esc(event.title||"공식 발표")+'</h6><p>'+esc(event.summary||"")+'</p><footer><span>'+esc(event.scope||"생활권 연관")+' · '+esc(event.source_type||"본문 확인")+'</span><a href="'+esc(event.url||"#")+'" target="_blank" rel="noopener">근거 원문</a></footer></article>').join("");
-    body='<p class="development-lead"><b>'+esc(lead)+'</b> 단순 검색 링크나 언론의 반복 인용은 제외하고, 문서에 적힌 사업 단계와 날짜를 구분했습니다.</p><div class="development-event-list">'+eventCards+'</div>';
+    const officialCount=items.filter(event=>event.official).length,unverifiedNotice=officialCount?"":'<p class="development-empty no-official"><b>확인된 공식 호재 없음</b><span>아래에는 공식 원문으로 확정하지 못한 공개 보도 또는 루머만 별도로 표시합니다.</span></p>';
+    const eventCards=items.map(event=>{
+      const rumor=Boolean(event.is_rumor),evidence=event.evidence_label||(event.official?"공식 원문":"보도 확인"),title=(rumor&&!String(event.title||"").startsWith("[루머]")?"[루머] ":"")+(event.title||"공식 발표");
+      return '<article class="development-event '+(rumor?'rumor':'')+'"><div class="development-event-tags"><b>'+esc(event.category||"공공시설")+'</b><span class="development-evidence '+(rumor?'rumor':'')+'">'+esc(evidence)+'</span><span class="development-stage-tag">'+esc(event.stage||"발표·공개")+'</span><time>'+esc(event.published_at||"날짜 미확인")+'</time></div><h6>'+esc(title)+'</h6><p>'+esc(event.summary||"")+'</p><div class="development-verification"><span>'+esc(event.verification||"본문 확인")+'</span><strong>'+esc(event.distance_status||(event.distance_check_required?"사업 경계와 단지 간 실제 거리 확인 필요":"선택 단지 직접 언급"))+'</strong></div><footer><span>'+esc(event.scope||"생활권 연관")+' · '+esc(event.publisher||event.source_type||"출처 확인")+'</span><a href="'+esc(event.url||"#")+'" target="_blank" rel="noopener">근거 원문</a></footer></article>';
+    }).join("");
+    body=unverifiedNotice+'<div class="development-event-list">'+eventCards+'</div>';
   }else if(development.status==="error"){
-    body='<p class="development-empty"><b>공식 자료 자동 조회가 지연되고 있습니다.</b><span>'+esc(development.reason||"잠시 뒤 다시 열어 확인해 주세요.")+'</span></p>';
+    body='<p class="development-empty"><b>공식 자료 자동 조회가 지연되고 있습니다.</b><span>공식 사이트 연결 또는 검색 응답이 지연됐습니다. 확인되지 않은 내용을 대신 표시하지 않습니다.</span></p>';
   }else{
     body='<p class="development-empty"><b>확인된 공식 호재 없음</b><span>'+esc(development.message||"최근 공개 범위에서 본문까지 검증된 자료를 찾지 못했습니다.")+'</span></p>';
   }
   const stale=development.status==="stale"?'<p class="development-stale">현재 갱신이 지연되어 마지막 확인 결과를 표시합니다.</p>':'';
-  return '<details class="development-opportunity" data-development-key="'+esc(key)+'"><summary><b>개발 호재·생활권 공식 요약</b><span>'+esc(items.length?"검증 본문 "+fmt(items.length)+"건 · "+checked+" 확인":"자동 확인 완료")+'</span></summary><div class="development-opportunity-body">'+stale+body+'<div class="development-stage"><b>사업 단계</b><span>검토·용역</span><i>→</i><span>계획 반영·추진</span><i>→</i><span>결정·고시/예산</span><i>→</i><span>인허가·보상</span><i>→</i><strong>착공·준공</strong></div><p class="development-caution">'+esc(development.caution||"동·시군구 자료는 단지와 실제 사업 경계의 거리 및 반대 영향을 별도로 확인해야 합니다.")+'</p></div></details>';
+  return '<article class="development-complex" data-development-key="'+esc(key)+'"><header><div><h4>'+esc(item.apt_name||"선택 단지")+'</h4><span>'+esc(place)+'</span></div><small>'+esc(items.length?"검증 본문 "+fmt(items.length)+"건 · "+checked+" 확인":"자동 확인 완료")+'</small></header>'+stale+body+'</article>';
 }
-function areaBenchmarkCardHtml(item,color,includeDevelopment=true){
+function developmentVerificationGuideHtml(){
+  return '<section class="development-guide"><h4>판정 기준과 확인 순서</h4><ol><li><b>공식 원문 우선</b><span>지자체·정부·공공기관의 고시·공고와 본문·발표일을 먼저 확인합니다.</span></li><li><b>단계 구분</b><span>검토·용역 → 계획 반영 → 결정·고시/예산 → 인허가·보상 → 착공·준공 순으로 표시합니다.</span></li><li><b>거리·영향권 분리</b><span>단지 직접 언급이 아니면 사업 경계와 출입구 간 실제 거리 확인이 필요하다고 표시합니다.</span></li><li><b>소문 격리</b><span>공식 원문 없이 추진설·유치설·관측만 있는 공개 보도는 [루머]로 분리합니다.</span></li></ol><p>주요 공식 확인처: <a href="https://www.eum.go.kr/web/gs/gv/gvGosiList.jsp" target="_blank" rel="noopener">토지이음 고시정보</a> · <a href="https://www.molit.go.kr/" target="_blank" rel="noopener">국토교통부</a> · 관할 지자체 고시·공고 · <a href="https://www.kr.or.kr/" target="_blank" rel="noopener">국가철도공단</a> · <a href="https://www.schoolinfo.go.kr/Main.do" target="_blank" rel="noopener">학교알리미</a></p></section>';
+}
+function areaBenchmarkCardHtml(item,color){
   const title=item.apt_name+" · 전용 "+fmt(Number(item.area_m2))+"㎡급";
   const references=(item.administrative_references||[]).map(entry=>benchmarkReferenceHtml(entry.label+" ("+entry.level_label+")",entry.reference,color)).join("")||benchmarkReferenceHtml(item.dong+" (읍·면·동)",item.dong_reference,color)+benchmarkReferenceHtml(item.province_label+" (시도)",item.province_reference,color);
-  return '<article class="area-benchmark-card" style="--benchmark-color:'+esc(color)+'"><h4><i aria-hidden="true"></i>'+esc(title)+'</h4><div class="area-benchmark-price"><b>'+esc(benchmarkPrice(item.price_per_supply_pyeong_manwon))+'</b><span>전용면적 기준</span></div><p class="area-benchmark-meta">'+esc(item.region_name+" "+item.dong)+' · '+esc(String(item.month))+' 월 중앙가 · 거래 '+esc(fmt(Number(item.trade_count)))+'건</p><div class="area-benchmark-references">'+references+'</div>'+(item.trends?areaTrendHtml(item,color):"")+(includeDevelopment?developmentOpportunityHtml(item):"")+'</article>';
+  return '<article class="area-benchmark-card" style="--benchmark-color:'+esc(color)+'"><h4><i aria-hidden="true"></i>'+esc(title)+'</h4><div class="area-benchmark-price"><b>'+esc(benchmarkPrice(item.price_per_supply_pyeong_manwon))+'</b><span>전용면적 기준</span></div><p class="area-benchmark-meta">'+esc(item.region_name+" "+item.dong)+' · '+esc(String(item.month))+' 월 중앙가 · 거래 '+esc(fmt(Number(item.trade_count)))+'건</p><div class="area-benchmark-references">'+references+'</div>'+(item.trends?areaTrendHtml(item,color):"")+'</article>';
 }
 function areaTrendComparisonHtml(){
-  return '<section class="area-trend-comparison"><div class="area-trend-head"><h4>공통 행정구역별 가격 위치 추세</h4><span>같은 구역의 단지들을 차트 하나로 묶었습니다 · 오른쪽이 최근</span></div><fieldset class="area-trend-scope-controls"><legend>표시할 행정단계</legend><label><input type="checkbox" data-area-trend-level="locality" checked><span>동·읍·면</span></label><label><input type="checkbox" data-area-trend-level="district" checked><span>구</span></label><label><input type="checkbox" data-area-trend-level="municipality" checked><span>시·군</span></label><label><input type="checkbox" data-area-trend-level="province" checked><span>시도</span></label></fieldset><div class="area-trend-chart-groups" data-area-trend-groups></div></section>';
+  return '<section class="area-trend-comparison"><div class="area-trend-head"><h4>공통 행정구역별 가격 위치 추세</h4><span>선택 단지만 사용 · 오른쪽이 최근</span></div><fieldset class="area-trend-scope-controls"><legend>표시할 행정단계 · 기본 꺼짐</legend><label><input type="checkbox" data-area-trend-level="locality"><span>동·읍·면</span></label><label><input type="checkbox" data-area-trend-level="district"><span>구</span></label><label><input type="checkbox" data-area-trend-level="municipality"><span>시·군</span></label><label><input type="checkbox" data-area-trend-level="province"><span>시도</span></label></fieldset><div class="area-trend-chart-groups" data-area-trend-groups></div></section>';
 }
 function bindAreaTrendComparison(panel,items,colors){
   renderAreaTrendCharts(panel,items,colors);
@@ -2545,7 +2559,7 @@ async function renderStaticAreaBenchmarks(board,panel,requested){
     if(activeGraphId!==board.id||!panel.isConnected)return true;
     const source=staticAreaBenchmarkPayload?.items||{},matched=requested.map(entry=>source[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name]).filter(Boolean),items=await addStaticAreaTrends(matched);
     const colors=new Map(requested.map(entry=>[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name,entry.color]));
-    const cards=items.map(item=>areaBenchmarkCardHtml(item,colors.get(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))||"#6040a0",false));
+    const cards=items.map(item=>areaBenchmarkCardHtml(item,colors.get(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))||"#6040a0"));
     panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary><div class="area-benchmark-body">'+(cards.length?areaTrendComparisonHtml()+'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택 단지의 GitHub 공개 비교 자료가 아직 없습니다. 다음 공개 데이터 갱신 후 자동 반영됩니다.</p>')+'</div>';
     if(cards.length)bindAreaTrendComparison(panel,items,colors);
     return true;
@@ -2566,6 +2580,7 @@ async function loadAreaBenchmarks(board,container){
     return [item.lawd_cd+"|"+item.dong+"|"+item.apt_name,{item,color:series.color}];
   }).filter(Boolean)).values()];
   if(!requested.length){panel.querySelector(".area-benchmark-loading").textContent="선택 단지의 비교용 지역 정보가 없어 전국 위치를 계산할 수 없습니다.";return;}
+  void loadDevelopmentOpportunities(container,requested);
   if(!localApi){
     const loaded=await renderStaticAreaBenchmarks(board,panel,requested);
     if(!loaded&&panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="GitHub 공개 비교 자료를 불러오지 못했습니다. 인터넷 연결 또는 다음 데이터 배포를 확인해 주세요.";
@@ -2580,29 +2595,31 @@ async function loadAreaBenchmarks(board,container){
     const items=payload.items||[],cards=items.map(item=>areaBenchmarkCardHtml(item,colors.get(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))||"#6040a0"));
     panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary><div class="area-benchmark-body">'+(cards.length?areaTrendComparisonHtml()+'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'</div>';
     if(cards.length)bindAreaTrendComparison(panel,items,colors);
-    void loadDevelopmentOpportunities(panel,requested);
   }catch(error){
     const loaded=await renderStaticAreaBenchmarks(board,panel,requested);
     if(!loaded&&panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="GitHub 공개 비교 자료를 불러오지 못했습니다. 인터넷 연결 또는 다음 데이터 배포를 확인해 주세요.";
   }
 }
 
-async function loadDevelopmentOpportunities(panel,requested){
+async function loadDevelopmentOpportunities(container,requested){
+  const panel=container.querySelector('[data-development-board]'),body=panel?.querySelector(".development-opportunity-panel-body");
+  if(!panel||!body)return;
+  if(!localApi){
+    body.innerHTML=developmentVerificationGuideHtml()+'<p class="development-empty"><b>메인 서버 연결 시 공식 호재를 직접 확인합니다.</b><span>GitHub 정적 화면에서는 검증되지 않은 호재를 추측해 표시하지 않습니다. 메인 서버가 켜진 상태에서 같은 단지를 선택하면 공식 원문 검색 결과가 표시됩니다.</span></p>';
+    const status=panel.querySelector("summary small");if(status)status.textContent="공식 검색은 메인 서버 연결 시 실행";
+    return;
+  }
   try{
     const response=await fetch("/api/area-benchmarks?include_development=true&items="+encodeURIComponent(JSON.stringify(requested.map(entry=>entry.item))),{cache:"no-store"});
     if(!response.ok)throw new Error("development unavailable");
     const payload=await response.json();
     if(!panel.isConnected)return;
-    (payload.items||[]).forEach(item=>{
-      const key=String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name),target=panel.querySelector('[data-development-key="'+CSS.escape(key)+'"]');
-      if(target)target.outerHTML=developmentOpportunityHtml(item);
-    });
+    const rows=payload.items||[],events=rows.flatMap(item=>Array.isArray(item.development?.items)?item.development.items:[]),eventCount=events.length,officialCount=events.filter(event=>event.official).length,secondaryCount=eventCount-officialCount,hasError=rows.some(item=>item.development?.status==="error"),hasStale=rows.some(item=>item.development?.status==="stale");
+    body.innerHTML=developmentVerificationGuideHtml()+'<div class="development-complex-list">'+(rows.length?rows.map(developmentOpportunityHtml).join(""):'<p class="development-empty"><b>확인된 공식 호재 없음</b><span>선택 단지에 대응하는 지역 자료를 확인하지 못했습니다.</span></p>')+'</div>';
+    const status=panel.querySelector("summary small");if(status)status.textContent=hasError?"공식 조회 지연":hasStale?"마지막 검증 결과":officialCount?"공식 "+fmt(officialCount)+"건"+(secondaryCount?" · 보도/루머 "+fmt(secondaryCount)+"건":""):"확인된 공식 호재 없음";
   }catch(error){
-    panel.querySelectorAll("[data-development-key]").forEach(target=>{
-      const body=target.querySelector(".development-opportunity-body");
-      if(body)body.innerHTML='<p class="development-empty"><b>공식 자료 자동 조회가 지연되고 있습니다.</b><span>메인 서버 연결 상태를 확인한 뒤 다시 열어 주세요.</span></p>';
-      const status=target.querySelector("summary span");if(status)status.textContent="조회 지연";
-    });
+    body.innerHTML=developmentVerificationGuideHtml()+'<p class="development-empty"><b>공식 자료 자동 조회가 지연되고 있습니다.</b><span>마지막 검증 결과를 확보하지 못했습니다. 메인 서버 연결 상태를 확인한 뒤 다시 선택해 주세요.</span></p>';
+    const status=panel.querySelector("summary small");if(status)status.textContent="공식 조회 지연";
   }
 }
 

@@ -77,6 +77,7 @@
 .graph-trade-history.foldable-card>.foldable-summary .trade-history-period{margin-left:auto}
 .graph-trade-history.foldable-card>.foldable-summary::after{margin-left:0}
 .area-benchmark-panel.foldable-card{margin-top:12px;padding:0}
+.development-opportunity-panel.foldable-card{margin-top:12px;padding:0;--fold-accent:#286d64}
 .reb-market-panel.foldable-card{margin-top:22px;padding:0}
 
 @media(max-width:700px){

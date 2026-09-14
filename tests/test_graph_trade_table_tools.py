@@ -71,6 +71,13 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert 'href="area-benchmark.css?v=9"' in html
     assert 'href="reb-market-map.css?v=5"' in html
     assert 'src="app.js?v=104"' in html
+    assert 'href="development-opportunities.css?v=1"' in html
+    assert script.index("areaBenchmarkHtml(board)") < script.index("developmentOpportunityPanelHtml(board)")
+    assert 'class="development-opportunity-panel foldable-card"' in script
+    assert "distance_status" in script
+    assert "[루머]" in script
+    assert "공식 원문 우선" in script
+    assert 'data-area-trend-level="locality"><span>' in script
 
 
 def test_every_collapsible_heading_has_a_leading_state_shape() -> None:
@@ -98,7 +105,7 @@ def test_three_real_estate_foldable_panels_share_one_visual_contract() -> None:
     assert 'graph-trade-history foldable-card' in script
     assert 'area-benchmark-panel foldable-card' in script
     assert script.count('area-benchmark-summary foldable-summary') >= 2
-    assert 'href="foldable-panels.css?v=1"' in html
+    assert 'href="foldable-panels.css?v=2"' in html
     assert '.foldable-card>.foldable-summary' in stylesheet
     assert 'content:"펼치기"' in stylesheet
     assert 'content:"접기"' in stylesheet
