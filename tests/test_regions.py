@@ -2,7 +2,31 @@ from __future__ import annotations
 
 import pandas as pd
 
-from realestate.core.regions import priority_regions_from_complexes
+from realestate.core.regions import (
+    nationwide_regions_from_complexes,
+    priority_regions_from_complexes,
+)
+
+
+def test_nationwide_regions_include_all_districts_and_deduplicate(tmp_path):
+    complexes_path = tmp_path / "complexes.csv"
+    fallback_path = tmp_path / "regions.csv"
+    pd.DataFrame(
+        [
+            {"bjd_code": "1111010100", "region_name": "서울특별시 종로구"},
+            {"bjd_code": "1111010200", "region_name": "서울특별시 종로구"},
+            {"bjd_code": "4113510100", "region_name": "경기도 성남시 분당구"},
+            {"bjd_code": "3011010100", "region_name": "대전광역시 동구"},
+        ]
+    ).to_csv(complexes_path, index=False)
+    pd.DataFrame(
+        [{"lawd_cd": "11110", "region_name": "서울특별시 종로구"}]
+    ).to_csv(fallback_path, index=False)
+
+    result = nationwide_regions_from_complexes(complexes_path, fallback_path)
+
+    assert set(result["lawd_cd"]) == {"11110", "41135", "30110"}
+    assert len(result) == 3
 
 
 def test_priority_regions_cover_requested_areas_and_deduplicate(tmp_path):

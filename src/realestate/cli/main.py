@@ -10,7 +10,10 @@ from realestate.analysis.publish import build_public_data
 from realestate.collectors.complexes import collect_complexes
 from realestate.collectors.trades import collect_trades
 from realestate.core.dates import month_range, recent_month_range
-from realestate.core.regions import priority_regions_from_complexes
+from realestate.core.regions import (
+    nationwide_regions_from_complexes,
+    priority_regions_from_complexes,
+)
 from realestate.core.settings import ROOT, load_settings
 
 
@@ -23,10 +26,16 @@ def main() -> None:
 
     collect = sub.add_parser("collect")
     collect.add_argument("--regions", default=str(ROOT / "config/regions.csv"))
-    collect.add_argument(
+    coverage = collect.add_mutually_exclusive_group()
+    coverage.add_argument(
         "--priority-coverage",
         action="store_true",
         help="서울·경기·부산 전역과 청주·창원 전역의 법정동 코드를 단지 목록에서 생성",
+    )
+    coverage.add_argument(
+        "--nationwide-coverage",
+        action="store_true",
+        help="전국 공동주택 단지 목록에서 모든 시·군·구 법정동 코드를 생성",
     )
     collect.add_argument(
         "--complexes",
@@ -54,7 +63,12 @@ def main() -> None:
 
     if args.command == "collect":
         regions_path = Path(args.regions)
-        if args.priority_coverage:
+        if args.nationwide_coverage:
+            regions = nationwide_regions_from_complexes(
+                Path(args.complexes),
+                regions_path,
+            )
+        elif args.priority_coverage:
             regions = priority_regions_from_complexes(
                 Path(args.complexes),
                 regions_path,

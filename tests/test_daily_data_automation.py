@@ -8,9 +8,9 @@ def test_all_public_data_families_have_at_least_daily_scheduled_refresh() -> Non
     real_estate = (ROOT / ".github" / "workflows" / "daily-update.yml").read_text(encoding="utf-8")
     markets = (ROOT / ".github" / "workflows" / "economic-indicators-daily.yml").read_text(encoding="utf-8")
 
-    assert 'cron: "10 21 * * *"' in real_estate
+    assert 'cron: "5 15 * * *"' in real_estate
     assert "collect-complexes" in real_estate
-    assert "--priority-coverage" in real_estate
+    assert "--nationwide-coverage" in real_estate
     assert "python scripts/merge_incremental_public_data.py" in real_estate
     assert "--all-history" not in real_estate
     assert "without deleting published history" in real_estate

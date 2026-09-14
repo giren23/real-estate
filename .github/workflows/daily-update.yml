@@ -6,6 +6,8 @@ on:
       - ".github/workflows/daily-update.yml"
       - "scripts/merge_incremental_public_data.py"
       - "scripts/update_reb_market_map.py"
+      - "src/realestate/cli/main.py"
+      - "src/realestate/core/regions.py"
       - "tests/test_daily_data_automation.py"
       - "tests/test_incremental_public_merge.py"
       - "tests/test_ranked_news_archive.py"
@@ -44,7 +46,7 @@ jobs:
           PYTHONPATH: src
         run: python -m realestate.cli.main collect-complexes
 
-      - name: Collect two latest months for all priority districts
+      - name: Collect two latest months nationwide
         id: collect
         continue-on-error: true
         env:
@@ -53,7 +55,7 @@ jobs:
         run: >
           python -m realestate.cli.main collect
           --months 2
-          --priority-coverage
+          --nationwide-coverage
           --failure-report data/reports/trade_collection_failures.json
 
       - name: Merge latest partitions without deleting published history

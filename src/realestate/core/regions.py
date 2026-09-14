@@ -20,11 +20,11 @@ def _read_regions(path: Path) -> pd.DataFrame:
     return frame[["lawd_cd", "region_name"]].drop_duplicates("lawd_cd").reset_index(drop=True)
 
 
-def priority_regions_from_complexes(
+def _regions_from_complexes(
     complexes_path: Path,
     fallback_path: Path,
+    prefixes: tuple[str, ...] | None = None,
 ) -> pd.DataFrame:
-    """Build district API targets for the five requested areas from the apartment directory."""
     if not complexes_path.exists():
         print(
             f"[WARN] 공동주택 단지 목록이 없어 기본 지역 목록을 사용합니다: {complexes_path}",
@@ -44,14 +44,18 @@ def priority_regions_from_complexes(
         )
         return _read_regions(fallback_path)
 
-    names = complexes["region_name"].astype(str).str.strip()
-    mask = names.map(
-        lambda value: any(
-            value.startswith(prefix)
-            for prefix in PRIORITY_REGION_PREFIXES
-        )
-    )
-    selected = complexes.loc[mask, ["bjd_code", "region_name"]].copy()
+    selected = complexes[["bjd_code", "region_name"]].copy()
+    if prefixes:
+        names = selected["region_name"].astype(str).str.strip()
+        selected = selected.loc[
+            names.map(
+                lambda value: any(
+                    value.startswith(prefix)
+                    for prefix in prefixes
+                )
+            )
+        ].copy()
+
     selected["lawd_cd"] = (
         selected["bjd_code"]
         .astype(str)
@@ -68,10 +72,36 @@ def priority_regions_from_complexes(
     )
     if regions.empty:
         print(
-            "[WARN] 우선 갱신 지역을 만들지 못해 기본 지역 목록을 사용합니다.",
+            "[WARN] 갱신 지역을 만들지 못해 기본 지역 목록을 사용합니다.",
             flush=True,
         )
         return _read_regions(fallback_path)
+    return regions
+
+
+def nationwide_regions_from_complexes(
+    complexes_path: Path,
+    fallback_path: Path,
+) -> pd.DataFrame:
+    """Build nationwide district API targets from the apartment directory."""
+    regions = _regions_from_complexes(complexes_path, fallback_path)
+    print(
+        f"[REGIONS] 전국 갱신 지역 {len(regions)}개 시·군·구 코드",
+        flush=True,
+    )
+    return regions
+
+
+def priority_regions_from_complexes(
+    complexes_path: Path,
+    fallback_path: Path,
+) -> pd.DataFrame:
+    """Build district API targets for the five requested areas from the apartment directory."""
+    regions = _regions_from_complexes(
+        complexes_path,
+        fallback_path,
+        PRIORITY_REGION_PREFIXES,
+    )
 
     counts = []
     for prefix in PRIORITY_REGION_PREFIXES:
