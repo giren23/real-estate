@@ -91,7 +91,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          pytest -q 2>&1 | tee data/reports/pytest.log
+          python -m pytest -q 2>&1 | tee data/reports/pytest.log
 
       - name: Publish concise test failure annotation
         if: steps.test.outcome == 'failure'

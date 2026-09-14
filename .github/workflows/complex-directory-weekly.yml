@@ -37,7 +37,7 @@ jobs:
       - name: Test
         env:
           PYTHONPATH: src
-        run: pytest -q
+        run: python -m pytest -q
       - name: Commit verified apartment directory
         run: |
           git config user.name "real-estate-bot"

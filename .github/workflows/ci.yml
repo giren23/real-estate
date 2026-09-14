@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          pytest -q 2>&1 | tee pytest.log
+          python -m pytest -q 2>&1 | tee pytest.log
       - name: JavaScript syntax
         id: javascript
         continue-on-error: true

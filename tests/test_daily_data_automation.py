@@ -26,7 +26,7 @@ def test_all_public_data_families_have_at_least_daily_scheduled_refresh() -> Non
     assert "publish_complex_directory.py" in directory
 
     validation = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    assert "pytest -q" in validation
+    assert "python -m pytest -q" in validation
     assert "node --check web/app.js" in validation
 
     assert 'cron: "15 */3 * * *"' in markets
