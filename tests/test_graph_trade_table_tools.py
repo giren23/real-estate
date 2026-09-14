@@ -46,7 +46,9 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "staticAreaTrendDistrictCodes" in script
     assert "loadStaticAreaTrendRows" in script
     assert "rows.forEach(row=>consumeRow(row))" in script
-    assert "84㎡급 거래 " in script
+    assert 'const fraction="("+fmt(rank.rank)+" / "+fmt(rank.total)+")"' in script
+    assert 'return Number.isFinite(percent)?"상위 "+fmt(percent)+"% "+fraction:fraction;' in script
+    assert '"84㎡급 거래 "+fmt(rank.total)' not in script
     assert 'districtToken===mappedCity?(tokens[2]||"")' in script
     assert 'value!==null&&value!==undefined&&value!==""' in script
     assert "population.filter(hasFiniteNumber)" in script
@@ -57,6 +59,7 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "위쪽일수록 최상위에 가까움" in script
     assert "표시할 행정단계" in script
     assert "기간 내 거래" in script
+    assert "84㎡ 평균 전용평단가" in script
     assert "trend-strength-badge" in script
     assert "trend-rank-latest" not in script
     assert "area-benchmark-summary" in script
@@ -82,7 +85,7 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert 'href="graph-trade-tools.css?v=2"' in html
     assert 'href="area-benchmark.css?v=10"' in html
     assert 'href="reb-market-map.css?v=6"' in html
-    assert 'src="app.js?v=109"' in html
+    assert 'src="app.js?v=110"' in html
     assert 'href="development-opportunities.css?v=1"' in html
     assert script.index("areaBenchmarkHtml(board)") < script.index("developmentOpportunityPanelHtml(board)")
     assert 'class="development-opportunity-panel foldable-card"' in script

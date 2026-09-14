@@ -2269,7 +2269,8 @@ function benchmarkReferenceHtml(label,reference,color){
 function trendRankText(rank){
   if(!Number(rank?.rank)||!Number(rank?.total))return "산정 불가";
   const percent=Number(rank.top_percent);
-  return (Number.isFinite(percent)?"상위 "+fmt(percent)+"% · ":"")+"84㎡급 거래 "+fmt(rank.total)+"단지 중 "+fmt(rank.rank)+"등";
+  const fraction="("+fmt(rank.rank)+" / "+fmt(rank.total)+")";
+  return Number.isFinite(percent)?"상위 "+fmt(percent)+"% "+fraction:fraction;
 }
 function administrativeRankList(entries,field){
   const rows=Array.isArray(entries)?entries:[];
@@ -2410,7 +2411,7 @@ function areaTrendHtml(item){
     const strength=Number(period.trend_pct_per_month),tone=!hasFiniteNumber(period.trend_pct_per_month)?"unavailable":strength>.01?"up":strength<-.01?"down":"flat";
     return '<tr><th>'+esc(period.label)+'</th><td>'+esc(fmt(Number(period.trade_count)||0))+'건</td><td>'+(period.status==="no_trade"?'<span class="no-trade">거래 없음</span>':esc(exclusivePyeongPrice(period.average_exclusive_pyeong_manwon)))+'</td><td>'+administrativeRankList(period.administrative_price_positions,"position")+'</td><td class="trend-strength-cell"><span class="trend-strength-badge '+tone+'">'+esc(trendDirection(period.trend_pct_per_month,period))+'</span></td><td>'+administrativeRankList(period.administrative_trend_ranks,"rank")+'</td></tr>';
   }).join("");
-  return '<section class="area-trend-panel" data-area-trend-key="'+esc(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))+'"><div class="area-trend-head"><h5>기간별 가격 위치·추세강도</h5><span>'+esc(trends.as_of_month)+' 기준</span></div>'+noRecent+'<div class="area-trend-table-wrap"><table><thead><tr><th>구간</th><th>기간 내 거래</th><th>평균 전용평당가</th><th>행정구역별 가격순위</th><th>추세강도</th><th>행정구역별 추세순위</th></tr></thead><tbody>'+rows+'</tbody></table></div></section>';
+  return '<section class="area-trend-panel" data-area-trend-key="'+esc(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))+'"><div class="area-trend-head"><h5>기간별 가격 위치·추세강도</h5><span>'+esc(trends.as_of_month)+' 기준</span></div>'+noRecent+'<div class="area-trend-table-wrap"><table><thead><tr><th>구간</th><th>기간 내 거래</th><th>84㎡ 평균 전용평단가</th><th>행정구역별 가격순위</th><th>추세강도</th><th>행정구역별 추세순위</th></tr></thead><tbody>'+rows+'</tbody></table></div></section>';
 }
 const areaTrendPointLabels={
   id:"areaTrendPointLabels",
