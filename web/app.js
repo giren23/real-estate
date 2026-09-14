@@ -114,15 +114,16 @@ const verifiedNaverComplexes = [
 function verifiedNaverComplexNo(group){
   const lawdCd=String(group?.lawd_cd||group?.bjd_code||"").slice(0,5);
   const dong=compactName(group?.dong);
-  const aptName=compactName(group?.apt_name);
+  const aptNames=[group?.apt_name,group?.directory_name,group?.data_apt_name,...(group?.search_names||[])].map(compactName).filter(Boolean);
   const match=verifiedNaverComplexes.find(item=>
-    item.lawdCd===lawdCd && compactName(item.dong)===dong && item.aptNames.some(name=>compactName(name)===aptName)
+    item.lawdCd===lawdCd && compactName(item.dong)===dong && item.aptNames.some(name=>aptNames.includes(compactName(name)))
   );
   return match?.complexNo||"";
 }
 function verifiedComplexCoordinate(group){
-  const lawdCd=String(group?.lawd_cd||group?.bjd_code||"").slice(0,5),dong=compactName(group?.dong),aptName=compactName(group?.apt_name);
-  const match=verifiedNaverComplexes.find(item=>item.coord&&item.lawdCd===lawdCd&&compactName(item.dong)===dong&&item.aptNames.some(name=>compactName(name)===aptName));
+  const lawdCd=String(group?.lawd_cd||group?.bjd_code||"").slice(0,5),dong=compactName(group?.dong);
+  const aptNames=[group?.apt_name,group?.directory_name,group?.data_apt_name,...(group?.search_names||[])].map(compactName).filter(Boolean);
+  const match=verifiedNaverComplexes.find(item=>item.coord&&item.lawdCd===lawdCd&&compactName(item.dong)===dong&&item.aptNames.some(name=>aptNames.includes(compactName(name))));
   return match?{lat:Number(match.coord.lat),lng:Number(match.coord.lng)}:null;
 }
 function naverLandSearchUrl(group,series){

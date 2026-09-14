@@ -28,6 +28,7 @@ def test_map_marker_recovery_works_without_local_pc_api() -> None:
     assert 'const GEO_CACHE_STORAGE_KEY="aptGeoCacheV2"' in script
     assert "validatedGeocodeCoordinate" in script
     assert "verifiedComplexCoordinate" in script
+    assert "group?.data_apt_name" in script
     assert "seedApproximateMarkers" not in script
     assert "동 중심 기준 임시 위치" not in script
     assert "geoCache[apartmentGeocodeName(group.apt_name)]" not in script
