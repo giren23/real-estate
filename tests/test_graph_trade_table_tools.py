@@ -50,6 +50,7 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "average_exclusive_pyeong_manwon" in script
     assert "Number(right.months)-Number(left.months)" in script
     assert "오른쪽이 최근" in script
+    assert "위쪽일수록 최상위에 가까움" in script
     assert "표시할 행정단계" in script
     assert "기간 내 거래" in script
     assert "area-benchmark-summary" in script
@@ -70,7 +71,7 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert 'href="graph-trade-tools.css?v=2"' in html
     assert 'href="area-benchmark.css?v=9"' in html
     assert 'href="reb-market-map.css?v=5"' in html
-    assert 'src="app.js?v=104"' in html
+    assert 'src="app.js?v=105"' in html
     assert 'href="development-opportunities.css?v=1"' in html
     assert script.index("areaBenchmarkHtml(board)") < script.index("developmentOpportunityPanelHtml(board)")
     assert 'class="development-opportunity-panel foldable-card"' in script

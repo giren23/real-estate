@@ -453,7 +453,8 @@ function rememberTradeName(group,name,weight=1){
 async function fetchJson(path){ try{const response=await fetch(path);return response.ok?response.json():[];}catch{return [];} }
 function publicDistrictPayload(lawdCd){
   const code=String(lawdCd||"").padStart(5,"0").slice(0,5);
-  if(!publicDistrictCache.has(code))publicDistrictCache.set(code,fetchJson("data/shards/"+code+".json"));
+  const version=encodeURIComponent(String(publicShardManifest?.generated_at||publicShardManifest?.latest_date||"latest"));
+  if(!publicDistrictCache.has(code))publicDistrictCache.set(code,fetchJson("data/shards/"+code+".json?v="+version));
   return publicDistrictCache.get(code);
 }
 function scopedArchiveRows(payload,group){
@@ -2507,7 +2508,7 @@ function renderAreaTrendCharts(panel,items,colors,enabledLevels=null){
   host.innerHTML=chartGroups.map(group=>'<article class="area-trend-group"><div class="area-trend-group-head"><h5>'+esc(group.scope.label)+' <span>'+esc(group.scope.level_label)+'</span> 내 위치</h5><p>'+esc(fmt(group.items.length))+'개 선택 단지 · 같은 행정구역을 한 그래프로 묶음</p></div><div class="area-trend-chart"><canvas data-area-trend-comparison="'+esc(group.scope.key)+'" aria-label="'+esc(group.scope.full_label+' '+group.scope.level_label+' 내 선택 단지 가격 위치 추세')+'"></canvas></div></article>').join("");
   chartGroups.forEach(group=>{
     const canvas=host.querySelector('[data-area-trend-comparison="'+CSS.escape(group.scope.key)+'"]'),yMin=Math.max(0,Math.floor(Math.min(...group.finite)-10)),yMax=Math.min(100,Math.ceil(Math.max(...group.finite)+10));
-    const chart=new Chart(canvas,{type:"line",data:{labels:group.labels,datasets:group.datasets},options:{maintainAspectRatio:false,responsive:true,layout:{padding:{top:10,bottom:8}},interaction:{mode:"index",intersect:false},scales:{x:{grid:{display:false},title:{display:true,text:"15년 → 13년 → 11년 → 9년 → 7년 → 5년 → 3년 → 1년 → 6개월 → 3개월 → 1개월"}},y:{min:yMin,max:yMax,reverse:true,title:{display:true,text:"행정구역 내 상위 비율 (0%=최상위)"},ticks:{callback:value=>"상위 "+fmt(value)+"%"}}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:context=>context.raw==null?context.dataset.label+": 거래 없음":context.dataset.label+": 상위 "+fmt(context.raw)+"%",afterLabel:context=>"기간 내 거래 "+fmt(context.dataset.tradeCounts?.[context.dataIndex]||0)+"건"}}}}});
+    const chart=new Chart(canvas,{type:"line",data:{labels:group.labels,datasets:group.datasets},options:{maintainAspectRatio:false,responsive:true,layout:{padding:{top:10,bottom:8}},interaction:{mode:"index",intersect:false},scales:{x:{grid:{display:false},title:{display:true,text:"15년 → 13년 → 11년 → 9년 → 7년 → 5년 → 3년 → 1년 → 6개월 → 3개월 → 1개월"}},y:{min:yMin,max:yMax,reverse:true,position:"left",title:{display:true,text:"↑ 위쪽일수록 최상위에 가까움"},ticks:{callback:value=>"상위 "+fmt(value)+"%"}}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:context=>context.raw==null?context.dataset.label+": 거래 없음":context.dataset.label+": 상위 "+fmt(context.raw)+"%",afterLabel:context=>"기간 내 거래 "+fmt(context.dataset.tradeCounts?.[context.dataIndex]||0)+"건"}}}}});
     charts.set("area-trend-comparison:"+group.scope.key,chart);
   });
 }
@@ -2540,7 +2541,7 @@ function areaBenchmarkCardHtml(item,color){
   return '<article class="area-benchmark-card" style="--benchmark-color:'+esc(color)+'"><h4><i aria-hidden="true"></i>'+esc(title)+'</h4><div class="area-benchmark-price"><b>'+esc(benchmarkPrice(item.price_per_supply_pyeong_manwon))+'</b><span>전용면적 기준</span></div><p class="area-benchmark-meta">'+esc(item.region_name+" "+item.dong)+' · '+esc(String(item.month))+' 월 중앙가 · 거래 '+esc(fmt(Number(item.trade_count)))+'건</p><div class="area-benchmark-references">'+references+'</div>'+(item.trends?areaTrendHtml(item,color):"")+'</article>';
 }
 function areaTrendComparisonHtml(){
-  return '<section class="area-trend-comparison"><div class="area-trend-head"><h4>공통 행정구역별 가격 위치 추세</h4><span>선택 단지만 사용 · 오른쪽이 최근</span></div><fieldset class="area-trend-scope-controls"><legend>표시할 행정단계 · 기본 꺼짐</legend><label><input type="checkbox" data-area-trend-level="locality"><span>동·읍·면</span></label><label><input type="checkbox" data-area-trend-level="district"><span>구</span></label><label><input type="checkbox" data-area-trend-level="municipality"><span>시·군</span></label><label><input type="checkbox" data-area-trend-level="province"><span>시도</span></label></fieldset><div class="area-trend-chart-groups" data-area-trend-groups></div></section>';
+  return '<section class="area-trend-comparison"><div class="area-trend-head"><h4>공통 행정구역별 가격 위치 추세</h4><span>선택 단지만 사용 · 위쪽일수록 최상위에 가까움 · 오른쪽이 최근</span></div><fieldset class="area-trend-scope-controls"><legend>표시할 행정단계 · 기본 꺼짐</legend><label><input type="checkbox" data-area-trend-level="locality"><span>동·읍·면</span></label><label><input type="checkbox" data-area-trend-level="district"><span>구</span></label><label><input type="checkbox" data-area-trend-level="municipality"><span>시·군</span></label><label><input type="checkbox" data-area-trend-level="province"><span>시도</span></label></fieldset><div class="area-trend-chart-groups" data-area-trend-groups></div></section>';
 }
 function bindAreaTrendComparison(panel,items,colors){
   renderAreaTrendCharts(panel,items,colors);
