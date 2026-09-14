@@ -451,6 +451,25 @@ function rememberTradeName(group,name,weight=1){
   if(normalized(group.directory_name||group.apt_name)!==normalized(label)) group.tradeAliases.add(label);
 }
 async function fetchJson(path){ try{const response=await fetch(path);return response.ok?response.json():[];}catch{return [];} }
+async function fetchLocalCatalog(){
+  try{
+    const response=await fetch("/api/catalog",{cache:"no-store"}),responseSource=response.headers.get("x-real-estate-source")||"";
+    if(!response.ok||(responseSource&&responseSource!=="local-pc")){
+      await response.body?.cancel();
+      return null;
+    }
+    const payload=await response.json();
+    return payload&&Array.isArray(payload.catalog)?payload:null;
+  }catch(_error){return null;}
+}
+async function ensurePublicShardManifest(){
+  if(publicShardManifest&&Array.isArray(publicShardManifest.districts)&&publicShardManifest.districts.length)return publicShardManifest;
+  const manifest=await fetchJson("data/shards/manifest.json?updated="+Date.now());
+  if(!manifest||!Array.isArray(manifest.districts)||!manifest.districts.length)return null;
+  publicShardManifest=manifest;
+  staticAreaTrendIndex=null;
+  return publicShardManifest;
+}
 function publicDistrictPayload(lawdCd){
   const code=String(lawdCd||"").padStart(5,"0").slice(0,5);
   const version=encodeURIComponent(String(publicShardManifest?.generated_at||publicShardManifest?.latest_date||"latest"));
@@ -527,8 +546,8 @@ function median(values){
 
 async function load(){
   try{
-    const localPayload=await fetchJson("/api/catalog");
-    if(localPayload&&Array.isArray(localPayload.catalog)){
+    const localPayload=await fetchLocalCatalog();
+    if(localPayload){
       localApi=true;
       localMeta=localPayload.meta||{};
       economicContext=await fetchJson("data/economic_context.json");
@@ -2291,8 +2310,8 @@ function bindTaxEstimator(board,container){
 function areaBenchmarkHtml(board){
   if(!board.series.length)return "";
   const summary='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary>';
-  if(!localApi)return '<details class="area-benchmark-panel foldable-card" data-area-benchmark-board="'+esc(board.id)+'" aria-live="polite" open>'+summary+'<div class="area-benchmark-body"><p class="area-benchmark-loading">GitHub에 저장된 전국 비교 자료를 불러오는 중입니다…</p></div></details>';
-  return '<details class="area-benchmark-panel foldable-card" data-area-benchmark-board="'+esc(board.id)+'" aria-live="polite" open>'+summary+'<div class="area-benchmark-body"><p class="area-benchmark-loading">행정구역 단계별 비교 분포와 추세를 계산하는 중입니다…</p></div></details>';
+  if(!localApi)return '<details class="area-benchmark-panel foldable-card" data-area-benchmark-board="'+esc(board.id)+'" aria-live="polite">'+summary+'<div class="area-benchmark-body"><p class="area-benchmark-loading">GitHub에 저장된 전국 비교 자료를 불러오는 중입니다…</p></div></details>';
+  return '<details class="area-benchmark-panel foldable-card" data-area-benchmark-board="'+esc(board.id)+'" aria-live="polite">'+summary+'<div class="area-benchmark-body"><p class="area-benchmark-loading">행정구역 단계별 비교 분포와 추세를 계산하는 중입니다…</p></div></details>';
 }
 
 function developmentOpportunityPanelHtml(board){
@@ -2552,6 +2571,7 @@ function bindAreaTrendComparison(panel,items,colors){
 }
 async function renderStaticAreaBenchmarks(board,panel,requested){
   try{
+    if(!await ensurePublicShardManifest())throw new Error("public shard manifest unavailable");
     if(!staticAreaBenchmarkPayload){
       const response=await fetch("data/area_benchmarks.json?updated="+Date.now(),{cache:"no-store"});
       if(!response.ok)throw new Error("static benchmark unavailable");

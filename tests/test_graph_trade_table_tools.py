@@ -60,6 +60,11 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert 'cache:"no-store"' in script
     assert "renderStaticAreaBenchmarks" in script
     assert "const loaded=await renderStaticAreaBenchmarks" in script
+    assert "fetchLocalCatalog" in script
+    assert 'response.headers.get("x-real-estate-source")' in script
+    assert 'responseSource&&responseSource!=="local-pc"' in script
+    assert "ensurePublicShardManifest" in script
+    assert 'aria-live="polite" open' not in script
     assert "개발 호재·생활권 공식 요약" in script
     assert "include_development=true" in script
     assert "검증 본문" in script
@@ -71,7 +76,7 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert 'href="graph-trade-tools.css?v=2"' in html
     assert 'href="area-benchmark.css?v=9"' in html
     assert 'href="reb-market-map.css?v=6"' in html
-    assert 'src="app.js?v=105"' in html
+    assert 'src="app.js?v=106"' in html
     assert 'href="development-opportunities.css?v=1"' in html
     assert script.index("areaBenchmarkHtml(board)") < script.index("developmentOpportunityPanelHtml(board)")
     assert 'class="development-opportunity-panel foldable-card"' in script
