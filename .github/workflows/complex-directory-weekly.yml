@@ -44,5 +44,5 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add data/raw/complexes.csv data/public/complexes.json data/public/meta.json
           git commit -m "Weekly apartment directory update" || exit 0
-          git pull --rebase origin main
+          git pull --rebase --autostash origin main
           git push

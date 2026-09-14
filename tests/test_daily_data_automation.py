@@ -13,6 +13,7 @@ def test_all_public_data_families_have_at_least_daily_scheduled_refresh() -> Non
     assert "retry-trades" in real_estate
     assert "publish_collection_status.py" in real_estate
     assert "build_public_trade_shards.py" in real_estate
+    assert "git pull --rebase --autostash origin main" in real_estate
     assert 'if [ "$(TZ=Asia/Seoul date +%d)" = "01" ]; then months=3; fi' in real_estate
     assert "python scripts/merge_incremental_public_data.py" in real_estate
     assert "--all-history" not in real_estate

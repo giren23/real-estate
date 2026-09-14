@@ -97,7 +97,6 @@ jobs:
 
       - name: Test
         id: test
-        continue-on-error: true
         env:
           PYTHONPATH: src
         run: pytest -q
@@ -120,11 +119,11 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add data/public/meta.json data/public/monthly.json data/public/regions.json data/public/area_benchmarks.json data/public/collection_status.json data/public/shards web/content/reb_market_map.json web/content/news web/content/analysis
           git commit -m "Daily update" || exit 0
-          git pull --rebase origin main
+          git pull --rebase --autostash origin main
           git push
 
       - name: Mark unresolved refresh as failed after saving successes
-        if: steps.test.outcome == 'failure' || (steps.collect.outcome == 'failure' && steps.retry.outcome != 'success')
+        if: steps.collect.outcome == 'failure' && steps.retry.outcome != 'success'
         run: |
           echo "::error::검증 실패 또는 재시도 후 미해결 지역이 있습니다. 성공한 데이터와 상태 보고서는 게시했습니다."
           if [ -f data/reports/trade_collection_retry.json ]; then
