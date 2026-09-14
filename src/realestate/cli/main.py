@@ -8,7 +8,7 @@ import pandas as pd
 
 from realestate.analysis.publish import build_public_data
 from realestate.collectors.complexes import collect_complexes
-from realestate.collectors.trades import collect_trades
+from realestate.collectors.trades import collect_trades, retry_failed_trades
 from realestate.core.dates import month_range, recent_month_range
 from realestate.core.regions import (
     nationwide_regions_from_complexes,
@@ -55,6 +55,17 @@ def main() -> None:
 
     complexes = sub.add_parser("collect-complexes")
     complexes.add_argument("--output", default=str(ROOT / "data/raw/complexes.csv"))
+
+    retry = sub.add_parser("retry-trades")
+    retry.add_argument(
+        "--source-report",
+        default=str(ROOT / "data/reports/trade_collection_failures.json"),
+    )
+    retry.add_argument("--output", default=str(ROOT / "data/raw/trades"))
+    retry.add_argument(
+        "--failure-report",
+        default=str(ROOT / "data/reports/trade_collection_retry.json"),
+    )
 
     sub.add_parser("publish")
 
@@ -114,6 +125,15 @@ def main() -> None:
 
     if args.command == "collect-complexes":
         collect_complexes(settings, Path(args.output))
+        return
+
+    if args.command == "retry-trades":
+        retry_failed_trades(
+            settings,
+            Path(args.source_report),
+            Path(args.output),
+            Path(args.failure_report) if args.failure_report else None,
+        )
         return
 
     build_public_data(ROOT)

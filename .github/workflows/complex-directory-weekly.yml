@@ -1,0 +1,48 @@
+name: Weekly apartment directory update
+
+on:
+  schedule:
+    # 매주 일요일 한국시간 오전 6시 35분(UTC 토요일 21시 35분).
+    - cron: "35 21 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: real-estate-daily
+  cancel-in-progress: false
+
+jobs:
+  directory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Refresh nationwide apartment directory
+        env:
+          MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
+          APT_LIST_SERVICE_KEY: ${{ secrets.APT_LIST_SERVICE_KEY }}
+          PYTHONPATH: src
+        run: python -m realestate.cli.main collect-complexes
+      - name: Publish only after loss guards pass
+        env:
+          PYTHONPATH: src
+        run: python scripts/publish_complex_directory.py
+      - name: Test
+        env:
+          PYTHONPATH: src
+        run: pytest -q
+      - name: Commit verified apartment directory
+        run: |
+          git config user.name "real-estate-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/raw/complexes.csv data/public/complexes.json data/public/meta.json
+          git commit -m "Weekly apartment directory update" || exit 0
+          git pull --rebase origin main
+          git push

@@ -259,6 +259,16 @@ def _write_failure_report(
             {"lawd_cd": code, "region_name": name}
             for code, name in failed_regions
         ],
+        "requests": [
+            {
+                key: result.get(key)
+                for key in (
+                    "status", "lawd_cd", "region_name", "deal_ym",
+                    "row_count", "method",
+                )
+            }
+            for result in results
+        ],
         "problems": problems,
     }
     if report_path:
@@ -271,6 +281,38 @@ def _write_failure_report(
     return report
 
 
+def _run_trade_tasks(
+    settings: Settings,
+    tasks: list[tuple[int, str, str, str]],
+    output_dir: Path,
+    failure_report: Path | None,
+) -> dict:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    total = len(tasks)
+    if not tasks:
+        return _write_failure_report(failure_report, 0, [])
+
+    worker_count = min(3, total)
+    results: list[dict] = []
+    print(
+        f"[COLLECT] 총 {total:,}개 요청, 동시 요청 {worker_count}개",
+        flush=True,
+    )
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [
+            executor.submit(
+                _collect_one, settings, index, total, lawd_cd,
+                region_name, ym, output_dir,
+            )
+            for index, lawd_cd, region_name, ym in tasks
+        ]
+        for future in as_completed(futures):
+            results.append(future.result())
+
+    results.sort(key=lambda result: result["index"])
+    return _write_failure_report(failure_report, total, results)
+
+
 def collect_trades(
     settings: Settings,
     regions: pd.DataFrame,
@@ -278,7 +320,6 @@ def collect_trades(
     output_dir: Path,
     failure_report: Path | None = None,
 ) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
     total = len(regions) * len(months)
     tasks: list[tuple[int, str, str, str]] = []
     for _, region in regions.iterrows():
@@ -291,32 +332,7 @@ def collect_trades(
         _write_failure_report(failure_report, 0, [])
         raise RuntimeError("수집할 지역 또는 월이 없습니다.")
 
-    worker_count = min(3, total)
-    results: list[dict] = []
-    print(
-        f"[COLLECT] 총 {total:,}개 요청, {len(regions):,}개 지역, "
-        f"{len(months):,}개월, 동시 요청 {worker_count}개",
-        flush=True,
-    )
-    with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        futures = [
-            executor.submit(
-                _collect_one,
-                settings,
-                index,
-                total,
-                lawd_cd,
-                region_name,
-                ym,
-                output_dir,
-            )
-            for index, lawd_cd, region_name, ym in tasks
-        ]
-        for future in as_completed(futures):
-            results.append(future.result())
-
-    results.sort(key=lambda result: result["index"])
-    report = _write_failure_report(failure_report, total, results)
+    report = _run_trade_tasks(settings, tasks, output_dir, failure_report)
     if report["failed_request_count"]:
         details = "\n".join(
             f"  - {item['region_name']} ({item['lawd_cd']}) {item['deal_ym']}: "
@@ -329,3 +345,31 @@ def collect_trades(
         )
 
     print(f"[DONE] 실거래 갱신 {total:,}개 요청 모두 완료", flush=True)
+
+
+def retry_failed_trades(
+    settings: Settings,
+    source_report: Path,
+    output_dir: Path,
+    failure_report: Path | None = None,
+) -> None:
+    if not source_report.exists():
+        raise RuntimeError(f"재시도 원본 보고서가 없습니다: {source_report}")
+    payload = json.loads(source_report.read_text(encoding="utf-8"))
+    problems = payload.get("problems", [])
+    tasks = [
+        (
+            index,
+            str(item.get("lawd_cd", "")).zfill(5),
+            str(item.get("region_name", "")),
+            str(item.get("deal_ym", "")),
+        )
+        for index, item in enumerate(problems, start=1)
+        if item.get("lawd_cd") and item.get("deal_ym")
+    ]
+    report = _run_trade_tasks(settings, tasks, output_dir, failure_report)
+    if report["failed_request_count"]:
+        raise RuntimeError(
+            f"실패 항목 재시도 후에도 {report['failed_request_count']}/{len(tasks)}개가 미해결임"
+        )
+    print(f"[DONE] 실패 항목 {len(tasks):,}개 재시도 완료", flush=True)

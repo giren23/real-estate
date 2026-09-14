@@ -34,8 +34,43 @@ def history_frame(payload: dict) -> pd.DataFrame:
     return pd.DataFrame(output)
 
 
-def collected_partitions() -> tuple[set[tuple[str, str]], pd.DataFrame]:
+def previous_public_state() -> tuple[pd.DataFrame, list[dict]]:
+    """Load yesterday's sharded snapshot when available.
+
+    The large monolithic files are retained only as a migration fallback. Daily
+    commits use shards as the durable source so data does not roll back when a
+    district-month falls outside the next two-month collection window.
+    """
+    manifest_path = PUBLIC / "shards" / "manifest.json"
+    if not manifest_path.exists():
+        return (
+            history_frame(read_json("apartment_history.json", {})),
+            list(read_json("latest_trades.json", [])),
+        )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    history_frames: list[pd.DataFrame] = []
+    latest: list[dict] = []
+    for item in manifest.get("districts", []):
+        shard_path = PUBLIC / "shards" / str(item.get("file", ""))
+        if not shard_path.exists():
+            raise RuntimeError(f"안전장치 작동: 이전 공개 지역 파일이 없습니다: {shard_path.name}")
+        payload = json.loads(shard_path.read_text(encoding="utf-8"))
+        frame = history_frame(payload.get("history", {}))
+        if not frame.empty:
+            history_frames.append(frame)
+        latest.extend(payload.get("trades", []))
+    history = pd.concat(history_frames, ignore_index=True) if history_frames else pd.DataFrame()
+    expected = sum(int(item.get("history_rows") or 0) for item in manifest.get("districts", []))
+    if expected and len(history) != expected:
+        raise RuntimeError(
+            f"안전장치 작동: 지역 이력 행 수가 manifest {expected:,}개와 실제 {len(history):,}개로 다름"
+        )
+    return history, latest
+
+
+def collected_partitions() -> tuple[set[tuple[str, str]], set[tuple[str, str]], pd.DataFrame]:
     covered: set[tuple[str, str]] = set()
+    nonempty: set[tuple[str, str]] = set()
     frames: list[pd.DataFrame] = []
     for path in sorted(RAW_TRADES.glob("*.parquet")):
         match = PARTITION_PATTERN.match(path.name)
@@ -45,12 +80,13 @@ def collected_partitions() -> tuple[set[tuple[str, str]], pd.DataFrame]:
         covered.add((lawd_cd, f"{deal_ym[:4]}-{deal_ym[4:]}"))
         frame = pd.read_parquet(path)
         if not frame.empty:
+            nonempty.add((lawd_cd, f"{deal_ym[:4]}-{deal_ym[4:]}"))
             frames.append(frame)
     trades = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     if not trades.empty:
         trades["lawd_cd"] = trades["lawd_cd"].astype(str).str.zfill(5)
         trades = trades[~trades.get("cancelled", False).fillna(False)].copy()
-    return covered, trades
+    return covered, nonempty, trades
 
 
 def replace_covered(frame: pd.DataFrame, covered: set[tuple[str, str]], month_column: str = "month") -> pd.DataFrame:
@@ -116,12 +152,15 @@ def write_json_atomic(path: Path, payload: object) -> None:
 
 def main() -> None:
     old_meta = read_json("meta.json", {})
-    old_history = history_frame(read_json("apartment_history.json", {}))
-    covered, trades = collected_partitions()
+    old_history, old_latest = previous_public_state()
+    covered, nonempty, trades = collected_partitions()
     if not covered:
         raise SystemExit("병합할 최신 실거래 파티션이 없습니다.")
 
-    retained_history = replace_covered(old_history, covered)
+    # A successful empty response must never erase a previously published
+    # non-empty district-month. It can represent a transient upstream omission.
+    # Non-empty fresh partitions remain authoritative and replace their month.
+    retained_history = replace_covered(old_history, nonempty)
     if trades.empty:
         fresh_history = pd.DataFrame(columns=old_history.columns)
     else:
@@ -139,11 +178,10 @@ def main() -> None:
         raise RuntimeError(f"안전장치 작동: 공개 이력 거래 수가 {old_count:,}건에서 {new_count:,}건으로 급감함")
 
     old_monthly = pd.DataFrame(read_json("monthly.json", []))
-    merged_monthly = replace_covered(old_monthly, covered)
+    merged_monthly = replace_covered(old_monthly, nonempty)
     if not trades.empty:
         merged_monthly = pd.concat([merged_monthly, monthly_metrics(trades)], ignore_index=True).sort_values(["lawd_cd", "month"])
-    old_latest = read_json("latest_trades.json", [])
-    latest = merge_latest(old_latest, trades, covered)
+    latest = merge_latest(old_latest, trades, nonempty)
     apartments = merge_apartments(read_json("apartments.json", []), trades, merged_history)
     regions = pd.concat([
         pd.DataFrame(read_json("regions.json", [])),
@@ -167,6 +205,8 @@ def main() -> None:
         "latest_date": max((str(row.get("trade_date") or "") for row in latest), default=str(old_meta.get("latest_date") or "")),
         "history_format": 2,
         "incremental_partition_count": len(covered),
+        "nonempty_incremental_partition_count": len(nonempty),
+        "empty_incremental_partition_count": len(covered - nonempty),
     }
     payloads = {
         "meta.json": meta,

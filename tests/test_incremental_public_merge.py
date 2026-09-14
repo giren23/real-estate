@@ -56,3 +56,33 @@ def test_incremental_merge_replaces_only_collected_month_and_preserves_history(t
     assert new_month["median_price_eok"] == 16.5
     assert meta["trade_count"] == 4
     assert meta["first_date"] == "2020-01-02"
+
+
+def test_empty_fresh_partition_never_erases_published_month(tmp_path, monkeypatch) -> None:
+    public = tmp_path / "data/public"
+    raw = tmp_path / "data/raw/trades"
+    public.mkdir(parents=True)
+    raw.mkdir(parents=True)
+    old_history = pd.DataFrame([{
+        "lawd_cd": "41135", "region_name": "경기도 성남분당구", "dong": "서현동",
+        "apt_name": "시범한신", "area_m2": 84.69, "month": "2026-09",
+        "median_price_eok": 15.0, "trade_count": 2,
+    }])
+    write_json(public / "apartment_history.json", compact_history(old_history))
+    write_json(public / "meta.json", {"status": "ok", "trade_count": 2, "first_date": "2026-09-01", "latest_date": "2026-09-01"})
+    write_json(public / "latest_trades.json", [])
+    write_json(public / "apartments.json", [])
+    write_json(public / "monthly.json", [{"lawd_cd": "41135", "region_name": "경기도 성남분당구", "month": "2026-09", "trade_count": 2}])
+    write_json(public / "regions.json", [{"lawd_cd": "41135", "region_name": "경기도 성남분당구"}])
+    write_json(public / "complexes.json", [])
+    pd.DataFrame(columns=["lawd_cd", "trade_date", "cancelled"]).to_parquet(raw / "41135_202609.parquet", index=False)
+
+    monkeypatch.setattr(merger, "ROOT", tmp_path)
+    monkeypatch.setattr(merger, "PUBLIC", public)
+    monkeypatch.setattr(merger, "RAW_TRADES", raw)
+    merger.main()
+
+    result = merger.history_frame(json.loads((public / "apartment_history.json").read_text(encoding="utf-8")))
+    meta = json.loads((public / "meta.json").read_text(encoding="utf-8"))
+    assert int(result.iloc[0]["trade_count"]) == 2
+    assert meta["empty_incremental_partition_count"] == 1

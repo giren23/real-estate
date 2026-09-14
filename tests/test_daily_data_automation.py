@@ -8,12 +8,20 @@ def test_all_public_data_families_have_at_least_daily_scheduled_refresh() -> Non
     real_estate = (ROOT / ".github" / "workflows" / "daily-update.yml").read_text(encoding="utf-8")
     markets = (ROOT / ".github" / "workflows" / "economic-indicators-daily.yml").read_text(encoding="utf-8")
 
-    assert 'cron: "5 15 * * *"' in real_estate
-    assert "collect-complexes" in real_estate
+    assert 'cron: "5 21 * * *"' in real_estate
     assert "--nationwide-coverage" in real_estate
+    assert "retry-trades" in real_estate
+    assert "publish_collection_status.py" in real_estate
+    assert "build_public_trade_shards.py" in real_estate
+    assert 'if [ "$(TZ=Asia/Seoul date +%d)" = "01" ]; then months=3; fi' in real_estate
     assert "python scripts/merge_incremental_public_data.py" in real_estate
     assert "--all-history" not in real_estate
     assert "without deleting published history" in real_estate
+
+    directory = (ROOT / ".github" / "workflows" / "complex-directory-weekly.yml").read_text(encoding="utf-8")
+    assert 'cron: "35 21 * * 6"' in directory
+    assert "collect-complexes" in directory
+    assert "publish_complex_directory.py" in directory
 
     assert 'cron: "15 */3 * * *"' in markets
     for script in (

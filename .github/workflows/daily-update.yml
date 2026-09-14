@@ -5,16 +5,17 @@ on:
     paths:
       - ".github/workflows/daily-update.yml"
       - "scripts/merge_incremental_public_data.py"
+      - "scripts/publish_collection_status.py"
+      - "scripts/build_public_trade_shards.py"
       - "scripts/update_reb_market_map.py"
+      - "src/realestate/collectors/trades.py"
       - "src/realestate/cli/main.py"
       - "src/realestate/core/regions.py"
       - "tests/test_daily_data_automation.py"
       - "tests/test_incremental_public_merge.py"
-      - "tests/test_ranked_news_archive.py"
   schedule:
-    # 매일 한국시간 자정 직후인 오전 0시 5분부터 실행 대기(UTC 전날 15시 5분).
-    # GitHub Actions의 예약 작업 특성상 실제 시작은 다소 지연될 수 있음.
-    - cron: "5 15 * * *"
+    # 매일 한국시간 오전 6시 5분(UTC 전날 21시 5분)에 전국 갱신 1회를 실행함.
+    - cron: "5 21 * * *"
   workflow_dispatch:
 
 permissions:
@@ -34,19 +35,18 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-
       - run: pip install -r requirements.txt
 
-      - name: Refresh nationwide apartment directory
-        id: directory
-        continue-on-error: true
-        env:
-          MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
-          APT_LIST_SERVICE_KEY: ${{ secrets.APT_LIST_SERVICE_KEY }}
-          PYTHONPATH: src
-        run: python -m realestate.cli.main collect-complexes
+      - name: Choose normal or monthly reconciliation window
+        id: window
+        shell: bash
+        run: |
+          months=2
+          if [ "$(TZ=Asia/Seoul date +%d)" = "01" ]; then months=3; fi
+          echo "months=$months" >> "$GITHUB_OUTPUT"
+          echo "한국 날짜 기준 최근 ${months}개월을 수집합니다."
 
-      - name: Collect two latest months nationwide
+      - name: Collect latest months nationwide
         id: collect
         continue-on-error: true
         env:
@@ -54,9 +54,28 @@ jobs:
           PYTHONPATH: src
         run: >
           python -m realestate.cli.main collect
-          --months 2
+          --months ${{ steps.window.outputs.months }}
           --nationwide-coverage
           --failure-report data/reports/trade_collection_failures.json
+
+      - name: Retry failed district-month requests only
+        id: retry
+        if: steps.collect.outcome == 'failure'
+        continue-on-error: true
+        env:
+          MOLIT_SERVICE_KEY: ${{ secrets.MOLIT_SERVICE_KEY }}
+          PYTHONPATH: src
+        run: >
+          python -m realestate.cli.main retry-trades
+          --source-report data/reports/trade_collection_failures.json
+          --failure-report data/reports/trade_collection_retry.json
+
+      - name: Publish regional collection status
+        if: always()
+        run: >
+          python scripts/publish_collection_status.py
+          --initial data/reports/trade_collection_failures.json
+          --retry data/reports/trade_collection_retry.json
 
       - name: Merge latest partitions without deleting published history
         env:
@@ -68,6 +87,11 @@ jobs:
           PYTHONPATH: src
         run: python scripts/build_public_area_benchmarks.py
 
+      - name: Build district shards for PC-off mobile use
+        env:
+          PYTHONPATH: src
+        run: python scripts/build_public_trade_shards.py
+
       - name: Refresh regional 84sqm average transaction prices
         run: python scripts/update_reb_market_map.py --local-prices-only
 
@@ -78,29 +102,34 @@ jobs:
           PYTHONPATH: src
         run: pytest -q
 
-      - name: Upload collection result report
+      - name: Upload collection result reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: trade-collection-report-${{ github.run_number }}
-          path: data/reports/trade_collection_failures.json
+          path: |
+            data/reports/trade_collection_failures.json
+            data/reports/trade_collection_retry.json
+            data/public/collection_status.json
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Commit successful regional updates
+      - name: Commit verified regional updates
         run: |
           git config user.name "real-estate-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/public data/raw/complexes.csv web/content/reb_market_map.json web/content/news web/content/analysis
+          git add data/public/meta.json data/public/monthly.json data/public/regions.json data/public/area_benchmarks.json data/public/collection_status.json data/public/shards web/content/reb_market_map.json web/content/news web/content/analysis
           git commit -m "Daily update" || exit 0
           git pull --rebase origin main
           git push
 
-      - name: Mark incomplete refresh as failed after saving successes
-        if: steps.directory.outcome == 'failure' || steps.collect.outcome == 'failure' || steps.test.outcome == 'failure'
+      - name: Mark unresolved refresh as failed after saving successes
+        if: steps.test.outcome == 'failure' || (steps.collect.outcome == 'failure' && steps.retry.outcome != 'success')
         run: |
-          echo "::error::수집 또는 검증 일부가 실패했습니다. 성공한 데이터는 먼저 게시했고, 아래와 아티팩트에 상세 결과를 남깁니다."
-          if [ -f data/reports/trade_collection_failures.json ]; then
+          echo "::error::검증 실패 또는 재시도 후 미해결 지역이 있습니다. 성공한 데이터와 상태 보고서는 게시했습니다."
+          if [ -f data/reports/trade_collection_retry.json ]; then
+            cat data/reports/trade_collection_retry.json
+          else
             cat data/reports/trade_collection_failures.json
           fi
           exit 1

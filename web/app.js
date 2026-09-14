@@ -5,6 +5,8 @@ let staticAreaTrendIndex = null;
 const AREA_TREND_WINDOWS = [[1,"최근 1개월"],[3,"최근 3개월"],[6,"최근 6개월"],[12,"최근 1년"],[36,"최근 3년"],[60,"최근 5년"],[84,"최근 7년"],[108,"최근 9년"],[132,"최근 11년"],[156,"최근 13년"],[180,"최근 15년"]];
 const DIVIDED_AREA_CITY_BY_PREFIX = {"4111":"수원시","4113":"성남시","4117":"안양시","4119":"부천시","4127":"안산시","4128":"고양시","4146":"용인시","4159":"화성시","4311":"청주시","4413":"천안시","4511":"전주시","4711":"포항시","4812":"창원시"};
 let localApi = false, localMeta = {};
+let publicShardManifest = null;
+const publicDistrictCache = new Map();
 const minorVersion = location.hostname.endsWith(".github.io") || new URLSearchParams(location.search).get("minor") === "1";
 const minorVersionBadge = document.getElementById("minorVersionBadge");
 if(minorVersionBadge) minorVersionBadge.hidden = !minorVersion;
@@ -434,7 +436,12 @@ function createGroup(row,key,address="",fromDirectory=false){
     history:[],
     tradeAliases:new Set(),
     tradeNameCounts:new Map(),
-    fromDirectory
+    fromDirectory,
+    data_apt_name:"",
+    areas:[],
+    latest:null,
+    hydrated:false,
+    hydrating:null
   };
 }
 function rememberTradeName(group,name,weight=1){
@@ -450,20 +457,42 @@ function scopedArchiveRows(payload,group){
   return source.filter(row=>String(row.lawd_cd||"").slice(0,5)===group.lawd_cd&&String(row.dong||"")===group.dong&&String(row.apt_name||"")===group.data_apt_name);
 }
 async function hydrateGroup(group){
-  if(!localApi||group.hydrated||group.hydrating) return group.hydrating||group;
-  if(!group.data_apt_name){group.hydrated=true;return group;}
+  if((!localApi&&!publicShardManifest)||group.hydrated||group.hydrating) return group.hydrating||group;
   group.hydrating=(async()=>{
-    const query=new URLSearchParams({lawd_cd:group.lawd_cd,dong:group.dong,apt_name:group.data_apt_name});
-    const [history,trades]=await Promise.all([
-      fetchJson("/api/history?"+query),
-      fetchJson("/api/trades?"+query+"&limit=5000")
-    ]);
-    group.history=scopedArchiveRows(history,group);
-    group.trades=scopedArchiveRows(trades,group).slice(-5000);
+    let history=[],trades=[];
+    if(localApi){
+      if(!group.data_apt_name){group.hydrated=true;group.hydrating=null;return group;}
+      const query=new URLSearchParams({lawd_cd:group.lawd_cd,dong:group.dong,apt_name:group.data_apt_name});
+      [history,trades]=await Promise.all([
+        fetchJson("/api/history?"+query),
+        fetchJson("/api/trades?"+query+"&limit=5000")
+      ]);
+      history=scopedArchiveRows(history,group);
+      trades=scopedArchiveRows(trades,group).slice(-5000);
+    }else{
+      if(!publicDistrictCache.has(group.lawd_cd)){
+        publicDistrictCache.set(group.lawd_cd,fetchJson("data/shards/"+group.lawd_cd+".json"));
+      }
+      const payload=await publicDistrictCache.get(group.lawd_cd);
+      const districtHistory=expandHistory(payload?.history);
+      const districtTrades=Array.isArray(payload?.trades)?payload.trades:[];
+      const names=[...new Set(districtHistory.concat(districtTrades).filter(row=>String(row.dong||"")===String(group.dong||"")).map(row=>String(row.apt_name||"")).filter(Boolean))];
+      const ranked=names.map(name=>({name,score:apartmentNameScore(group.directory_name||group.apt_name,name)})).filter(item=>item.score>=860).sort((a,b)=>b.score-a.score);
+      if(ranked.length&&(!ranked[1]||ranked[0].score-ranked[1].score>=20)) group.data_apt_name=ranked[0].name;
+      if(group.data_apt_name){
+        history=districtHistory.filter(row=>String(row.dong||"")===String(group.dong||"")&&String(row.apt_name||"")===group.data_apt_name);
+        trades=districtTrades.filter(row=>String(row.dong||"")===String(group.dong||"")&&String(row.apt_name||"")===group.data_apt_name).slice(-5000);
+      }
+    }
+    group.history=history;
+    group.trades=trades;
     group.history.sort((a,b)=>String(a.month).localeCompare(String(b.month)));
     group.trades.sort((a,b)=>String(a.trade_date).localeCompare(String(b.trade_date)));
     group.build_year=Number([...group.trades].reverse().find(row=>Number(row.build_year)>0)?.build_year)||group.build_year||null;
     group.areas=[...new Set(group.areas.concat(group.trades.map(r=>Number(r.area_m2)),group.history.map(r=>Number(r.area_m2))))].filter(Boolean).sort((a,b)=>a-b);
+    const lastTrade=group.trades[group.trades.length-1],lastHistory=group.history[group.history.length-1];
+    group.latest=lastTrade||(lastHistory?{trade_date:lastHistory.month,price_eok:lastHistory.median_price_eok}:group.latest);
+    group.search_names=[...new Set([group.apt_name,group.directory_name,group.data_apt_name].filter(Boolean))];
     group.hydrated=true;
     group.hydrating=null;
     return group;
@@ -525,16 +554,52 @@ async function load(){
       initMap();
       return;
     }
-    const [rows,complexes,historyPayload,economic,publicMeta,localSnapshot]=await Promise.all([
-      fetchJson("data/latest_trades.json"),
+    const [complexes,economic,publicMeta,localSnapshot,shardManifest]=await Promise.all([
       fetchJson("data/complexes.json"),
-      fetchJson("data/apartment_history.json"),
       fetchJson("data/economic_context.json"),
       fetchJson("data/meta.json"),
-      fetchJson("data/local_meta.json").catch(()=>null)
+      fetchJson("data/local_meta.json").catch(()=>null),
+      fetchJson("data/shards/manifest.json")
     ]);
-    const history=expandHistory(historyPayload);
     economicContext=economic&&Array.isArray(economic.exchange_rates)?economic:economicContext;
+    if(shardManifest&&Array.isArray(shardManifest.districts)&&shardManifest.districts.length){
+      publicShardManifest=shardManifest;
+      const groups=new Map(),lookup=new Map(),localityLookup=new Map();
+      complexes.forEach(c=>{
+        const key="complex|"+(c.complex_code||identity(c));
+        const group=createGroup(c,key,c.address||"",true);
+        group.search_names=[c.apt_name];
+        registerGroup(group,groups,lookup,localityLookup);
+      });
+      shardManifest.districts.forEach(district=>(district.apartments||[]).forEach(item=>{
+        const row={lawd_cd:String(district.lawd_cd||""),region_name:String(district.region_name||""),dong:String(item[0]||""),apt_name:String(item[1]||"")};
+        let group=lookup.get(identity(row))||findCompatibleGroup(row,localityLookup);
+        if(!group){
+          const key=groupKey(row);
+          group=groups.get(key)||createGroup(row,key);
+          if(!groups.has(key))registerGroup(group,groups,lookup,localityLookup);
+        }
+        lookup.set(identity(row),group);
+        group.data_apt_name=row.apt_name;
+        rememberTradeName(group,row.apt_name);
+        group.search_names=[...new Set([group.apt_name,group.directory_name,row.apt_name].filter(Boolean))];
+      }));
+      apartmentGroups=[...groups.values()];
+      const representedTrades=Number(shardManifest.trade_count)||Number(publicMeta?.trade_count)||0;
+      byId("dataCount").textContent=fmt(representedTrades)+"건 · "+fmt(apartmentGroups.length)+"단지";
+      rebuildGroupIndexes();
+      renderQuickSearch();
+      restoreGraphBoards();
+      ensureInitialGraphBoard();
+      await Promise.all(graphBoards.flatMap(board=>board.series).map(series=>apartmentGroups.find(group=>group.key===series.key)).filter(Boolean).map(hydrateGroup));
+      renderGraphBoards();
+      setStatus(apartmentGroups.length+"개 전국 단지를 검색할 수 있습니다. 선택한 지역의 이력만 불러옵니다.");
+      indexCachedGroupCoordinates();
+      initMap();
+      return;
+    }
+    const [rows,historyPayload]=await Promise.all([fetchJson("data/latest_trades.json"),fetchJson("data/apartment_history.json")]);
+    const history=expandHistory(historyPayload);
     allTrades=rows.filter(r=>!r.cancelled);
     const groups=new Map(), lookup=new Map(), localityLookup=new Map();
     complexes.forEach(c=>{
@@ -580,6 +645,7 @@ async function load(){
       const lastTrade=g.trades[g.trades.length-1],lastHistory=g.history[g.history.length-1];
       g.latest=lastTrade||(lastHistory?{trade_date:lastHistory.month,price_eok:lastHistory.median_price_eok}:null);
       g.build_year=Number([...g.trades].reverse().find(row=>Number(row.build_year)>0)?.build_year)||g.build_year||null;
+      g.hydrated=true;
       return g;
     }).sort((a,b)=>(b.latest?.trade_date||"").localeCompare(a.latest?.trade_date||""));
     const representedTrades=Number(localSnapshot?.represented_trades||localSnapshot?.trade_count)||Number(publicMeta?.trade_count)||history.reduce((sum,row)=>sum+Number(row.trade_count||0),0)||allTrades.length;
@@ -678,7 +744,7 @@ function renderSearchSuggestions(matches,query){
   }else{
     suggestions.innerHTML=matches.map((item,index)=>{
       const group=item.group,address=searchAddressOf(group);
-      const area=group.latest?.area_m2?'최근 '+fmt(group.latest.area_m2)+'㎡':(group.areas?.length?fmt(group.areas.length)+'개 평형':'단지 정보');
+      const area=group.latest?.area_m2?'최근 '+fmt(group.latest.area_m2)+'㎡':(group.areas?.length?fmt(group.areas.length)+'개 평형':(!group.hydrated&&publicShardManifest?'선택 시 실거래 확인':'단지 정보'));
       return '<button class="search-suggestion" type="button" role="option" aria-selected="false" data-key="'+esc(group.key)+'" data-index="'+index+'"><span class="search-suggestion-main"><b>'+esc(group.apt_name)+'</b><small><em>'+address.label+'</em>'+esc(address.value)+'</small></span><span>'+esc(area)+'</span></button>';
     }).join("");
     suggestions.querySelectorAll(".search-suggestion").forEach(button=>{
@@ -766,10 +832,11 @@ function renderResults(matches,query){
   }
   byId("results").innerHTML=matches.map(item=>{
     const g=item.group;
-    const distance=Number.isFinite(item.distance)?fmt(item.distance)+"km":(g.trades.length||g.history.length?"거래자료 있음":"단지 기본정보");
+    const pending=!g.hydrated&&publicShardManifest;
+    const distance=Number.isFinite(item.distance)?fmt(item.distance)+"km":(g.trades.length||g.history.length?"거래자료 있음":(pending?"지역 자료 대기":"단지 기본정보"));
     const collecting=localApi&&Number(g.coverage_years||0)<20;
-    const price=g.latest?fmt(g.latest.price_eok)+"억":(collecting?"과거 자료 수집 중":"공식 실거래 없음");
-    const areas=g.areas.length?"전용 "+g.areas.map(fmt).join(", ")+"㎡":(collecting?"평형 자료 수집 중":"공식 거래 평형 없음");
+    const price=g.latest?fmt(g.latest.price_eok)+"억":(pending?"선택 시 실거래 불러옴":(collecting?"과거 자료 수집 중":"공식 실거래 없음"));
+    const areas=g.areas.length?"전용 "+g.areas.map(fmt).join(", ")+"㎡":(pending?"선택 시 평형 확인":(collecting?"평형 자료 수집 중":"공식 거래 평형 없음"));
     const csvNames=(g.trade_names||[]).slice(0,3);
     const aliasParts=[];
     if(csvNames.length) aliasParts.push("실거래 자료 표기: "+csvNames.map(esc).join(", "));
@@ -1341,6 +1408,7 @@ async function selectSearchGroup(group,runId){
   if(buildingAbortController)buildingAbortController.abort();
   clearMapMarkers();
   const coord=await focusGroup(group,cachedCoordinate(group));
+  if(runId===searchRunId&&group.hydrated) renderResults([{group,score:1000}],group.apt_name);
   if(runId!==searchRunId||!coord){viewportRefreshSuspended=false;return;}
   await showNearbyMarkers(group,coord,runId);
 }
@@ -1414,7 +1482,7 @@ function removeActiveGraphBoard(){
 async function addSeries(group,requestedArea=null){
   const board=activeBoard()||ensureInitialGraphBoard();
   if(board.series.length>=MAX_SERIES_PER_GRAPH){setStatus("한 그래프에는 단지를 최대 "+MAX_SERIES_PER_GRAPH+"개까지 추가할 수 있습니다.",true);return false;}
-  if(localApi){setStatus(group.apt_name+" 전체 평형과 실거래를 불러오는 중입니다.");await hydrateGroup(group);}
+  if(!group.hydrated){setStatus(group.apt_name+" 전체 평형과 실거래를 불러오는 중입니다.");await hydrateGroup(group);}
   if(!group.areas.length){setStatus(group.apt_name+"의 공식 실거래 평형이 아직 확인되지 않았습니다.",true);renderDetails(group,0);return false;}
   const requested=Number(requestedArea);
   const area=Number.isFinite(requested)&&group.areas.some(value=>Math.abs(Number(value)-requested)<.001)?requested:preferredArea(group);
@@ -2690,7 +2758,7 @@ function renderBoardChart(board,container){
 async function renderDetails(group,area){
   const metrics=byId("metrics"),trades=byId("trades");
   if(!metrics||!trades)return;
-  if(localApi&&!group.hydrated) await hydrateGroup(group);
+  if(!group.hydrated) await hydrateGroup(group);
   if(!area&&group.areas.length) area=preferredArea(group);
   const rows=group.trades.filter(r=>Number(r.area_m2)===Number(area)).sort((a,b)=>b.trade_date.localeCompare(a.trade_date));
   const prices=rows.map(r=>r.price_eok), latest=rows[0];
@@ -2766,7 +2834,7 @@ async function geocodeGroup(group,allowAddressFallback=true){
 }
 
 async function focusGroup(group,knownCoord){
-  if(localApi&&!group.hydrated) await hydrateGroup(group);
+  if(!group.hydrated) await hydrateGroup(group);
   renderDetails(group,activeBoard()?.series.find(s=>s.key===group.key)?.area||group.areas[0]);
   if(!map) return null;
   const coord=knownCoord||await geocodeGroup(group);
