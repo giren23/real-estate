@@ -27,12 +27,22 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert "min:yMin,max:yMax" in script
     assert "data-area-trend-comparison" in script
     assert "data-area-trend-level" in script
-    assert "enabledLevels.includes" in script
-    assert "addedScopes.has(scope.key)" in script
+    assert "activeLevels.includes" in script
+    assert "Math.max(0,Math.floor(Math.min(...finite)-10))" in script
+    assert "reverse:true" in script
+    assert "tradeCounts" in script
+    assert "tablePeriods=periods.filter" in script
+    assert "[1,3,6,12,36].includes" in script
+    assert "AREA_TREND_WINDOWS" in script
+    assert "addStaticAreaTrends" in script
+    assert 'districtToken===mappedCity?(tokens[2]||"")' in script
+    assert 'value!==null&&value!==undefined&&value!==""' in script
+    assert "population.filter(hasFiniteNumber)" in script
+    assert "hasFiniteNumber(target.calculations.get(window)?.strength)" in script
     assert "average_exclusive_pyeong_manwon" in script
     assert "Number(right.months)-Number(left.months)" in script
     assert "오른쪽이 최근" in script
-    assert "행정구역 평균선 추가(기본 꺼짐)" in script
+    assert "표시할 행정단계" in script
     assert "기간 내 거래" in script
     assert "area-benchmark-summary" in script
     assert "행정구역별 84㎡급 전용 평당가 위치" in script
@@ -50,7 +60,7 @@ def test_trade_history_supports_sorting_filters_and_pastel_rows() -> None:
     assert 'href="graph-trade-tools.css?v=2"' in html
     assert 'href="area-benchmark.css?v=8"' in html
     assert 'href="reb-market-map.css?v=5"' in html
-    assert 'src="app.js?v=100"' in html
+    assert 'src="app.js?v=101"' in html
 
 
 def test_every_collapsible_heading_has_a_leading_state_shape() -> None:

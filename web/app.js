@@ -1,6 +1,9 @@
 let allTrades = [], apartmentGroups = [], graphBoards = [], activeGraphId = null, map, infoWindow;
 const areaBenchmarkHistoryCache = new Map();
 let staticAreaBenchmarkPayload = null;
+let staticAreaTrendIndex = null;
+const AREA_TREND_WINDOWS = [[1,"최근 1개월"],[3,"최근 3개월"],[6,"최근 6개월"],[12,"최근 1년"],[36,"최근 3년"],[60,"최근 5년"],[84,"최근 7년"],[108,"최근 9년"],[132,"최근 11년"],[156,"최근 13년"],[180,"최근 15년"]];
+const DIVIDED_AREA_CITY_BY_PREFIX = {"4111":"수원시","4113":"성남시","4117":"안양시","4119":"부천시","4127":"안산시","4128":"고양시","4146":"용인시","4159":"화성시","4311":"청주시","4413":"천안시","4511":"전주시","4711":"포항시","4812":"창원시"};
 let localApi = false, localMeta = {};
 const minorVersion = location.hostname.endsWith(".github.io") || new URLSearchParams(location.search).get("minor") === "1";
 const minorVersionBadge = document.getElementById("minorVersionBadge");
@@ -2221,6 +2224,7 @@ function areaBenchmarkHtml(board){
 }
 
 function exclusivePyeongPrice(value){return Number.isFinite(Number(value))?fmt(Math.round(Number(value)))+"만원/전용평":"자료 없음";}
+function hasFiniteNumber(value){return value!==null&&value!==undefined&&value!==""&&Number.isFinite(Number(value));}
 function benchmarkPrice(value){return exclusivePyeongPrice(Number(value)/.75);}
 function benchmarkPosition(reference){
   const z=Number(reference?.z_score);
@@ -2239,14 +2243,18 @@ function benchmarkReferenceHtml(label,reference,color){
   const mean=benchmarkPrice(reference?.mean_manwon),position=benchmarkPosition(reference);
   return '<article class="area-benchmark-reference"><div class="benchmark-reference-head"><b>'+esc(label)+' 평균 '+esc(mean)+'</b><span>'+esc(benchmarkPositionText(reference))+'</span></div><div class="sigma-track" style="--benchmark-position:'+position+'%;--benchmark-color:'+esc(color)+'"><i class="sigma-pin" aria-hidden="true"></i></div><div class="sigma-axis" aria-hidden="true"><span>저가 −3σ</span><span>평균</span><span>+3σ 고가</span></div></article>';
 }
-function trendRankText(rank){return Number(rank?.rank)&&Number(rank?.total)?"전체 "+fmt(rank.total)+"단지 중 "+fmt(rank.rank)+"등":"산정 불가";}
+function trendRankText(rank){
+  if(!Number(rank?.rank)||!Number(rank?.total))return "산정 불가";
+  const percent=Number(rank.top_percent);
+  return (Number.isFinite(percent)?"상위 "+fmt(percent)+"% · ":"")+"전체 "+fmt(rank.total)+"단지 중 "+fmt(rank.rank)+"등";
+}
 function administrativeRankList(entries,field){
   const rows=Array.isArray(entries)?entries:[];
   if(!rows.length)return '<span class="administrative-rank-empty">산정 불가</span>';
   return '<div class="administrative-rank-list">'+rows.map(entry=>'<span><b>'+esc(entry.label)+' <i>'+esc(entry.level_label)+'</i></b><em>'+esc(trendRankText(entry[field]))+'</em></span>').join("")+'</div>';
 }
 function trendDirection(value,period){
-  if(!Number.isFinite(Number(value)))return "추세 표본 부족";
+  if(!hasFiniteNumber(value))return "추세 표본 부족";
   const amount=Number(value),direction=amount>.01?"상승":amount<-.01?"하락":"보합";
   const basis=period?.trend_fallback_used?" · "+String(period.trend_basis_label||period.trend_basis_months+"개월")+"로 확대":"";
   return "월 "+(amount>0?"+":"")+fmt(amount)+"% · "+direction+basis;
@@ -2256,55 +2264,130 @@ function trendRankScaleHtml(label,rank,color){
   const position=rank.total<=1?0:(rank.rank-1)/(rank.total-1)*100;
   return '<div class="trend-rank-scale"><div><b>'+esc(label)+'</b><strong>'+esc(trendRankText(rank))+'</strong></div><div class="trend-rank-track" style="--rank-position:'+position+'%;--rank-color:'+esc(color)+'"><i></i></div><small><span>1등</span><span>꼴등 '+esc(fmt(rank.total))+'등</span></small></div>';
 }
+function staticAreaScopes(regionName,lawdCd,dong){
+  const tokens=String(regionName||"").split(/\s+/).filter(Boolean),code=String(lawdCd||"").padStart(5,"0").slice(0,5);
+  if(!tokens.length)return [];
+  const province=tokens[0],scopes=[{key:"province:"+province,level:"province",level_label:"시도",label:province,full_label:province}];
+  const districtToken=tokens[1]||"",mappedCity=DIVIDED_AREA_CITY_BY_PREFIX[code.slice(0,4)];
+  if(mappedCity){
+    const cityStem=mappedCity.slice(0,-1),district=districtToken===mappedCity?(tokens[2]||""):(districtToken.startsWith(cityStem)?districtToken.slice(cityStem.length):districtToken);
+    scopes.push({key:"municipality:"+code.slice(0,4),level:"municipality",level_label:"시·군",label:mappedCity,full_label:province+" "+mappedCity});
+    if(district)scopes.push({key:"district:"+code,level:"district",level_label:"구",label:district,full_label:province+" "+mappedCity+" "+district});
+  }else if(/[시군]$/.test(districtToken)){
+    scopes.push({key:"municipality:"+code,level:"municipality",level_label:"시·군",label:districtToken,full_label:province+" "+districtToken});
+  }else if(/구$/.test(districtToken)){
+    scopes.push({key:"district:"+code,level:"district",level_label:"구",label:districtToken,full_label:province+" "+districtToken});
+  }
+  const locality=String(dong||"").trim();
+  if(locality)scopes.push({key:"locality:"+code+":"+locality,level:"locality",level_label:"읍·면·동",label:locality,full_label:[...scopes.map(scope=>scope.label),locality].join(" ")});
+  return scopes;
+}
+function areaMonthSerial(month){
+  const match=String(month||"").match(/^(\d{4})-(\d{2})$/);
+  return match?Number(match[1])*12+Number(match[2])-1:null;
+}
+function staticTrendStrength(points){
+  if(points.length<2)return null;
+  const origin=points[0].serial,xs=points.map(point=>point.serial-origin),ys=points.map(point=>point.price);
+  const meanX=xs.reduce((sum,value)=>sum+value,0)/xs.length,meanY=ys.reduce((sum,value)=>sum+value,0)/ys.length;
+  const denominator=xs.reduce((sum,value)=>sum+(value-meanX)**2,0);
+  if(!denominator||!meanY)return null;
+  return xs.reduce((sum,value,index)=>sum+(value-meanX)*(ys[index]-meanY),0)/denominator/meanY*100;
+}
+function staticAreaRank(value,population){
+  const values=population.filter(hasFiniteNumber).map(Number);
+  if(!hasFiniteNumber(value)||!values.length)return {rank:null,total:values.length,top_percent:null};
+  const rank=1+values.filter(item=>item>Number(value)).length;
+  return {rank,total:values.length,top_percent:Number((rank/values.length*100).toFixed(1))};
+}
+function buildStaticAreaTrendIndex(){
+  if(staticAreaTrendIndex)return staticAreaTrendIndex;
+  const entries=new Map(),scopeMembers=new Map();
+  let asOfSerial=null,asOfMonth="";
+  apartmentGroups.forEach(group=>(group.history||[]).forEach(row=>{
+    const area=Number(row.area_m2),priceEok=Number(row.median_price_eok),serial=areaMonthSerial(row.month);
+    if(area<80||area>90||priceEok<=0||serial===null)return;
+    const lawdCd=String(row.lawd_cd||group.lawd_cd||"").padStart(5,"0").slice(0,5),dong=String(row.dong||group.dong||""),aptName=String(row.apt_name||group.data_apt_name||group.apt_name||"");
+    if(!aptName)return;
+    const key=lawdCd+"|"+dong+"|"+aptName,regionName=String(row.region_name||group.region_name||"");
+    if(!entries.has(key))entries.set(key,{key,lawd_cd:lawdCd,region_name:regionName,dong,apt_name:aptName,scopes:staticAreaScopes(regionName,lawdCd,dong),months:new Map()});
+    const entry=entries.get(key),month=String(row.month),bucket=entry.months.get(month)||{serial,priceSum:0,priceCount:0,tradeCount:0};
+    bucket.priceSum+=priceEok*10000/(area/3.305785);bucket.priceCount+=1;bucket.tradeCount+=Math.max(0,Number(row.trade_count)||0);entry.months.set(month,bucket);
+    if(asOfSerial===null||serial>asOfSerial){asOfSerial=serial;asOfMonth=month;}
+  }));
+  entries.forEach(entry=>{
+    const points=[...entry.months.entries()].map(([month,bucket])=>({month,serial:bucket.serial,price:bucket.priceSum/bucket.priceCount,tradeCount:bucket.tradeCount})).sort((left,right)=>left.serial-right.serial);
+    entry.calculations=new Map(AREA_TREND_WINDOWS.map(([months,label])=>{
+      const cutoff=Number(asOfSerial)-(months-1),selected=points.filter(point=>point.serial>=cutoff&&point.serial<=asOfSerial);
+      const average=selected.length?selected.reduce((sum,point)=>sum+point.price,0)/selected.length:null;
+      return [months,{months,label,status:selected.length?"ok":"no_trade",average,strength:staticTrendStrength(selected),tradeCount:selected.reduce((sum,point)=>sum+point.tradeCount,0),observationMonths:selected.length,latestMonth:selected.length?selected[selected.length-1].month:null}];
+    }));
+    entry.scopes.forEach(scope=>{if(!scopeMembers.has(scope.key))scopeMembers.set(scope.key,[]);scopeMembers.get(scope.key).push(entry);});
+    delete entry.months;
+  });
+  staticAreaTrendIndex={entries,scopeMembers,asOfMonth};
+  return staticAreaTrendIndex;
+}
+function addStaticAreaTrends(items){
+  const index=buildStaticAreaTrendIndex();
+  return items.map(item=>{
+    const key=String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name),target=index.entries.get(key);
+    const scopes=(item.administrative_references||[]).map(entry=>({key:entry.key,level:entry.level,level_label:entry.level_label,label:entry.label,full_label:entry.full_label}));
+    if(!target||!scopes.length)return item;
+    const periods=AREA_TREND_WINDOWS.map(([months,label])=>{
+      const exact=target.calculations.get(months),basis=AREA_TREND_WINDOWS.map(row=>row[0]).find(window=>window>=months&&hasFiniteNumber(target.calculations.get(window)?.strength)),trend=target.calculations.get(basis);
+      const administrativePricePositions=scopes.map(scope=>({...scope,position:staticAreaRank(exact.average,(index.scopeMembers.get(scope.key)||[]).map(peer=>peer.calculations.get(months)?.average))}));
+      const administrativeTrendRanks=scopes.map(scope=>({...scope,rank:staticAreaRank(trend?.strength,(index.scopeMembers.get(scope.key)||[]).map(peer=>peer.calculations.get(basis)?.strength))}));
+      return {months,label,status:exact.status,latest_observation_month:exact.latestMonth,observation_months:exact.observationMonths,trade_count:exact.tradeCount,average_exclusive_pyeong_manwon:Number.isFinite(exact.average)?Number(exact.average.toFixed(1)):null,administrative_price_positions:administrativePricePositions,trend_pct_per_month:Number.isFinite(trend?.strength)?Number(trend.strength.toFixed(3)):null,trend_basis_months:basis||null,trend_basis_label:AREA_TREND_WINDOWS.find(row=>row[0]===basis)?.[1]||null,trend_fallback_used:Boolean(basis&&basis!==months),trend_observation_months:trend?.observationMonths||0,administrative_trend_ranks:administrativeTrendRanks};
+    });
+    return {...item,trends:{as_of_month:index.asOfMonth,administrative_scopes:scopes,periods}};
+  });
+}
 function areaTrendHtml(item,color){
   const trends=item.trends,periods=trends?.periods||[];
   if(!periods.length)return '<section class="area-trend-panel"><p>기간별 위치 추세 자료가 아직 없습니다.</p></section>';
   const oneMonth=periods.find(period=>period.months===1),latestRankPeriod=periods.find(period=>period.trend_pct_per_month!==null&&Number.isFinite(Number(period.trend_pct_per_month)));
   const latestObservation=periods.reduce((latest,period)=>period.latest_observation_month&&period.latest_observation_month>latest?period.latest_observation_month:latest,"");
   const noRecent=oneMonth?.status==="no_trade"?'<p class="area-trend-alert">최근 1개월에는 선택 단지의 84㎡급 거래가 없습니다. 마지막 확인 거래월은 '+esc(String(latestObservation||"미확인"))+'입니다.</p>':'';
-  const rows=periods.map(period=>'<tr><th>'+esc(period.label)+'</th><td>'+esc(fmt(Number(period.trade_count)||0))+'건</td><td>'+(period.status==="no_trade"?'거래 없음':esc(exclusivePyeongPrice(period.average_exclusive_pyeong_manwon)))+'</td><td>'+administrativeRankList(period.administrative_price_positions,"position")+'</td><td>'+esc(trendDirection(period.trend_pct_per_month,period))+'</td><td>'+administrativeRankList(period.administrative_trend_ranks,"rank")+'</td></tr>').join("");
+  const tablePeriods=periods.filter(period=>[1,3,6,12,36].includes(Number(period.months))).sort((left,right)=>Number(left.months)-Number(right.months));
+  const rows=tablePeriods.map(period=>'<tr><th>'+esc(period.label)+'</th><td>'+esc(fmt(Number(period.trade_count)||0))+'건</td><td>'+(period.status==="no_trade"?'거래 없음':esc(exclusivePyeongPrice(period.average_exclusive_pyeong_manwon)))+'</td><td>'+administrativeRankList(period.administrative_price_positions,"position")+'</td><td>'+esc(trendDirection(period.trend_pct_per_month,period))+'</td><td>'+administrativeRankList(period.administrative_trend_ranks,"rank")+'</td></tr>').join("");
   const rankBasis=latestRankPeriod?.trend_basis_label||latestRankPeriod?.label;
   const latestRanks=latestRankPeriod?.administrative_trend_ranks||[];
   const rankScales=latestRankPeriod?'<div class="trend-rank-latest"><p>가장 최근 순위 · <b>'+esc(rankBasis)+'</b> 월별 회귀기울기 사용'+(latestRankPeriod.trend_fallback_used?' (짧은 구간 표본 부족으로 자동 확대)':'')+'</p>'+latestRanks.map(entry=>trendRankScaleHtml(entry.label+" "+entry.level_label+" 추세강도",entry.rank,color)).join("")+'</div>':'';
   return '<section class="area-trend-panel" data-area-trend-key="'+esc(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))+'"><div class="area-trend-head"><h5>기간별 가격 위치·추세강도</h5><span>'+esc(trends.as_of_month)+' 기준</span></div>'+noRecent+'<div class="area-trend-table-wrap"><table><thead><tr><th>구간</th><th>기간 내 거래</th><th>평균 전용평당가</th><th>행정구역별 가격순위</th><th>추세강도</th><th>행정구역별 추세순위</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+rankScales+'</section>';
 }
-function renderAreaTrendCharts(panel,items,colors,enabledLevels=[]){
+function renderAreaTrendCharts(panel,items,colors,enabledLevels=null){
   const canvas=panel.querySelector("[data-area-trend-comparison]");
   const usable=(items||[]).filter(item=>item.trends?.periods?.length);
   if(!canvas||!usable.length)return;
   const orderedPeriods=[...usable[0].trends.periods].sort((left,right)=>Number(right.months)-Number(left.months));
   const labels=orderedPeriods.map(period=>period.label);
-  const line=(data,color,label,dash=[],width=2.8)=>{
+  const activeLevels=enabledLevels===null?["locality","district","municipality","province"]:enabledLevels;
+  const rankPercent=rank=>hasFiniteNumber(rank?.top_percent)?Number(rank.top_percent):Number(rank?.rank)&&Number(rank?.total)?Number((Number(rank.rank)/Number(rank.total)*100).toFixed(1)):null;
+  const line=(data,tradeCounts,color,label,dash=[],width=2.8)=>{
     const lastIndex=(()=>{for(let index=data.length-1;index>=0;index--)if(data[index]!==null&&Number.isFinite(Number(data[index])))return index;return -1;})();
-    return {label,data,borderColor:color,backgroundColor:color+(color.startsWith("#")?"18":""),borderWidth:width,borderDash:dash,pointStyle:dash.length?"rectRot":"circle",pointRadius:data.map((value,index)=>value==null?0:index===lastIndex?6:3),pointHoverRadius:7,tension:.22,spanGaps:false,fill:false};
+    return {label,data,tradeCounts,borderColor:color,backgroundColor:color+(color.startsWith("#")?"18":""),borderWidth:width,borderDash:dash,pointStyle:dash.length?"rectRot":"circle",pointRadius:data.map((value,index)=>value==null?0:index===lastIndex?6:3),pointHoverRadius:7,tension:.22,spanGaps:false,fill:false};
   };
-  const datasets=usable.map(item=>{
+  const levelStyle={locality:{dash:[],width:3},district:{dash:[8,4],width:2.6},municipality:{dash:[3,4],width:2.4},province:{dash:[11,4],width:2.2}};
+  const datasets=usable.flatMap(item=>{
     const key=String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name),color=colors.get(key)||"#6040a0";
     const periodByMonths=new Map(item.trends.periods.map(period=>[Number(period.months),period]));
-    return line(orderedPeriods.map(period=>Number(periodByMonths.get(Number(period.months))?.average_exclusive_pyeong_manwon)||null),color,item.apt_name);
-  });
-  const levelStyle={locality:{color:"#0f8c7a",dash:[3,4]},district:{color:"#d97706",dash:[8,4]},municipality:{color:"#2563eb",dash:[2,4]},province:{color:"#7c3aed",dash:[11,4]}};
-  const addedScopes=new Set();
-  usable.forEach(item=>{
-    const periodByMonths=new Map(item.trends.periods.map(period=>[Number(period.months),period]));
-    (item.trends.administrative_scopes||[]).forEach(scope=>{
-      if(!enabledLevels.includes(scope.level)||addedScopes.has(scope.key))return;
-      addedScopes.add(scope.key);
+    const tradeCounts=orderedPeriods.map(period=>Number(periodByMonths.get(Number(period.months))?.trade_count)||0);
+    return (item.trends.administrative_scopes||[]).filter(scope=>activeLevels.includes(scope.level)).map(scope=>{
       const data=orderedPeriods.map(period=>{
         const source=periodByMonths.get(Number(period.months));
         const found=(source?.administrative_price_positions||[]).find(entry=>entry.key===scope.key);
-        return Number(found?.average_exclusive_pyeong_manwon)||null;
+        return rankPercent(found?.position);
       });
-      const style=levelStyle[scope.level]||{color:"#64748b",dash:[5,4]};
-      datasets.push(line(data,style.color,scope.full_label+" "+scope.level_label+" 평균",style.dash,2.1));
+      const style=levelStyle[scope.level]||{dash:[5,4],width:2.2};
+      return line(data,tradeCounts,color,item.apt_name+" · "+scope.label+" "+scope.level_label+" 내 위치",style.dash,style.width);
     });
   });
   const finite=datasets.flatMap(dataset=>dataset.data).filter(value=>value!==null&&Number.isFinite(Number(value))).map(Number);
-  const dataMin=finite.length?Math.min(...finite):0,dataMax=finite.length?Math.max(...finite):100;
-  const spread=Math.max(dataMax-dataMin,1),padding=Math.max(100,spread*.12);
-  const yMin=Math.max(0,dataMin-padding),yMax=dataMax+padding;
   charts.get("area-trend-comparison")?.destroy();
-  const chart=new Chart(canvas,{type:"line",data:{labels,datasets},options:{maintainAspectRatio:false,responsive:true,layout:{padding:{top:10,bottom:8}},interaction:{mode:"index",intersect:false},scales:{x:{grid:{display:false},title:{display:true,text:"왼쪽은 장기, 오른쪽은 최근"}},y:{min:yMin,max:yMax,title:{display:true,text:"전용 평당가 (만원/전용평)"},ticks:{callback:value=>fmt(value)+"만원"}}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:context=>context.raw==null?context.dataset.label+": 거래 없음":context.dataset.label+": "+fmt(context.raw)+"만원/전용평"}}}}});
+  if(!finite.length)return;
+  const yMin=Math.max(0,Math.floor(Math.min(...finite)-10)),yMax=Math.min(100,Math.ceil(Math.max(...finite)+10));
+  const chart=new Chart(canvas,{type:"line",data:{labels,datasets},options:{maintainAspectRatio:false,responsive:true,layout:{padding:{top:10,bottom:8}},interaction:{mode:"index",intersect:false},scales:{x:{grid:{display:false},title:{display:true,text:"15년 → 13년 → 11년 → 9년 → 7년 → 5년 → 3년 → 1년 → 6개월 → 3개월 → 1개월"}},y:{min:yMin,max:yMax,reverse:true,title:{display:true,text:"행정구역 내 상위 비율 (0%=최상위)"},ticks:{callback:value=>"상위 "+fmt(value)+"%"}}},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,boxWidth:8}},tooltip:{callbacks:{label:context=>context.raw==null?context.dataset.label+": 거래 없음":context.dataset.label+": 상위 "+fmt(context.raw)+"%",afterLabel:context=>"기간 내 거래 "+fmt(context.dataset.tradeCounts?.[context.dataIndex]||0)+"건"}}}}});
   charts.set("area-trend-comparison",chart);
 }
 function developmentOpportunityHtml(item){
@@ -2324,10 +2407,20 @@ function developmentOpportunityHtml(item){
   const stale=development.status==="stale"?'<p class="development-stale">현재 갱신이 지연되어 마지막 확인 결과를 표시합니다.</p>':'';
   return '<details class="development-opportunity" data-development-key="'+esc(key)+'"><summary><b>개발 호재·생활권 공식 요약</b><span>'+esc(items.length?"검증 본문 "+fmt(items.length)+"건 · "+checked+" 확인":"자동 확인 완료")+'</span></summary><div class="development-opportunity-body">'+stale+body+'<div class="development-stage"><b>사업 단계</b><span>검토·용역</span><i>→</i><span>계획 반영·추진</span><i>→</i><span>결정·고시/예산</span><i>→</i><span>인허가·보상</span><i>→</i><strong>착공·준공</strong></div><p class="development-caution">'+esc(development.caution||"동·시군구 자료는 단지와 실제 사업 경계의 거리 및 반대 영향을 별도로 확인해야 합니다.")+'</p></div></details>';
 }
-function areaBenchmarkCardHtml(item,color,includeServerOnly=true){
+function areaBenchmarkCardHtml(item,color,includeDevelopment=true){
   const title=item.apt_name+" · 전용 "+fmt(Number(item.area_m2))+"㎡급";
   const references=(item.administrative_references||[]).map(entry=>benchmarkReferenceHtml(entry.label+" ("+entry.level_label+")",entry.reference,color)).join("")||benchmarkReferenceHtml(item.dong+" (읍·면·동)",item.dong_reference,color)+benchmarkReferenceHtml(item.province_label+" (시도)",item.province_reference,color);
-  return '<article class="area-benchmark-card" style="--benchmark-color:'+esc(color)+'"><h4><i aria-hidden="true"></i>'+esc(title)+'</h4><div class="area-benchmark-price"><b>'+esc(benchmarkPrice(item.price_per_supply_pyeong_manwon))+'</b><span>전용면적 기준</span></div><p class="area-benchmark-meta">'+esc(item.region_name+" "+item.dong)+' · '+esc(String(item.month))+' 월 중앙가 · 거래 '+esc(fmt(Number(item.trade_count)))+'건</p><div class="area-benchmark-references">'+references+'</div>'+(includeServerOnly?areaTrendHtml(item,color)+developmentOpportunityHtml(item):"")+'</article>';
+  return '<article class="area-benchmark-card" style="--benchmark-color:'+esc(color)+'"><h4><i aria-hidden="true"></i>'+esc(title)+'</h4><div class="area-benchmark-price"><b>'+esc(benchmarkPrice(item.price_per_supply_pyeong_manwon))+'</b><span>전용면적 기준</span></div><p class="area-benchmark-meta">'+esc(item.region_name+" "+item.dong)+' · '+esc(String(item.month))+' 월 중앙가 · 거래 '+esc(fmt(Number(item.trade_count)))+'건</p><div class="area-benchmark-references">'+references+'</div>'+(item.trends?areaTrendHtml(item,color):"")+(includeDevelopment?developmentOpportunityHtml(item):"")+'</article>';
+}
+function areaTrendComparisonHtml(){
+  return '<section class="area-trend-comparison"><div class="area-trend-head"><h4>선택 단지 행정구역 내 가격 위치 추세</h4><span>15년부터 최근 1개월까지 · 오른쪽이 최근</span></div><fieldset class="area-trend-scope-controls"><legend>표시할 행정단계</legend><label><input type="checkbox" data-area-trend-level="locality" checked><span>동·읍·면</span></label><label><input type="checkbox" data-area-trend-level="district" checked><span>구</span></label><label><input type="checkbox" data-area-trend-level="municipality" checked><span>시·군</span></label><label><input type="checkbox" data-area-trend-level="province" checked><span>시도</span></label></fieldset><div class="area-trend-chart"><canvas data-area-trend-comparison aria-label="선택 단지의 행정구역별 전용 평당가 상위 비율 추세 비교"></canvas></div></section>';
+}
+function bindAreaTrendComparison(panel,items,colors){
+  renderAreaTrendCharts(panel,items,colors);
+  panel.querySelectorAll("[data-area-trend-level]").forEach(toggle=>toggle.addEventListener("change",()=>{
+    const enabled=[...panel.querySelectorAll("[data-area-trend-level]:checked")].map(input=>input.dataset.areaTrendLevel);
+    renderAreaTrendCharts(panel,items,colors,enabled);
+  }));
 }
 async function renderStaticAreaBenchmarks(board,panel,requested){
   try{
@@ -2337,10 +2430,11 @@ async function renderStaticAreaBenchmarks(board,panel,requested){
       staticAreaBenchmarkPayload=await response.json();
     }
     if(activeGraphId!==board.id||!panel.isConnected)return true;
-    const source=staticAreaBenchmarkPayload?.items||{};
-    const cards=requested.map(entry=>source[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name]).filter(Boolean)
-      .map(item=>areaBenchmarkCardHtml(item,requested.find(entry=>entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name===String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))?.color||"#6040a0",false));
-    panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary><div class="area-benchmark-body">'+(cards.length?'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택 단지의 GitHub 공개 비교 자료가 아직 없습니다. 다음 공개 데이터 갱신 후 자동 반영됩니다.</p>')+'</div>';
+    const source=staticAreaBenchmarkPayload?.items||{},matched=requested.map(entry=>source[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name]).filter(Boolean),items=addStaticAreaTrends(matched);
+    const colors=new Map(requested.map(entry=>[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name,entry.color]));
+    const cards=items.map(item=>areaBenchmarkCardHtml(item,colors.get(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))||"#6040a0",false));
+    panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary><div class="area-benchmark-body">'+(cards.length?areaTrendComparisonHtml()+'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택 단지의 GitHub 공개 비교 자료가 아직 없습니다. 다음 공개 데이터 갱신 후 자동 반영됩니다.</p>')+'</div>';
+    if(cards.length)bindAreaTrendComparison(panel,items,colors);
     return true;
   }catch(_error){
     return false;
@@ -2370,13 +2464,9 @@ async function loadAreaBenchmarks(board,container){
     const payload=await response.json();
     if(activeGraphId!==board.id||!panel.isConnected)return;
     const colors=new Map(requested.map(entry=>[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name,entry.color]));
-    const cards=(payload.items||[]).map(item=>areaBenchmarkCardHtml(item,colors.get(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))||"#6040a0"));
-    panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary><div class="area-benchmark-body">'+(cards.length?'<section class="area-trend-comparison"><div class="area-trend-head"><h4>선택 단지 전용평당가 추세</h4><span>15년 전부터 최근 1개월까지 · 오른쪽이 최근</span></div><fieldset class="area-trend-scope-controls"><legend>행정구역 평균선 추가(기본 꺼짐)</legend><label><input type="checkbox" data-area-trend-level="locality"><span>동·읍·면</span></label><label><input type="checkbox" data-area-trend-level="district"><span>구</span></label><label><input type="checkbox" data-area-trend-level="municipality"><span>시·군</span></label><label><input type="checkbox" data-area-trend-level="province"><span>시도</span></label></fieldset><div class="area-trend-chart"><canvas data-area-trend-comparison aria-label="선택 단지와 선택한 행정구역의 84㎡급 전용 평당가 추세 비교"></canvas></div></section><div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'</div>';
-    renderAreaTrendCharts(panel,payload.items||[],colors);
-    panel.querySelectorAll("[data-area-trend-level]").forEach(toggle=>toggle.addEventListener("change",()=>{
-      const enabled=[...panel.querySelectorAll("[data-area-trend-level]:checked")].map(input=>input.dataset.areaTrendLevel);
-      renderAreaTrendCharts(panel,payload.items||[],colors,enabled);
-    }));
+    const items=payload.items||[],cards=items.map(item=>areaBenchmarkCardHtml(item,colors.get(String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))||"#6040a0"));
+    panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary><div class="area-benchmark-body">'+(cards.length?areaTrendComparisonHtml()+'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택한 단지의 전용 84㎡급 비교 자료가 아직 없습니다.</p>')+'</div>';
+    if(cards.length)bindAreaTrendComparison(panel,items,colors);
     void loadDevelopmentOpportunities(panel,requested);
   }catch(error){
     const loaded=await renderStaticAreaBenchmarks(board,panel,requested);
