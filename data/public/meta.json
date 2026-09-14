@@ -1,1 +1,1 @@
-{"status":"ok","trade_count":1058736,"region_count":101,"apartment_count":22276,"trade_apartment_count":12672,"first_date":"2006-01-01","latest_date":"2026-09-12","history_format":2,"incremental_partition_count":194}
+{"status":"ok","trade_count":1077246,"region_count":248,"apartment_count":22276,"trade_apartment_count":19557,"first_date":"2006-01-01","latest_date":"2026-09-13","history_format":2,"incremental_partition_count":510}
