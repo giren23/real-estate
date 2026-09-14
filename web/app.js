@@ -2329,6 +2329,23 @@ function areaBenchmarkCardHtml(item,color,includeServerOnly=true){
   const references=(item.administrative_references||[]).map(entry=>benchmarkReferenceHtml(entry.label+" ("+entry.level_label+")",entry.reference,color)).join("")||benchmarkReferenceHtml(item.dong+" (읍·면·동)",item.dong_reference,color)+benchmarkReferenceHtml(item.province_label+" (시도)",item.province_reference,color);
   return '<article class="area-benchmark-card" style="--benchmark-color:'+esc(color)+'"><h4><i aria-hidden="true"></i>'+esc(title)+'</h4><div class="area-benchmark-price"><b>'+esc(benchmarkPrice(item.price_per_supply_pyeong_manwon))+'</b><span>전용면적 기준</span></div><p class="area-benchmark-meta">'+esc(item.region_name+" "+item.dong)+' · '+esc(String(item.month))+' 월 중앙가 · 거래 '+esc(fmt(Number(item.trade_count)))+'건</p><div class="area-benchmark-references">'+references+'</div>'+(includeServerOnly?areaTrendHtml(item,color)+developmentOpportunityHtml(item):"")+'</article>';
 }
+async function renderStaticAreaBenchmarks(board,panel,requested){
+  try{
+    if(!staticAreaBenchmarkPayload){
+      const response=await fetch("data/area_benchmarks.json?updated="+Date.now(),{cache:"no-store"});
+      if(!response.ok)throw new Error("static benchmark unavailable");
+      staticAreaBenchmarkPayload=await response.json();
+    }
+    if(activeGraphId!==board.id||!panel.isConnected)return true;
+    const source=staticAreaBenchmarkPayload?.items||{};
+    const cards=requested.map(entry=>source[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name]).filter(Boolean)
+      .map(item=>areaBenchmarkCardHtml(item,requested.find(entry=>entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name===String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))?.color||"#6040a0",false));
+    panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary><div class="area-benchmark-body">'+(cards.length?'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택 단지의 GitHub 공개 비교 자료가 아직 없습니다. 다음 공개 데이터 갱신 후 자동 반영됩니다.</p>')+'</div>';
+    return true;
+  }catch(_error){
+    return false;
+  }
+}
 async function loadAreaBenchmarks(board,container){
   const panel=container.querySelector('[data-area-benchmark-board="'+CSS.escape(board.id)+'"]');
   if(!panel||!board.series.length)return;
@@ -2343,20 +2360,8 @@ async function loadAreaBenchmarks(board,container){
   }).filter(Boolean)).values()];
   if(!requested.length){panel.querySelector(".area-benchmark-loading").textContent="선택 단지의 비교용 지역 정보가 없어 전국 위치를 계산할 수 없습니다.";return;}
   if(!localApi){
-    try{
-      if(!staticAreaBenchmarkPayload){
-        const response=await fetch("data/area_benchmarks.json?updated="+Date.now(),{cache:"no-store"});
-        if(!response.ok)throw new Error("static benchmark unavailable");
-        staticAreaBenchmarkPayload=await response.json();
-      }
-      if(activeGraphId!==board.id||!panel.isConnected)return;
-      const source=staticAreaBenchmarkPayload?.items||{};
-      const cards=requested.map(entry=>source[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name]).filter(Boolean)
-        .map(item=>areaBenchmarkCardHtml(item,requested.find(entry=>entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name===String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))?.color||"#6040a0",false));
-      panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary><div class="area-benchmark-body">'+(cards.length?'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택 단지의 GitHub 공개 비교 자료가 아직 없습니다. 다음 공개 데이터 갱신 후 자동 반영됩니다.</p>')+'</div>';
-    }catch(_error){
-      if(panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="GitHub 공개 비교 자료를 불러오지 못했습니다. 인터넷 연결 또는 다음 데이터 배포를 확인해 주세요.";
-    }
+    const loaded=await renderStaticAreaBenchmarks(board,panel,requested);
+    if(!loaded&&panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="GitHub 공개 비교 자료를 불러오지 못했습니다. 인터넷 연결 또는 다음 데이터 배포를 확인해 주세요.";
     return;
   }
   try{
@@ -2374,7 +2379,8 @@ async function loadAreaBenchmarks(board,container){
     }));
     void loadDevelopmentOpportunities(panel,requested);
   }catch(error){
-    if(panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="전국 비교 자료를 불러오지 못했습니다. 메인 서버 상태를 확인한 뒤 다시 열어보세요.";
+    const loaded=await renderStaticAreaBenchmarks(board,panel,requested);
+    if(!loaded&&panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="GitHub 공개 비교 자료를 불러오지 못했습니다. 인터넷 연결 또는 다음 데이터 배포를 확인해 주세요.";
   }
 }
 
