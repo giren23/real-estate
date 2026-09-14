@@ -2324,10 +2324,10 @@ function developmentOpportunityHtml(item){
   const stale=development.status==="stale"?'<p class="development-stale">현재 갱신이 지연되어 마지막 확인 결과를 표시합니다.</p>':'';
   return '<details class="development-opportunity" data-development-key="'+esc(key)+'"><summary><b>개발 호재·생활권 공식 요약</b><span>'+esc(items.length?"검증 본문 "+fmt(items.length)+"건 · "+checked+" 확인":"자동 확인 완료")+'</span></summary><div class="development-opportunity-body">'+stale+body+'<div class="development-stage"><b>사업 단계</b><span>검토·용역</span><i>→</i><span>계획 반영·추진</span><i>→</i><span>결정·고시/예산</span><i>→</i><span>인허가·보상</span><i>→</i><strong>착공·준공</strong></div><p class="development-caution">'+esc(development.caution||"동·시군구 자료는 단지와 실제 사업 경계의 거리 및 반대 영향을 별도로 확인해야 합니다.")+'</p></div></details>';
 }
-function areaBenchmarkCardHtml(item,color){
+function areaBenchmarkCardHtml(item,color,includeServerOnly=true){
   const title=item.apt_name+" · 전용 "+fmt(Number(item.area_m2))+"㎡급";
   const references=(item.administrative_references||[]).map(entry=>benchmarkReferenceHtml(entry.label+" ("+entry.level_label+")",entry.reference,color)).join("")||benchmarkReferenceHtml(item.dong+" (읍·면·동)",item.dong_reference,color)+benchmarkReferenceHtml(item.province_label+" (시도)",item.province_reference,color);
-  return '<article class="area-benchmark-card" style="--benchmark-color:'+esc(color)+'"><h4><i aria-hidden="true"></i>'+esc(title)+'</h4><div class="area-benchmark-price"><b>'+esc(benchmarkPrice(item.price_per_supply_pyeong_manwon))+'</b><span>전용면적 기준</span></div><p class="area-benchmark-meta">'+esc(item.region_name+" "+item.dong)+' · '+esc(String(item.month))+' 월 중앙가 · 거래 '+esc(fmt(Number(item.trade_count)))+'건</p><div class="area-benchmark-references">'+references+'</div>'+areaTrendHtml(item,color)+developmentOpportunityHtml(item)+'</article>';
+  return '<article class="area-benchmark-card" style="--benchmark-color:'+esc(color)+'"><h4><i aria-hidden="true"></i>'+esc(title)+'</h4><div class="area-benchmark-price"><b>'+esc(benchmarkPrice(item.price_per_supply_pyeong_manwon))+'</b><span>전용면적 기준</span></div><p class="area-benchmark-meta">'+esc(item.region_name+" "+item.dong)+' · '+esc(String(item.month))+' 월 중앙가 · 거래 '+esc(fmt(Number(item.trade_count)))+'건</p><div class="area-benchmark-references">'+references+'</div>'+(includeServerOnly?areaTrendHtml(item,color)+developmentOpportunityHtml(item):"")+'</article>';
 }
 async function loadAreaBenchmarks(board,container){
   const panel=container.querySelector('[data-area-benchmark-board="'+CSS.escape(board.id)+'"]');
@@ -2352,7 +2352,7 @@ async function loadAreaBenchmarks(board,container){
       if(activeGraphId!==board.id||!panel.isConnected)return;
       const source=staticAreaBenchmarkPayload?.items||{};
       const cards=requested.map(entry=>source[entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name]).filter(Boolean)
-        .map(item=>areaBenchmarkCardHtml(item,requested.find(entry=>entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name===String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))?.color||"#6040a0"));
+        .map(item=>areaBenchmarkCardHtml(item,requested.find(entry=>entry.item.lawd_cd+"|"+entry.item.dong+"|"+entry.item.apt_name===String(item.lawd_cd)+"|"+String(item.dong)+"|"+String(item.apt_name))?.color||"#6040a0",false));
       panel.innerHTML='<summary class="area-benchmark-summary foldable-summary"><span class="foldable-title"><strong>행정구역별 84㎡급 전용 평당가 위치</strong></span></summary><div class="area-benchmark-body">'+(cards.length?'<div class="area-benchmark-list">'+cards.join("")+'</div>':'<p class="area-benchmark-empty">선택 단지의 GitHub 공개 비교 자료가 아직 없습니다. 다음 공개 데이터 갱신 후 자동 반영됩니다.</p>')+'</div>';
     }catch(_error){
       if(panel.isConnected)panel.querySelector(".area-benchmark-loading").textContent="GitHub 공개 비교 자료를 불러오지 못했습니다. 인터넷 연결 또는 다음 데이터 배포를 확인해 주세요.";
