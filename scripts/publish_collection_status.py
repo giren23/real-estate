@@ -16,8 +16,11 @@ def load_report(path: Path | None) -> dict:
 
 
 def public_status(initial: dict, retry: dict) -> dict:
+    # Error strings can contain request URLs and service keys. Keep them in
+    # private run diagnostics, never in the public site or Git history.
+    fields = ("lawd_cd", "region_name", "deal_ym", "status", "row_count", "method")
     requests = {
-        (str(item.get("lawd_cd", "")), str(item.get("deal_ym", ""))): dict(item)
+        (str(item.get("lawd_cd", "")), str(item.get("deal_ym", ""))): {k: item.get(k) for k in fields}
         for item in initial.get("requests", [])
     }
     recovered = 0
@@ -25,7 +28,7 @@ def public_status(initial: dict, retry: dict) -> dict:
         key = (str(item.get("lawd_cd", "")), str(item.get("deal_ym", "")))
         if item.get("status") == "ok" and requests.get(key, {}).get("status") != "ok":
             recovered += 1
-        requests[key] = dict(item)
+        requests[key] = {k: item.get(k) for k in fields}
     unresolved = [item for item in requests.values() if item.get("status") != "ok"]
     months = sorted({str(item.get("deal_ym", "")) for item in requests.values() if item.get("deal_ym")})
     return {

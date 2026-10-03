@@ -42,3 +42,11 @@ def test_public_status_overrides_recovered_retry() -> None:
     assert result["status"] == "complete"
     assert result["recovered_count"] == 1
     assert result["unresolved_count"] == 0
+
+
+def test_public_status_excludes_private_error_urls() -> None:
+    result = public_status({"requests": [{"lawd_cd": "41135", "deal_ym": "202609",
+        "status": "failed", "errors": [{"error": "https://api/?serviceKey=SECRET"}]}]}, {})
+    assert result["unresolved_count"] == 1
+    assert "SECRET" not in json.dumps(result)
+    assert "errors" not in result["unresolved"][0]
