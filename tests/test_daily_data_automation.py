@@ -13,12 +13,12 @@ def test_all_public_data_families_have_at_least_daily_scheduled_refresh() -> Non
     assert "--nationwide-coverage" in real_estate
     assert "retry-trades" in real_estate
     assert "publish_collection_status.py" in real_estate
-    assert "build_public_trade_shards.py" in real_estate
+    assert "public_trade_archive.py validate" in real_estate
     assert "git pull --rebase --autostash origin main" in real_estate
     assert 'if [ "$(TZ=Asia/Seoul date +%d)" = "01" ]; then months=3; fi' in real_estate
-    assert "python scripts/merge_incremental_public_data.py" in real_estate
+    assert "python scripts/public_trade_archive.py update" in real_estate
     assert "--all-history" not in real_estate
-    assert "without deleting published history" in real_estate
+    assert "Merge latest partitions into the complete compressed archive" in real_estate
 
     directory = (ROOT / ".github" / "workflows" / "complex-directory-weekly.yml").read_text(encoding="utf-8")
     assert 'cron: "35 21 * * 6"' in directory

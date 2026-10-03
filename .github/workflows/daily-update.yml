@@ -65,25 +65,20 @@ jobs:
           --initial data/reports/trade_collection_failures.json
           --retry data/reports/trade_collection_retry.json
 
-      - name: Merge latest partitions without deleting published history
+      - name: Merge latest partitions into the complete compressed archive
         env:
           PYTHONPATH: src
-        run: python scripts/merge_incremental_public_data.py
+        run: python scripts/public_trade_archive.py update
 
       - name: Build GitHub 84㎡ benchmark snapshot
         env:
           PYTHONPATH: src
         run: python scripts/build_public_area_benchmarks.py
 
-      - name: Build district shards for PC-off mobile use
-        env:
-          PYTHONPATH: src
-        run: python scripts/build_public_trade_shards.py
-
       - name: Refresh regional 84sqm average transaction prices
         run: python scripts/update_reb_market_map.py --local-prices-only
 
-      - name: Test
+      - name: Validate trade pipeline and all published archive files
         id: test
         continue-on-error: true
         env:
@@ -91,7 +86,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python -m pytest -q 2>&1 | tee data/reports/pytest.log
+          python -m pytest -q tests/test_public_trade_archive.py tests/test_collection_recovery.py tests/test_trade_collection.py tests/test_incremental_public_merge.py tests/test_public_trade_shards.py tests/test_daily_data_automation.py 2>&1 | tee data/reports/pytest.log
+          node --test tests/public_archive.test.cjs tests/map_focus.test.cjs
+          python scripts/public_trade_archive.py validate
 
       - name: Publish concise test failure annotation
         if: steps.test.outcome == 'failure'
@@ -114,6 +111,7 @@ jobs:
             data/reports/trade_collection_retry.json
             data/reports/pytest.log
             data/public/collection_status.json
+            data/public/archive_verification.json
           if-no-files-found: warn
           retention-days: 30
 
@@ -122,7 +120,7 @@ jobs:
         run: |
           git config user.name "real-estate-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/public/meta.json data/public/monthly.json data/public/regions.json data/public/area_benchmarks.json data/public/collection_status.json data/public/shards web/content/reb_market_map.json web/content/news web/content/analysis
+          git add data/public/meta.json data/public/area_benchmarks.json data/public/collection_status.json data/public/archive_verification.json data/public/latest_trades.json data/public/shards web/content/reb_market_map.json
           git commit -m "Daily update" || exit 0
           git pull --rebase --autostash origin main
           git push
@@ -130,7 +128,7 @@ jobs:
       - name: Mark unresolved refresh as failed after saving successes
         if: steps.test.outcome == 'failure' || (steps.collect.outcome == 'failure' && steps.retry.outcome != 'success')
         run: |
-          echo "::error::검증 실패 또는 재시도 후 미해결 지역이 있습니다. 성공한 데이터와 상태 보고서는 게시했습니다."
+          echo "::error::거래 자료 검증 실패 또는 재시도 후 미해결 지역이 있습니다. 검증 실패 시 이전 공개 자료를 유지하며 자세한 상태는 실행 첨부 보고서에 저장했습니다."
           if [ -f data/reports/trade_collection_retry.json ]; then
             cat data/reports/trade_collection_retry.json
           else

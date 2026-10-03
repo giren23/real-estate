@@ -28,9 +28,13 @@ def test_investment_briefing_page_has_top_and_bottom_pagination() -> None:
     assert '["verdict", "us", "kr", "sectors", "kr-top5", "us-top5", "hynix"' in script
 
 
-def test_daily_generator_archives_by_date_and_reorders_pages() -> None:
-    output_dir = ROOT / "web" / "content" / "investment-briefing"
-    subprocess.run([sys.executable, str(ROOT / "scripts" / "update_investment_briefing.py"), "--date", "2026-09-11"], cwd=ROOT, check=True)
+def test_daily_generator_archives_by_date_and_reorders_pages(tmp_path, monkeypatch) -> None:
+    from scripts import update_investment_briefing as generator
+    output_dir = tmp_path / "briefing"
+    monkeypatch.setattr(generator, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(generator, "INDEX_PATH", output_dir / "index.json")
+    monkeypatch.setattr(sys, "argv", ["update_investment_briefing.py", "--date", "2026-09-11"])
+    generator.main()
     payload = json.loads((output_dir / "2026-09-11.json").read_text(encoding="utf-8"))
     index = json.loads((output_dir / "index.json").read_text(encoding="utf-8"))
 

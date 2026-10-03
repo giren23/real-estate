@@ -7,6 +7,7 @@ const DIVIDED_AREA_CITY_BY_PREFIX = {"4111":"수원시","4113":"성남시","4117
 let localApi = false, cloudArchiveApi = false, localMeta = {};
 let publicShardManifest = null;
 const publicDistrictCache = new Map();
+const publicTradeBucketCache = new Map();
 const minorVersion = location.hostname.endsWith(".github.io") || new URLSearchParams(location.search).get("minor") === "1";
 const minorVersionBadge = document.getElementById("minorVersionBadge");
 if(minorVersionBadge) minorVersionBadge.hidden = !minorVersion;
@@ -486,9 +487,47 @@ async function ensurePublicShardManifest(){
 }
 function publicDistrictPayload(lawdCd){
   const code=String(lawdCd||"").padStart(5,"0").slice(0,5);
-  const version=encodeURIComponent(String(publicShardManifest?.generated_at||publicShardManifest?.latest_date||"latest"));
-  if(!publicDistrictCache.has(code))publicDistrictCache.set(code,fetchJson("data/shards/"+code+".json?v="+version));
+  const descriptor=publicShardManifest?.districts?.find(row=>String(row.lawd_cd)===code);
+  if(!descriptor)return Promise.resolve(null);
+  if(!publicDistrictCache.has(code))publicDistrictCache.set(code,fetchPublicArchiveFile(descriptor).catch(error=>{publicDistrictCache.delete(code);throw error;}));
   return publicDistrictCache.get(code);
+}
+
+async function fetchPublicArchiveFile(descriptor){
+  const version=encodeURIComponent(descriptor.sha256||publicShardManifest?.generated_at||"latest");
+  const response=await fetch("data/shards/"+descriptor.file+"?v="+version);
+  if(!response.ok)throw new Error("공개 거래 자료를 불러오지 못했습니다: "+response.status);
+  const bytes=new Uint8Array(await response.arrayBuffer());
+  if(bytes[0]===31&&bytes[1]===139){
+    const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return JSON.parse(await new Response(stream).text());
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+async function publicGroupTrades(group,payload){
+  if(!Array.isArray(payload?.trade_buckets))return payload?.trades||[];
+  const key=group.dong+"\0"+group.data_apt_name;
+  const digest=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(key)));
+  const descriptor=payload.trade_buckets[digest[0]%16];
+  if(!descriptor)throw new Error("단지 거래 자료 위치가 없습니다.");
+  if(!publicTradeBucketCache.has(descriptor.file))publicTradeBucketCache.set(descriptor.file,fetchPublicArchiveFile(descriptor).catch(error=>{publicTradeBucketCache.delete(descriptor.file);throw error;}));
+  return (await publicTradeBucketCache.get(descriptor.file)).rows||[];
+}
+
+async function renderCollectionFreshness(){
+  const element=byId("collectionFreshness");
+  if(!element)return;
+  const status=await fetchJson("data/collection_status.json?updated="+Date.now());
+  const manifest=publicShardManifest;
+  if(!manifest)return;
+  const koreanDate=value=>value?new Date(value).toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"}):"";
+  const date=koreanDate(manifest.generated_at);
+  const complete=status?.status==="complete";
+  const lastRun=koreanDate(status?.generated_at);
+  const delayed=lastRun&&Date.now()-Date.parse(status.generated_at)>36*60*60*1000;
+  element.textContent="공개 자료 "+date+" · 최근 거래일 "+(manifest.latest_date||"확인 중")+(lastRun?" · 자동 수집 "+lastRun+(complete?" 완료":" 일부 실패")+(delayed?" · 갱신 지연 확인 필요":""):" · 자동 수집 확인 대기");
+  element.title="월별 이력 기준 "+fmt(manifest.trade_count)+"건 · 개별 거래 원문 "+fmt(manifest.detail_trade_count||0)+"건. PC가 꺼져도 공개 자료가 유지됩니다.";
 }
 function scopedArchiveRows(payload,group){
   const source=Array.isArray(payload)?payload:(Array.isArray(payload?.rows)?payload.rows:[]);
@@ -517,7 +556,8 @@ async function hydrateGroup(group){
       if(ranked.length&&(!ranked[1]||ranked[0].score-ranked[1].score>=20)) group.data_apt_name=ranked[0].name;
       if(group.data_apt_name){
         history=districtHistory.filter(row=>String(row.dong||"")===String(group.dong||"")&&String(row.apt_name||"")===group.data_apt_name);
-        trades=districtTrades.filter(row=>String(row.dong||"")===String(group.dong||"")&&String(row.apt_name||"")===group.data_apt_name).slice(-5000);
+        const detailTrades=await publicGroupTrades(group,payload);
+        trades=detailTrades.filter(row=>String(row.dong||"")===String(group.dong||"")&&String(row.apt_name||"")===group.data_apt_name).slice(-5000);
       }
     }
     group.history=history;
@@ -537,7 +577,7 @@ async function hydrateGroup(group){
     group.hydrated=true;
     group.hydrating=null;
     return group;
-  })();
+  })().catch(error=>{group.hydrating=null;throw error;});
   return group.hydrating;
 }
 function expandHistory(payload){
@@ -600,9 +640,9 @@ async function load(){
     const [complexes,economic,publicMeta,localSnapshot,shardManifest]=await Promise.all([
       fetchJson("data/complexes.json"),
       fetchJson("data/economic_context.json"),
-      fetchJson("data/meta.json"),
+      fetchJson("data/meta.json?updated="+Date.now()),
       fetchJson("data/local_meta.json").catch(()=>null),
-      fetchJson("data/shards/manifest.json")
+      fetchJson("data/shards/manifest.json?updated="+Date.now())
     ]);
     economicContext=economic&&Array.isArray(economic.exchange_rates)?economic:economicContext;
     if(shardManifest&&Array.isArray(shardManifest.districts)&&shardManifest.districts.length){
@@ -630,6 +670,7 @@ async function load(){
       apartmentGroups=[...groups.values()];
       const representedTrades=Number(shardManifest.trade_count)||Number(publicMeta?.trade_count)||0;
       byId("dataCount").textContent=fmt(representedTrades)+"건 · "+fmt(apartmentGroups.length)+"단지";
+      void renderCollectionFreshness();
       rebuildGroupIndexes();
       renderQuickSearch();
       restoreGraphBoards();
@@ -3123,11 +3164,22 @@ async function loadRebMarketMap(){
   }catch(error){byId("rebMarketStatus").innerHTML='<b>지역별 공식 통계를 불러오지 못했습니다.</b><br><span>마지막 검증 파일을 다시 확인하는 중입니다.</span>';}
 }
 async function refreshCatalogIfUpdated(){
-  if(!localApi||catalogRefreshChecking||document.visibilityState==="hidden")return;
+  if(catalogRefreshChecking||document.visibilityState==="hidden")return;
   const now=Date.now();
   if(now-lastCatalogRefreshCheck<30000)return;
   lastCatalogRefreshCheck=now;catalogRefreshChecking=true;
   try{
+    if(!localApi){
+      if(!publicShardManifest)return;
+      const response=await fetch("data/shards/manifest.json?updated="+now,{cache:"no-store"});
+      if(!response.ok)return;
+      const next=await response.json();
+      if(next.generated_at&&next.generated_at!==publicShardManifest.generated_at){
+        setStatus("새 공개 실거래 자료를 자동 반영하는 중입니다…");
+        setTimeout(()=>location.reload(),500);
+      }
+      return;
+    }
     const response=await fetch("/api/meta?refresh="+now,{cache:"no-store"});
     if(!response.ok)return;
     const nextMeta=await response.json();

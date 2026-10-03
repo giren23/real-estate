@@ -1,1 +1,1 @@
-{"status":"ok","trade_count":1077246,"region_count":248,"apartment_count":22276,"trade_apartment_count":19557,"first_date":"2006-01-01","latest_date":"2026-09-13","history_format":2,"incremental_partition_count":510}
+{"status":"ok","trade_count":6700903,"region_count":249,"apartment_count":22276,"trade_apartment_count":35155,"first_date":"2006-01-01","latest_date":"2026-09-13","history_format":2,"incremental_partition_count":510,"detail_trade_count":6238133,"updated_at":"2026-10-03T13:20:10+00:00","source":"github-compressed-archive"}
