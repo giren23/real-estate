@@ -33,7 +33,7 @@ const markers = new Map(), charts = new Map();
 const groupByKey = new Map(), groupsByLawd = new Map(), groupsByMapName = new Map();
 const regionHierarchy = new Map();
 let regionSelection={sido:"",sigungu:"",dong:""},regionFilteredKeys=null,regionSelectionRunId=0;
-let lastGeocodeAt = 0, searchRunId = 0, searchSuggestionTimer = null, localityFocusRunId = 0;
+let lastGeocodeAt = 0, searchRunId = 0, searchSuggestionTimer = null, localityFocusRunId = 0, mapFocusRunId = 0;
 // Keep only general locality searches in local storage. Apartment coordinates
 // are resolved per session from an exact map feature or a separately verified
 // coordinate. Older caches included weak name matches, so they must never be
@@ -736,13 +736,15 @@ function matchingApartments(query,limit=12){
     .slice(0,limit);
 }
 
-function confidentSearchMatch(matches){
+function confidentSearchMatch(matches,query=""){
+  const exact=matches.filter(item=>(item.group.search_names||[item.group.apt_name]).some(name=>compactName(name)===compactName(query)));
+  if(exact.length)return exact.length===1?exact[0]:null;
   const top=matches[0];
   if(!top||top.score<980)return null;
   const contenders=matches.filter(item=>item.score>=top.score-20);
   if(contenders.length===1)return top;
-  const locality=localityKey(top.group);
-  return contenders.every(item=>localityKey(item.group)===locality)?top:null;
+  // A shared dong does not make similarly named phases the same complex.
+  return null;
 }
 
 function matchingLocalityGroups(query){
@@ -816,6 +818,7 @@ async function chooseSearchSuggestion(key){
   const group=apartmentGroups.find(item=>item.key===key);
   if(!group)return;
   const runId=++searchRunId;
+  cancelMapFocus();
   byId("searchInput").value=group.apt_name;
   hideSearchSuggestions();regionFilteredKeys=null;clearMapMarkers();
   renderResults([{group,score:1000}],group.apt_name);
@@ -825,6 +828,7 @@ async function chooseSearchSuggestion(key){
 
 async function search(){
   const runId=++searchRunId;
+  cancelMapFocus();
   const query=byId("searchInput").value.trim();
   if(!query){ setStatus("검색어를 입력해 주세요.",true); return; }
   regionFilteredKeys=null;
@@ -833,15 +837,14 @@ async function search(){
   const matches=matchingApartments(query,12);
   renderResults(matches,query);
   renderSearchSuggestions(matches,query);
-  const localityFocus=focusSearchLocality(query);
-  const directMatch=matches.length===1?matches[0]:confidentSearchMatch(matches);
+  const directMatch=matches.length===1?matches[0]:confidentSearchMatch(matches,query);
   if(directMatch){
     byId("searchInput").value=directMatch.group.apt_name;
     hideSearchSuggestions();
     renderResults([{group:directMatch.group,score:directMatch.score}],directMatch.group.apt_name);
     await selectSearchGroup(directMatch.group,runId);
   }
-  else if(matches.length>1){await localityFocus;if(runId===searchRunId)setStatus("비슷한 단지 "+matches.length+"개 중 하나를 선택해 주세요.");}
+  else {await focusSearchLocality(query);if(runId===searchRunId&&matches.length>1)setStatus("비슷한 단지 "+matches.length+"개 중 하나를 선택해 주세요.");}
 }
 
 function activeBoard(){
@@ -1034,6 +1037,7 @@ function currentMarkerLimit(){return regionFilteredKeys?MAX_REGION_MARKERS:MAX_V
 
 async function applyRegionSelection(){
   const selectionRunId=++regionSelectionRunId;
+  ++searchRunId;cancelMapFocus();
   const groups=regionHierarchy.get(regionSelection.sido)?.get(regionSelection.sigungu)?.get(regionSelection.dong)||[];
   const markerGroups=groups.filter(hasActualTradeData);
   const selectedKeys=new Set(markerGroups.map(group=>group.key));
@@ -1050,6 +1054,7 @@ async function applyRegionSelection(){
   }else{
     center=await geocode(label);
     if(!center){const fallback=SIDO_FALLBACK_CENTERS[regionSelection.sido];if(fallback)center={lat:fallback[0],lng:fallback[1]};}
+    if(selectionRunId!==regionSelectionRunId)return;
     if(center){mapLocalityAnchor={coord:center,lawd_cd:groups[0]?.lawd_cd||"",group:groups[0]};map.setView([center.lat,center.lng],15);}
   }
   if(center)populateRegionMarkers(markerGroups,center,selectionRunId,label,selectedKeys);
@@ -1083,7 +1088,7 @@ function ensureMapMarker(group,coord){
     return marker;
   }
   marker=L.marker([coord.lat,coord.lng],{title:group.apt_name,alt:group.apt_name+" 단지 마커",keyboard:true}).addTo(map);
-  marker.bindPopup(mapPopupHtml(group),{closeOnClick:false});
+  marker.bindPopup(mapPopupHtml(group),{closeOnClick:false,autoPan:false});
   marker.on("popupopen",event=>{
     event.popup.setContent(mapPopupHtml(group));
     const popupElement=event.popup.getElement();
@@ -1355,7 +1360,9 @@ async function refreshViewportBuildings(runId){
     });
     const selected=[...buckets.values()].map(bucket=>({group:bucket.group,coord:{lat:bucket.lat/bucket.count,lng:bucket.lng/bucket.count}})).sort((a,b)=>haversine(center,a.coord)-haversine(center,b.coord)).slice(0,regionFilteredKeys?MAX_REGION_MARKERS:MAX_BUILDING_MARKERS);
     selected.forEach(item=>{
-      groupCoordinates.set(item.group.key,item.coord);
+      // Building discovery must not replace the selected complex's resolved
+      // coordinate with the average of nearby buildings sharing its name.
+      if(item.group.key!==mapLocalityAnchor?.group?.key)groupCoordinates.set(item.group.key,item.coord);
     });
     syncViewportMarkers();
     await localFallbackPromise;
@@ -1381,17 +1388,21 @@ function cachedCoordinate(group){
 function revealMapPanel(){
   const panel=byId("map")?.closest(".map-panel");
   if(panel)panel.scrollIntoView({behavior:"smooth",block:"start"});
-  setTimeout(()=>map?.invalidateSize(),250);
+  map?.invalidateSize({pan:false});
 }
 
 async function selectSearchGroup(group,runId){
+  cancelMapFocus();
+  ++regionSelectionRunId;
   viewportRefreshSuspended=true;
+  ++buildingRequestId;
   if(buildingAbortController)buildingAbortController.abort();
   clearMapMarkers();
   revealMapPanel();
   const coord=await focusGroup(group,cachedCoordinate(group));
-  if(runId===searchRunId&&group.hydrated) renderResults([{group,score:1000}],group.apt_name);
-  if(runId!==searchRunId||!coord){viewportRefreshSuspended=false;return;}
+  if(runId===searchRunId&&coord&&group.hydrated) renderResults([{group,score:1000}],group.apt_name);
+  if(runId!==searchRunId)return;
+  if(!coord){viewportRefreshSuspended=false;return;}
   await showNearbyMarkers(group,coord,runId);
 }
 
@@ -1405,7 +1416,7 @@ async function showNearbyMarkers(selectedGroup,centerCoord,runId){
   });
   setStatus(selectedGroup.apt_name+" 주변 단지를 지도에 표시하는 중입니다…");
   for(const group of candidates){
-    if(runId!==searchRunId){viewportRefreshSuspended=false;return;}
+    if(runId!==searchRunId)return;
     if(shown>=MAX_VIEWPORT_MARKERS)break;
     const coord=cachedCoordinate(group);
     if(!coord||haversine(centerCoord,coord)>NEARBY_RADIUS_KM)continue;
@@ -2846,6 +2857,7 @@ function initMap(){
   byId("mapState").textContent="무료 지도 연결됨";
   byId("mapState").classList.add("ready");
   byId("resetMapView").addEventListener("click",()=>{
+    ++searchRunId;++regionSelectionRunId;cancelMapFocus();
     buildingRequestId++;
     if(buildingAbortController)buildingAbortController.abort();
     mapLocalityAnchor=null;
@@ -2929,58 +2941,66 @@ async function geocodeGroup(group,allowAddressFallback=true){
   const verified=verifiedComplexCoordinate(group);
   if(verified)return verified;
   const address=addressOf(group);
+  // Once history supplies a parcel, try it first instead of repeating a
+  // name query that already failed before hydration.
+  if(allowAddressFallback&&group.jibun){
+    const parcelAddress=address.endsWith(String(group.jibun))?address:[address,group.jibun].join(" ");
+    const coord=await geocodeGroupQuery(group,parcelAddress);
+    if(coord)return coord;
+  }
   const queries=[geocodeQueryOf(group),[address,apartmentGeocodeName(group.apt_name)].filter(Boolean).join(" ")].filter((value,index,items)=>value&&items.indexOf(value)===index);
   for(const query of queries){
     const coord=await geocodeGroupQuery(group,query);
     if(coord)return coord;
   }
-  // A legal-dong centroid is not an apartment coordinate. Only permit a final
-  // address lookup when the transaction contains a parcel number, and still
-  // validate that parcel/dong against the returned result.
-  if(allowAddressFallback&&group.jibun){
-    return geocodeGroupQuery(group,[address,group.jibun].filter(Boolean).join(" "));
-  }
   return null;
 }
 
+function cancelMapFocus(){
+  ++mapFocusRunId;++localityFocusRunId;
+  clearTimeout(searchSuggestionTimer);
+}
+
+function centerMapOnGroup(group,coord){
+  map.stop();
+  map.invalidateSize({pan:false});
+  mapLocalityAnchor={coord,lawd_cd:group.lawd_cd,group};
+  // Do not animate from a locality centroid or let a popup pan the map away
+  // from the chosen coordinate. The marker's tip stays at the map centre.
+  map.setView([coord.lat,coord.lng],16,{animate:false});
+  const marker=ensureMapMarker(group,coord);
+  marker.openPopup();
+  byId("mapState").textContent=group.apt_name+" · 지도 중앙";
+  refreshGraphAddButtons(group);
+}
+
 async function focusGroup(group,knownCoord){
-  const hydration=group.hydrated?Promise.resolve(group):hydrateGroup(group);
-  let focusedCoord=knownCoord||null;
-  if(map){
-    if(focusedCoord){
-      mapLocalityAnchor={coord:focusedCoord,lawd_cd:group.lawd_cd,group};
-      const marker=ensureMapMarker(group,focusedCoord);
-      map.setView([focusedCoord.lat,focusedCoord.lng],16);
-      marker.openPopup();
-      refreshGraphAddButtons(group);
-    }else{
-      const exactCoordinate=geocodeGroup(group,false);
-      const localityCoord=await geocode(addressOf(group));
-      if(localityCoord){
-        focusedCoord=localityCoord;
-        mapLocalityAnchor={coord:localityCoord,lawd_cd:group.lawd_cd,group};
-        map.setView([localityCoord.lat,localityCoord.lng],16);
-        byId("mapState").textContent=group.apt_name+" 주변의 검증된 단지 위치를 확인 중입니다";
-        viewportRefreshSuspended=false;
-        scheduleViewportMarkers();
-      }
-      let verifiedCoord=await exactCoordinate;
-      await hydration;
-      if(!verifiedCoord)verifiedCoord=await geocodeGroup(group,true);
-      if(verifiedCoord){
-        focusedCoord=verifiedCoord;
-        mapLocalityAnchor={coord:verifiedCoord,lawd_cd:group.lawd_cd,group};
-        const marker=ensureMapMarker(group,verifiedCoord);
-        map.setView([verifiedCoord.lat,verifiedCoord.lng],16);
-        marker.openPopup();
-        byId("mapState").textContent=group.apt_name+" 선택 단지 위치";
-        refreshGraphAddButtons(group);
-      }
-    }
+  const focusId=++mapFocusRunId;
+  ++localityFocusRunId;
+  const current=()=>focusId===mapFocusRunId;
+  // History is independent of map navigation, including a slow/offline API.
+  const hydration=(group.hydrated?Promise.resolve(group):hydrateGroup(group)).catch(()=>null);
+  void hydration.then(result=>{
+    if(!result||!current())return;
+    renderDetails(group,activeBoard()?.series.find(s=>s.key===group.key)?.area||group.areas[0]);
+    const marker=markers.get(group.key);
+    if(marker)marker.setPopupContent(mapPopupHtml(group));
+  }).catch(()=>{});
+  if(!map)return null;
+  byId("mapState").textContent=group.apt_name+" 위치 확인 중…";
+  let coord=knownCoord||cachedCoordinate(group)||await geocodeGroup(group,false);
+  if(!current())return null;
+  if(!coord){
+    await hydration;
+    if(!current())return null;
+    coord=await geocodeGroup(group,true);
+    if(!current())return null;
   }
-  await hydration;
-  renderDetails(group,activeBoard()?.series.find(s=>s.key===group.key)?.area||group.areas[0]);
-  return focusedCoord;
+  if(coord){centerMapOnGroup(group,coord);return coord;}
+  // Never report a dong centroid as the selected apartment's location.
+  byId("mapState").textContent=group.apt_name+" · 정확한 위치를 확인하지 못했습니다";
+  setStatus("단지 좌표를 확인하지 못했습니다. 주소가 있는 다른 검색 결과를 선택하거나 잠시 후 다시 검색해 주세요.",true);
+  return null;
 }
 
 function haversine(a,b){

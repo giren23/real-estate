@@ -42,24 +42,24 @@ def test_map_marker_recovery_works_without_local_pc_api() -> None:
     assert "SIDO_FALLBACK_CENTERS" in script
     assert 'function revealMapPanel()' in script
     assert 'panel.scrollIntoView({behavior:"smooth",block:"start"})' in script
-    assert 'const hydration=group.hydrated?Promise.resolve(group):hydrateGroup(group)' in script
-    assert 'const exactCoordinate=geocodeGroup(group,false)' in script
-    assert 'const localityCoord=await geocode(addressOf(group))' in script
-    assert 'map.setView([localityCoord.lat,localityCoord.lng],16)' in script
-    assert 'const marker=ensureMapMarker(group,verifiedCoord)' in script
+    assert 'void hydration.then(result=>' in script
+    assert 'cachedCoordinate(group)||await geocodeGroup(group,false)' in script
+    assert 'map.setView([coord.lat,coord.lng],16,{animate:false})' in script
+    assert 'const marker=ensureMapMarker(group,coord)' in script
+    assert 'autoPan:false' in script
     assert 'preciseKoreanAddress' in script
-    assert script.index('map.setView([localityCoord.lat,localityCoord.lng],16)') < script.index('let verifiedCoord=await exactCoordinate;')
-    assert '지역 지도로 이동했습니다. 검증된 정확 위치를 확인 중입니다.' in script
+    assert 'if(!current())return null' in script
+    assert 'item.group.key!==mapLocalityAnchor?.group?.key' in script
 
 
-def test_confident_complex_search_selects_one_locality_automatically() -> None:
+def test_confident_complex_search_requires_an_unambiguous_complex() -> None:
     script = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
 
     assert r'replace(/\d+(?:단지|차)?$/g,"")' in script
-    assert "function confidentSearchMatch(matches)" in script
+    assert 'function confidentSearchMatch(matches,query="")' in script
     assert "top.score<980" in script
-    assert "localityKey(item.group)===locality" in script
-    assert "const directMatch=matches.length===1?matches[0]:confidentSearchMatch(matches)" in script
+    assert "if(exact.length)return exact.length===1?exact[0]:null" in script
+    assert "const directMatch=matches.length===1?matches[0]:confidentSearchMatch(matches,query)" in script
 
 
 def test_cloudflare_worker_proxies_public_map_sources_when_pc_is_off() -> None:
