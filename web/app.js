@@ -828,6 +828,7 @@ async function chooseSearchSuggestion(key){
 
 async function search(){
   const runId=++searchRunId;
+  ++regionSelectionRunId;
   cancelMapFocus();
   const query=byId("searchInput").value.trim();
   if(!query){ setStatus("검색어를 입력해 주세요.",true); return; }
@@ -2958,6 +2959,7 @@ async function geocodeGroup(group,allowAddressFallback=true){
 
 function cancelMapFocus(){
   ++mapFocusRunId;++localityFocusRunId;
+  viewportRefreshSuspended=false;
   clearTimeout(searchSuggestionTimer);
 }
 
