@@ -4,7 +4,7 @@ let staticAreaBenchmarkPayload = null;
 let staticAreaTrendIndex = null;
 const AREA_TREND_WINDOWS = [[1,"최근 1개월"],[3,"최근 3개월"],[6,"최근 6개월"],[12,"최근 1년"],[36,"최근 3년"],[60,"최근 5년"],[84,"최근 7년"],[108,"최근 9년"],[132,"최근 11년"],[156,"최근 13년"],[180,"최근 15년"]];
 const DIVIDED_AREA_CITY_BY_PREFIX = {"4111":"수원시","4113":"성남시","4117":"안양시","4119":"부천시","4127":"안산시","4128":"고양시","4146":"용인시","4159":"화성시","4311":"청주시","4413":"천안시","4511":"전주시","4711":"포항시","4812":"창원시"};
-let localApi = false, localMeta = {};
+let localApi = false, cloudArchiveApi = false, localMeta = {};
 let publicShardManifest = null;
 const publicDistrictCache = new Map();
 const minorVersion = location.hostname.endsWith(".github.io") || new URLSearchParams(location.search).get("minor") === "1";
@@ -468,12 +468,12 @@ async function fetchJson(path){ try{const response=await fetch(path);return resp
 async function fetchLocalCatalog(){
   try{
     const response=await fetch("/api/catalog",{cache:"no-store"}),responseSource=response.headers.get("x-real-estate-source")||"";
-    if(!response.ok||(responseSource&&responseSource!=="local-pc")){
+    if(!response.ok||!["local-pc","cloud-archive"].includes(responseSource)){
       await response.body?.cancel();
       return null;
     }
     const payload=await response.json();
-    return payload&&Array.isArray(payload.catalog)?payload:null;
+    return payload&&Array.isArray(payload.catalog)?{payload,source:responseSource}:null;
   }catch(_error){return null;}
 }
 async function ensurePublicShardManifest(){
@@ -496,10 +496,10 @@ function scopedArchiveRows(payload,group){
   return source.filter(row=>String(row.lawd_cd||"").slice(0,5)===group.lawd_cd&&String(row.dong||"")===group.dong&&String(row.apt_name||"")===group.data_apt_name);
 }
 async function hydrateGroup(group){
-  if((!localApi&&!publicShardManifest)||group.hydrated||group.hydrating) return group.hydrating||group;
+  if((!localApi&&!cloudArchiveApi&&!publicShardManifest)||group.hydrated||group.hydrating) return group.hydrating||group;
   group.hydrating=(async()=>{
     let history=[],trades=[];
-    if(localApi){
+    if(localApi||cloudArchiveApi){
       if(!group.data_apt_name){group.hydrated=true;group.hydrating=null;return group;}
       const query=new URLSearchParams({lawd_cd:group.lawd_cd,dong:group.dong,apt_name:group.data_apt_name});
       [history,trades]=await Promise.all([
@@ -560,9 +560,11 @@ function median(values){
 
 async function load(){
   try{
-    const localPayload=await fetchLocalCatalog();
-    if(localPayload){
-      localApi=true;
+    const catalogResult=await fetchLocalCatalog();
+    if(catalogResult){
+      const localPayload=catalogResult.payload;
+      localApi=catalogResult.source==="local-pc";
+      cloudArchiveApi=catalogResult.source==="cloud-archive";
       localMeta=localPayload.meta||{};
       economicContext=await fetchJson("data/economic_context.json");
       apartmentGroups=localPayload.catalog.map(row=>{
@@ -585,7 +587,7 @@ async function load(){
       await Promise.all(graphBoards.flatMap(board=>board.series).map(series=>apartmentGroups.find(group=>group.key===series.key)).filter(Boolean).map(hydrateGroup));
       renderGraphBoards();
       const finished=Number(localMeta.districts_complete||0);
-      setStatus(apartmentGroups.length+"개 단지를 검색할 수 있습니다. 전체 이력 완료 지역 "+finished+" / 97개");
+      setStatus(apartmentGroups.length+"개 단지를 검색할 수 있습니다. "+(cloudArchiveApi?"PC 미연결 · 마지막 검증 스냅샷":"전체 이력 완료 지역 "+finished+" / 97개"));
       indexCachedGroupCoordinates();
       initMap();
       return;
@@ -1356,10 +1358,17 @@ function cachedCoordinate(group){
   return groupCoordinates.get(group.key)||verifiedComplexCoordinate(group)||null;
 }
 
+function revealMapPanel(){
+  const panel=byId("map")?.closest(".map-panel");
+  if(panel)panel.scrollIntoView({behavior:"smooth",block:"start"});
+  setTimeout(()=>map?.invalidateSize(),250);
+}
+
 async function selectSearchGroup(group,runId){
   viewportRefreshSuspended=true;
   if(buildingAbortController)buildingAbortController.abort();
   clearMapMarkers();
+  revealMapPanel();
   const coord=await focusGroup(group,cachedCoordinate(group));
   if(runId===searchRunId&&group.hydrated) renderResults([{group,score:1000}],group.apt_name);
   if(runId!==searchRunId||!coord){viewportRefreshSuspended=false;return;}
@@ -1368,7 +1377,7 @@ async function selectSearchGroup(group,runId){
 
 async function showNearbyMarkers(selectedGroup,centerCoord,runId){
   viewportRefreshSuspended=true;
-  let shown=1;
+  let shown=markers.has(selectedGroup.key)?1:0;
   const candidates=apartmentGroups.filter(group=>group.key!==selectedGroup.key&&group.lawd_cd===selectedGroup.lawd_cd).sort((a,b)=>{
     const sameDongA=a.dong===selectedGroup.dong?1:0,sameDongB=b.dong===selectedGroup.dong?1:0;
     const cachedA=cachedCoordinate(a)?1:0,cachedB=cachedCoordinate(b)?1:0;
@@ -1385,7 +1394,7 @@ async function showNearbyMarkers(selectedGroup,centerCoord,runId){
   }
   viewportRefreshSuspended=false;
   scheduleViewportMarkers();
-  setStatus(selectedGroup.apt_name+"을 중심으로 주변 단지 "+shown+"개를 지도에 표시했습니다.");
+  setStatus(markers.has(selectedGroup.key)?selectedGroup.apt_name+"을 중심으로 주변 단지 "+shown+"개를 지도에 표시했습니다.":selectedGroup.apt_name+" 지역 지도로 이동했습니다. 검증된 정확 위치를 확인 중입니다.");
 }
 
 function refreshResultButtons(){
@@ -2915,7 +2924,14 @@ async function focusGroup(group,knownCoord){
   renderDetails(group,activeBoard()?.series.find(s=>s.key===group.key)?.area||group.areas[0]);
   if(!map) return null;
   const coord=knownCoord||await geocodeGroup(group);
-  if(!coord) return null;
+  if(!coord){
+    const localityCoord=await geocode([group.region_name,group.dong].filter(Boolean).join(" "));
+    if(!localityCoord)return null;
+    mapLocalityAnchor={coord:localityCoord,lawd_cd:group.lawd_cd,group};
+    map.setView([localityCoord.lat,localityCoord.lng],16);
+    byId("mapState").textContent=group.apt_name+" 주변의 검증된 단지 위치를 확인 중입니다";
+    return localityCoord;
+  }
   mapLocalityAnchor={coord,lawd_cd:group.lawd_cd,group};
   const marker=ensureMapMarker(group,coord);
   map.setView([coord.lat,coord.lng],16);

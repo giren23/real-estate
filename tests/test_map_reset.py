@@ -40,6 +40,11 @@ def test_map_marker_recovery_works_without_local_pc_api() -> None:
     assert '"검증 좌표 단지 "+markers.size' in script
     assert "if(allowAddressFallback&&group.jibun)" in script
     assert "SIDO_FALLBACK_CENTERS" in script
+    assert 'function revealMapPanel()' in script
+    assert 'panel.scrollIntoView({behavior:"smooth",block:"start"})' in script
+    assert 'await geocode([group.region_name,group.dong]' in script
+    assert 'map.setView([localityCoord.lat,localityCoord.lng],16)' in script
+    assert '지역 지도로 이동했습니다. 검증된 정확 위치를 확인 중입니다.' in script
 
 
 def test_cloudflare_worker_proxies_public_map_sources_when_pc_is_off() -> None:
