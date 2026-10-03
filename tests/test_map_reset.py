@@ -55,6 +55,7 @@ def test_map_marker_recovery_works_without_local_pc_api() -> None:
 def test_confident_complex_search_selects_one_locality_automatically() -> None:
     script = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
 
+    assert r'replace(/\d+(?:단지|차)?$/g,"")' in script
     assert "function confidentSearchMatch(matches)" in script
     assert "top.score<980" in script
     assert "localityKey(item.group)===locality" in script

@@ -381,7 +381,7 @@ function normalized(value){
 }
 function compactName(value){ return normalized(value).replace(/[()（）\[\]{}·.,\-_/]/g,""); }
 function looseName(value){
-  return compactName(value).replace(/\d+(?:단지|차)$/g,"").replace(/(마을|타운|단지|촌)/g,"");
+  return compactName(value).replace(/\d+(?:단지|차)?$/g,"").replace(/(마을|타운|단지|촌)/g,"");
 }
 function nameVariants(value){
   const compact=compactName(value),withoutPhase=compact.replace(/\d+차$/,""),loose=looseName(value);
