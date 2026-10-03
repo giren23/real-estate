@@ -2920,24 +2920,29 @@ async function geocodeGroup(group,allowAddressFallback=true){
 }
 
 async function focusGroup(group,knownCoord){
-  if(!group.hydrated) await hydrateGroup(group);
-  renderDetails(group,activeBoard()?.series.find(s=>s.key===group.key)?.area||group.areas[0]);
-  if(!map) return null;
-  const coord=knownCoord||await geocodeGroup(group);
-  if(!coord){
-    const localityCoord=await geocode([group.region_name,group.dong].filter(Boolean).join(" "));
-    if(!localityCoord)return null;
-    mapLocalityAnchor={coord:localityCoord,lawd_cd:group.lawd_cd,group};
-    map.setView([localityCoord.lat,localityCoord.lng],16);
-    byId("mapState").textContent=group.apt_name+" 주변의 검증된 단지 위치를 확인 중입니다";
-    return localityCoord;
+  const hydration=group.hydrated?Promise.resolve(group):hydrateGroup(group);
+  let focusedCoord=knownCoord||null;
+  if(map){
+    if(focusedCoord){
+      mapLocalityAnchor={coord:focusedCoord,lawd_cd:group.lawd_cd,group};
+      const marker=ensureMapMarker(group,focusedCoord);
+      map.setView([focusedCoord.lat,focusedCoord.lng],16);
+      marker.openPopup();
+      refreshGraphAddButtons(group);
+    }else{
+      focusedCoord=await geocode([group.region_name,group.dong].filter(Boolean).join(" "));
+      if(focusedCoord){
+        mapLocalityAnchor={coord:focusedCoord,lawd_cd:group.lawd_cd,group};
+        map.setView([focusedCoord.lat,focusedCoord.lng],16);
+        byId("mapState").textContent=group.apt_name+" 주변의 검증된 단지 위치를 확인 중입니다";
+        viewportRefreshSuspended=false;
+        scheduleViewportMarkers();
+      }
+    }
   }
-  mapLocalityAnchor={coord,lawd_cd:group.lawd_cd,group};
-  const marker=ensureMapMarker(group,coord);
-  map.setView([coord.lat,coord.lng],16);
-  marker.openPopup();
-  refreshGraphAddButtons(group);
-  return coord;
+  await hydration;
+  renderDetails(group,activeBoard()?.series.find(s=>s.key===group.key)?.area||group.areas[0]);
+  return focusedCoord;
 }
 
 function haversine(a,b){

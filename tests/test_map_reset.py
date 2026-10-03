@@ -42,8 +42,10 @@ def test_map_marker_recovery_works_without_local_pc_api() -> None:
     assert "SIDO_FALLBACK_CENTERS" in script
     assert 'function revealMapPanel()' in script
     assert 'panel.scrollIntoView({behavior:"smooth",block:"start"})' in script
-    assert 'await geocode([group.region_name,group.dong]' in script
-    assert 'map.setView([localityCoord.lat,localityCoord.lng],16)' in script
+    assert 'const hydration=group.hydrated?Promise.resolve(group):hydrateGroup(group)' in script
+    assert 'focusedCoord=await geocode([group.region_name,group.dong]' in script
+    assert 'map.setView([focusedCoord.lat,focusedCoord.lng],16)' in script
+    assert script.index('map.setView([focusedCoord.lat,focusedCoord.lng],16)') < script.index('await hydration;')
     assert '지역 지도로 이동했습니다. 검증된 정확 위치를 확인 중입니다.' in script
 
 
