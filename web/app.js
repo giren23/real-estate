@@ -2930,7 +2930,7 @@ async function focusGroup(group,knownCoord){
       marker.openPopup();
       refreshGraphAddButtons(group);
     }else{
-      focusedCoord=await geocode([group.region_name,group.dong].filter(Boolean).join(" "));
+      focusedCoord=await geocode(addressOf(group));
       if(focusedCoord){
         mapLocalityAnchor={coord:focusedCoord,lawd_cd:group.lawd_cd,group};
         map.setView([focusedCoord.lat,focusedCoord.lng],16);
