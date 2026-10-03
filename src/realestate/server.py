@@ -364,8 +364,60 @@ def _nominatim(path: str, params: dict[str, object]) -> object:
         return payload
 
 
+def _arcgis_geocode(query: str, limit: int) -> list[dict]:
+    cache_key = f"arcgis?limit={limit}&q={query}"
+    cached = _geocode_cache.get(cache_key)
+    if isinstance(cached, list):
+        return cached
+    try:
+        response = requests.get(
+            "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates",
+            params={
+                "f": "json",
+                "countryCode": "KOR",
+                "maxLocations": limit,
+                "outFields": "Match_addr,Addr_type",
+                "SingleLine": query,
+            },
+            headers={"User-Agent": "KoreanRealEstateMap/1.0"},
+            timeout=(3, 8),
+        )
+        response.raise_for_status()
+        candidates = response.json().get("candidates", [])
+    except (requests.RequestException, ValueError, AttributeError):
+        return []
+    rows = []
+    for index, candidate in enumerate(candidates):
+        location = candidate.get("location") or {}
+        try:
+            lat, lon = float(location["y"]), float(location["x"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        attributes = candidate.get("attributes") or {}
+        address = str(candidate.get("address") or attributes.get("Match_addr") or "")
+        rows.append(
+            {
+                "place_id": f"arcgis-{index}-{lat}-{lon}",
+                "lat": str(lat),
+                "lon": str(lon),
+                "name": address.rsplit(",", 1)[-1].strip() or address,
+                "display_name": address,
+                "provider_address": address,
+                "provider": "arcgis",
+                "provider_score": float(candidate.get("score") or 0),
+                "provider_type": str(attributes.get("Addr_type") or ""),
+                "address": {},
+            }
+        )
+    _geocode_cache[cache_key] = rows
+    return rows
+
+
 @app.get("/api/geocode")
 def geocode(q: str = Query(min_length=2, max_length=180), limit: int = Query(default=1, ge=1, le=5)) -> object:
+    arcgis_rows = _arcgis_geocode(q, limit)
+    if arcgis_rows:
+        return arcgis_rows
     return _nominatim(
         "search",
         {

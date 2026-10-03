@@ -235,14 +235,57 @@ async function fetchPublicMapJson(url, timeoutMs = 10000) {
   return response;
 }
 
+async function arcgisGeocodeRows(query, limit) {
+  const target = new URL("https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates");
+  target.search = new URLSearchParams({
+    f: "json",
+    countryCode: "KOR",
+    maxLocations: String(limit),
+    outFields: "Match_addr,Addr_type",
+    SingleLine: query,
+  }).toString();
+  const response = await fetchPublicMapJson(target);
+  if (!response) return [];
+  const payload = await response.json();
+  return (payload?.candidates || []).map((candidate, index) => {
+    const address = String(candidate.address || candidate.attributes?.Match_addr || "");
+    return {
+      place_id: `arcgis-${index}-${candidate.location?.y}-${candidate.location?.x}`,
+      lat: String(candidate.location?.y ?? ""),
+      lon: String(candidate.location?.x ?? ""),
+      name: address.split(",").at(-1)?.trim() || address,
+      display_name: address,
+      provider_address: address,
+      provider: "arcgis",
+      provider_score: Number(candidate.score || 0),
+      provider_type: String(candidate.attributes?.Addr_type || ""),
+      address: {},
+    };
+  }).filter(row => Number.isFinite(Number(row.lat)) && Number.isFinite(Number(row.lon)));
+}
+
+async function nominatimGeocodeRows(query, limit) {
+  const target = new URL("https://nominatim.openstreetmap.org/search");
+  target.search = new URLSearchParams({format: "jsonv2", countrycodes: "kr", addressdetails: "1", limit: String(limit), q: query}).toString();
+  const response = await fetchPublicMapJson(target);
+  if (!response) return [];
+  const rows = await response.json();
+  return Array.isArray(rows) ? rows : [];
+}
+
 async function publicMapApi(incoming) {
   if (incoming.pathname === "/api/geocode") {
     const query = (incoming.searchParams.get("q") || "").trim().slice(0, 180);
     const limit = Math.min(5, Math.max(1, Number(incoming.searchParams.get("limit") || 1)));
     if (query.length < 2) return json({detail: "주소 검색어가 너무 짧습니다."}, 400);
-    const target = new URL("https://nominatim.openstreetmap.org/search");
-    target.search = new URLSearchParams({format: "jsonv2", countrycodes: "kr", addressdetails: "1", limit: String(limit), q: query}).toString();
-    try { const response = await fetchPublicMapJson(target); if (response) return mapApiResponse(response); } catch (_error) {}
+    try {
+      const arcgisRows = await arcgisGeocodeRows(query, limit);
+      if (arcgisRows.length) return json(arcgisRows.slice(0, limit), 200, {"cache-control":"public, max-age=300","x-real-estate-source":"public-map-fallback"});
+    } catch (_error) {}
+    try {
+      const nominatimRows = await nominatimGeocodeRows(query, limit);
+      if (nominatimRows.length) return json(nominatimRows.slice(0, limit), 200, {"cache-control":"public, max-age=300","x-real-estate-source":"public-map-fallback"});
+    } catch (_error) {}
   }
   if (incoming.pathname === "/api/reverse-geocode") {
     const lat = Number(incoming.searchParams.get("lat")), lon = Number(incoming.searchParams.get("lon"));
@@ -277,6 +320,12 @@ async function publicMapApi(incoming) {
 async function localRealEstateApi(request, env, incoming) {
   if (!PUBLIC_REAL_ESTATE_APIS.has(incoming.pathname)) {
     return unavailableApi("이 API는 보안을 위해 로컬 PC에서만 사용할 수 있습니다.");
+  }
+  // Public address search is more complete for Korean apartment names than the
+  // local OSM-only route and keeps map search available while the PC is off.
+  if (incoming.pathname === "/api/geocode") {
+    const publicResponse = await publicMapApi(incoming);
+    if (publicResponse) return publicResponse;
   }
   if (env.UPSTREAM_ORIGIN) {
     const target = new URL(incoming.pathname + incoming.search, env.UPSTREAM_ORIGIN);

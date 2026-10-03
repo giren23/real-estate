@@ -524,6 +524,11 @@ async function hydrateGroup(group){
     group.trades=trades;
     group.history.sort((a,b)=>String(a.month).localeCompare(String(b.month)));
     group.trades.sort((a,b)=>String(a.trade_date).localeCompare(String(b.trade_date)));
+    const locationTrade=[...group.trades].reverse().find(row=>row.jibun||row.road_address||row.roadAddress);
+    if(locationTrade){
+      group.jibun=group.jibun||String(locationTrade.jibun||"").trim();
+      group.road_address=group.road_address||locationTrade.road_address||locationTrade.roadAddress||"";
+    }
     group.build_year=Number([...group.trades].reverse().find(row=>Number(row.build_year)>0)?.build_year)||group.build_year||null;
     group.areas=[...new Set(group.areas.concat(group.trades.map(r=>Number(r.area_m2)),group.history.map(r=>Number(r.area_m2))))].filter(Boolean).sort((a,b)=>a-b);
     const lastTrade=group.trades[group.trades.length-1],lastHistory=group.history[group.history.length-1];
@@ -731,6 +736,15 @@ function matchingApartments(query,limit=12){
     .slice(0,limit);
 }
 
+function confidentSearchMatch(matches){
+  const top=matches[0];
+  if(!top||top.score<980)return null;
+  const contenders=matches.filter(item=>item.score>=top.score-20);
+  if(contenders.length===1)return top;
+  const locality=localityKey(top.group);
+  return contenders.every(item=>localityKey(item.group)===locality)?top:null;
+}
+
 function matchingLocalityGroups(query){
   const needle=compactName(query);
   if(needle.length<2)return [];
@@ -820,7 +834,13 @@ async function search(){
   renderResults(matches,query);
   renderSearchSuggestions(matches,query);
   const localityFocus=focusSearchLocality(query);
-  if(matches.length===1){hideSearchSuggestions();await selectSearchGroup(matches[0].group,runId);}
+  const directMatch=matches.length===1?matches[0]:confidentSearchMatch(matches);
+  if(directMatch){
+    byId("searchInput").value=directMatch.group.apt_name;
+    hideSearchSuggestions();
+    renderResults([{group:directMatch.group,score:directMatch.score}],directMatch.group.apt_name);
+    await selectSearchGroup(directMatch.group,runId);
+  }
   else if(matches.length>1){await localityFocus;if(runId===searchRunId)setStatus("비슷한 단지 "+matches.length+"개 중 하나를 선택해 주세요.");}
 }
 
@@ -2865,7 +2885,7 @@ async function geocode(query){
 
 function geocodeRowText(row){
   const address=row?.address||{};
-  return compactName([row?.name,row?.display_name,...Object.values(address)].filter(Boolean).join(" "));
+  return compactName([row?.name,row?.display_name,row?.provider_address,...Object.values(address)].filter(Boolean).join(" "));
 }
 
 function geocodeRowCoordinate(row){
@@ -2882,10 +2902,14 @@ function validatedGeocodeCoordinate(group,rows,center=null){
     if(center&&haversine(center,coord)>MAX_GEOCODE_DISTANCE_KM)return null;
     const nameScore=Math.max(0,...names.map(name=>apartmentNameScore(mapComplexName(name),row.name||row.display_name||"")));
     const parcelMatch=Boolean(parcel)&&text.includes(compactName(parcel));
+    const providerScore=Number(row.provider_score||0),providerType=String(row.provider_type||"");
+    const preciseKoreanAddress=row.provider==="arcgis"&&providerScore>=90&&["PointAddress","StreetAddress","POI"].includes(providerType);
     // Parcel-only and partial-name results frequently identify a neighbouring
-    // complex. Require an almost exact complex name even when a parcel is set.
-    if(nameScore<980)return null;
-    return {coord,score:nameScore+(parcelMatch?120:0)-(center?haversine(center,coord):0)};
+    // complex. Nominatim therefore still requires an almost exact name. The
+    // Korean ArcGIS address result may use a shorter registered complex name,
+    // so accept only its high-confidence point-address results in the same dong.
+    if(nameScore<980&&!preciseKoreanAddress)return null;
+    return {coord,score:Math.max(nameScore,providerScore*10)+(parcelMatch?120:0)-(center?haversine(center,coord):0)};
   }).filter(Boolean).sort((a,b)=>b.score-a.score);
   return ranked[0]?.coord||null;
 }
@@ -2930,13 +2954,27 @@ async function focusGroup(group,knownCoord){
       marker.openPopup();
       refreshGraphAddButtons(group);
     }else{
-      focusedCoord=await geocode(addressOf(group));
-      if(focusedCoord){
-        mapLocalityAnchor={coord:focusedCoord,lawd_cd:group.lawd_cd,group};
-        map.setView([focusedCoord.lat,focusedCoord.lng],16);
+      const exactCoordinate=geocodeGroup(group,false);
+      const localityCoord=await geocode(addressOf(group));
+      if(localityCoord){
+        focusedCoord=localityCoord;
+        mapLocalityAnchor={coord:localityCoord,lawd_cd:group.lawd_cd,group};
+        map.setView([localityCoord.lat,localityCoord.lng],16);
         byId("mapState").textContent=group.apt_name+" 주변의 검증된 단지 위치를 확인 중입니다";
         viewportRefreshSuspended=false;
         scheduleViewportMarkers();
+      }
+      let verifiedCoord=await exactCoordinate;
+      await hydration;
+      if(!verifiedCoord)verifiedCoord=await geocodeGroup(group,true);
+      if(verifiedCoord){
+        focusedCoord=verifiedCoord;
+        mapLocalityAnchor={coord:verifiedCoord,lawd_cd:group.lawd_cd,group};
+        const marker=ensureMapMarker(group,verifiedCoord);
+        map.setView([verifiedCoord.lat,verifiedCoord.lng],16);
+        marker.openPopup();
+        byId("mapState").textContent=group.apt_name+" 선택 단지 위치";
+        refreshGraphAddButtons(group);
       }
     }
   }

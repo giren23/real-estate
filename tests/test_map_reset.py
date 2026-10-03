@@ -32,7 +32,7 @@ def test_map_marker_recovery_works_without_local_pc_api() -> None:
     assert "geoCache[apartmentGeocodeName(group.apt_name)]" not in script
     assert "building\"=\"residential" not in script
     assert "landuse\"=\"residential" not in script
-    assert "nameScore<980" in script
+    assert 'nameScore<980&&!preciseKoreanAddress' in script
     assert "groupCoordinates.get(group.key)||verifiedComplexCoordinate(group)||null" in script
     assert "geocodeNearbyGroup" not in script
     assert 'way["building"="apartments"]["name"]' in script
@@ -43,10 +43,22 @@ def test_map_marker_recovery_works_without_local_pc_api() -> None:
     assert 'function revealMapPanel()' in script
     assert 'panel.scrollIntoView({behavior:"smooth",block:"start"})' in script
     assert 'const hydration=group.hydrated?Promise.resolve(group):hydrateGroup(group)' in script
-    assert 'focusedCoord=await geocode(addressOf(group))' in script
-    assert 'map.setView([focusedCoord.lat,focusedCoord.lng],16)' in script
-    assert script.index('map.setView([focusedCoord.lat,focusedCoord.lng],16)') < script.index('await hydration;')
+    assert 'const exactCoordinate=geocodeGroup(group,false)' in script
+    assert 'const localityCoord=await geocode(addressOf(group))' in script
+    assert 'map.setView([localityCoord.lat,localityCoord.lng],16)' in script
+    assert 'const marker=ensureMapMarker(group,verifiedCoord)' in script
+    assert 'preciseKoreanAddress' in script
+    assert script.index('map.setView([localityCoord.lat,localityCoord.lng],16)') < script.index('let verifiedCoord=await exactCoordinate;')
     assert '지역 지도로 이동했습니다. 검증된 정확 위치를 확인 중입니다.' in script
+
+
+def test_confident_complex_search_selects_one_locality_automatically() -> None:
+    script = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+
+    assert "function confidentSearchMatch(matches)" in script
+    assert "top.score<980" in script
+    assert "localityKey(item.group)===locality" in script
+    assert "const directMatch=matches.length===1?matches[0]:confidentSearchMatch(matches)" in script
 
 
 def test_cloudflare_worker_proxies_public_map_sources_when_pc_is_off() -> None:
@@ -54,6 +66,8 @@ def test_cloudflare_worker_proxies_public_map_sources_when_pc_is_off() -> None:
 
     assert "async function publicMapApi" in worker
     assert "nominatim.openstreetmap.org/search" in worker
+    assert "geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates" in worker
+    assert 'provider: "arcgis"' in worker
     assert "nominatim.openstreetmap.org/reverse" in worker
     assert "overpass-api.de/api/interpreter" in worker
     assert 'x-real-estate-source", "public-map-fallback"' in worker
