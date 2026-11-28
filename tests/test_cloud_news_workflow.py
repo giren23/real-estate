@@ -79,3 +79,42 @@ def test_default_archive_fallback_respects_an_explicit_page_selection():
     code += '\nconst archives=[{file:"new.json"},{file:"verified.json"}];console.log(JSON.stringify([defaultArchivePage(archives,"verified.json",null),defaultArchivePage(archives,"verified.json","1"),defaultArchivePage(archives,"verified.json","99")]));'
     result = subprocess.run([node,'-e',code],check=True,capture_output=True,text=True)
     assert json.loads(result.stdout) == [2,1,2]
+
+
+@pytest.mark.parametrize('title', [
+    '도이체방크, 연준 회의가 주식 변동성 키울 수 있다 경고',
+    '골드만 연준 10월 추가 인상 관측…매파 신호에 전망 수정',
+    '美 연준 금융안정보고서, 최대 위험에 AI…응답자 87% 지목',
+    '민주당 서울 의원들 부동산 총회…비거주 1주택 종부세 완화 공감',
+    '美 민주당 압승에 AIDC규제 우려…K반도체·전력기기 흔들',
+    '이 대통령 부동산 투기공화국 탈출 약속…집값 안정',
+    '강남 아파트 전세권에 배우자 상가 2곳…재산 19억대 신고',
+    'With Emmys Haul, Apple Joins the Big Leagues of TV',
+])
+def test_financial_reporting_is_not_mistaken_for_entertainment_or_politics(title):
+    from scripts import update_economic_news as news
+    assert news.is_news_article_candidate({'title': title})
+
+
+def test_related_politics_links_cannot_disqualify_a_financial_article():
+    from scripts import update_economic_news as news
+    row = {'title': '기업 신규 공장 설비 투자 발표', 'sources': [
+        {'url': 'https://example.org/business/article'}, {'url': 'https://example.org/policy/politics/other'}]}
+    assert news.is_news_article_candidate(row)
+    assert not news.is_news_article_candidate({'title': '연준이 미우미우 쇼에서 바라본 신발'})
+    assert not news.is_news_article_candidate({'title': '워시 연준의장 경주마, 경마 대회 우승'})
+
+
+def test_a_fresh_feed_entry_does_not_bypass_the_saved_access_cooldown(monkeypatch):
+    from scripts import update_economic_news as news
+    blocked = {'id': 'blocked', 'title': '은행 금리 동결', 'date': '2026-11-29',
+               'article_body_status': 'unavailable', 'publication_status': 'statistics_only',
+               'article_body_failure_kind': 'access_restricted', 'next_body_retry_at': '2999-01-01',
+               'summary_schema_version': news.SUMMARY_SCHEMA_VERSION, 'article_body_attempts': 2}
+    monkeypatch.setattr(news, '_load_day', lambda _: [blocked])
+    fresh = {'id': 'new-feed-id', 'title': blocked['title'], 'date': blocked['date'], 'engagement': {'rank': 2}}
+    items = news.reuse_verified_items(news.date(2026,11,29), [fresh])
+    assert items[0]['id'] == 'blocked' and items[0]['next_body_retry_at'] == '2999-01-01'
+    assert items[0]['engagement'] == {'rank': 2}
+    monkeypatch.setattr(news, '_article_enrichment', lambda _: pytest.fail('blocked page must not be requested again'))
+    news.enrich_article_bodies(items)

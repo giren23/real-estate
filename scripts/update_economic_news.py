@@ -170,10 +170,12 @@ ENTERTAINMENT_TITLE_PATTERN = re.compile(
     r"(?:^\s*\[(?:사진|포토|AK포토|TVis)\]|\b공항\s*화보\b|투모로우바이투게더|시상식|패션쇼|예능|가수|배우|방송인|아빠\s*노래|미우새|Emmys?|\d{1,2}세\s+[가-힣]{2,5}\s*[“\"])", re.I,
 )
 NON_MARKET_POLITICS_PATTERN = re.compile(r"금품수수|특검|검찰|재판|구속|탄핵|여야|국민의힘|민주당|국회의원|팩트대로")
-POLICY_MARKET_PATTERN = re.compile(r"증시|주가|금리|환율|유가|경제|예산|세제|부동산\s*정책|주택\s*공급|대출\s*규제|무역|관세")
+POLICY_MARKET_PATTERN = re.compile(r"증시|주가|주식|금리|환율|유가|경제|예산|세제|부동산\s*(?:정책|대책|세법|규제|총회|투기|진폭|블랙리스트)|주택\s*(?:공급|가격)|집값|종부세|공제|토허구역|대출\s*규제|무역|관세|반도체|전력기기|AIDC", re.I)
 NON_MARKET_SECTION_PATTERN = re.compile(r"/(?:entertainment|sports?|culture|policy/politics)(?:/|$)", re.I)
 CRYPTO_SINGLE_ACTOR_PATTERN = re.compile(r"고래|주요 계정|전량 매도|전량 매수|지정가 주문|평단가", re.I)
-FEDERAL_RESERVE_CONTEXT_PATTERN = re.compile(r"금리|FOMC|Fed(?:eral Reserve)?|중앙은행|국채|물가|증시|달러|통화정책|경제|고용", re.I)
+FEDERAL_RESERVE_CONTEXT_PATTERN = re.compile(r"금리|FOMC|Fed(?:eral Reserve)?|중앙은행|국채|물가|증시|달러|통화정책|경제|고용|주식|환율|금융|인플레|CPI|PPI|스테이블코인|토큰화|점도표|연준.{0,24}(?:인상|인하|긴축|통화|매파|비둘기|규제|총재|의장|이사|회의|독립성)", re.I)
+FINANCIAL_EVENT_TITLE_PATTERN = re.compile(r"주가|주식|상장|매출|영업이익|순이익|실적|공시|인수|투자|채권|경매|분양권|재산|공모전|Apple|Netflix|Disney|OTT", re.I)
+NON_FINANCIAL_LIFESTYLE_PATTERN = re.compile(r"경주마|경마|FA컵|골든디스크|가요대전|패션위크|미우미우", re.I)
 RATE_DECISION_PATTERN = re.compile(r"(?:기준금리|정책금리|연준|한은|한국은행).{0,28}(?:인상|인하|동결|올렸|내렸)|(?:금리).{0,18}(?:인상 결정|인하 결정|동결 결정|올렸다|내렸다)", re.I)
 US_ORIGIN_TERMS = ("미국", "美 ", "연방준비제도", "연준", "Federal Reserve", "Fed ", "트럼프", "Trump", "백악관", "White House", "월가", "Wall Street", "나스닥", "NASDAQ", "S&P 500", "뉴욕증시")
 GLOBAL_ORIGIN_TERMS = ("중국", "中 ", "China", "일본", "日 ", "Japan", "유럽", "European Union", "EU ", "영국", "독일", "프랑스", "러시아", "우크라이나", "중동", "G7", "OPEC", "IMF", "세계은행", "World Bank")
@@ -500,20 +502,16 @@ def is_news_article_candidate(item: dict[str, object]) -> bool:
     if is_non_editorial_notice(item):
         return False
     title = clean_text(str(item.get("title") or ""))
-    source_urls = " ".join(
-        str(value or "")
-        for value in [
-            item.get("article_source_url"), item.get("canonical_source_url"),
-            *[source.get("url") for source in (item.get("sources") or []) if isinstance(source, dict)],
-        ]
-    )
+    source_urls = " ".join(_source_urls(item))
     if not title or NON_ARTICLE_TITLE_PATTERN.search(title):
         return False
-    if NON_MARKET_SECTION_PATTERN.search(source_urls) and not POLICY_MARKET_PATTERN.search(title):
+    if NON_MARKET_SECTION_PATTERN.search(source_urls) and not (POLICY_MARKET_PATTERN.search(title) or FINANCIAL_EVENT_TITLE_PATTERN.search(title)):
         return False
-    if ENTERTAINMENT_TITLE_PATTERN.search(title):
+    if ENTERTAINMENT_TITLE_PATTERN.search(title) and not FINANCIAL_EVENT_TITLE_PATTERN.search(title):
         return False
-    if NON_MARKET_POLITICS_PATTERN.search(title) and not POLICY_MARKET_PATTERN.search(title):
+    if NON_FINANCIAL_LIFESTYLE_PATTERN.search(title) and not FINANCIAL_EVENT_TITLE_PATTERN.search(title):
+        return False
+    if NON_MARKET_POLITICS_PATTERN.search(title) and not (POLICY_MARKET_PATTERN.search(title) or FINANCIAL_EVENT_TITLE_PATTERN.search(title)):
         return False
     # '연준'은 연방준비제도와 연예인 이름으로 모두 쓰인다. 금융 문맥이 없으면
     # 금리·시장 뉴스로 인식하지 않는다.
@@ -2770,8 +2768,9 @@ def reuse_verified_items(target: date, items: list[dict[str, object]]) -> list[d
     rows: list[dict[str, object]] = []
     for item in items:
         old = by_id.get(str(item.get("id"))) or by_title.get(_title_key(item))
-        if old and is_publishable_detail(old) and (int(old.get("extraction_version") or 0) >= NQ.EXTRACTION_VERSION
-                                                   or old.get("manual_verified") and old.get("editorial_verification")):
+        if old and (not article_retry_due(old) or is_publishable_detail(old) and (
+                int(old.get("extraction_version") or 0) >= NQ.EXTRACTION_VERSION
+                or old.get("manual_verified") and old.get("editorial_verification"))):
             reused = dict(old)
             for key in ("related_reports", "source_count", "engagement"):
                 if item.get(key):
@@ -2806,6 +2805,10 @@ def rebuild_index() -> None:
         for item in payload.get("items", []):
             if is_news_article_candidate(item):
                 item = upgrade_existing_item(item)
+                if is_publishable_detail(item) and item.get("recovery_status") == "statistics_only_not_article":
+                    item.pop("article_body_failure_kind", None)
+                    item.pop("article_body_error", None)
+                    item["recovery_status"] = "verified"
             else:
                 # Eligibility is a publication decision, never permission to
                 # erase an archived record when classification rules change.
