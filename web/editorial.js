@@ -24,33 +24,37 @@
     return parts.length === 3 ? `${parts[0]}.${parts[1]}.${parts[2]}` : String(value || "");
   };
   const publishedTime = item => item.published_time || item.sources?.[0]?.published_time || item.sources?.[0]?.published_at || item.date || "";
-  const formatPublishedTime = value => { const match = String(value || "").match(/^(\d{2})(\d{2})-(\d{2})-(\d{2})(?:T|\s)(\d{2}):(\d{2})/); return match ? `${match[2]}.${match[3]}.${match[4]} ${match[5]}:${match[6]}` : `${formatDate(value).replace(/^20/,"")} · 시각 미제공`; };
-  const statusBadge = item => item.title_match_status === "similar_article_verified" ? '<small class="news-status-badge similar">유사기사</small>' : item.article_body_status === "unavailable" ? '<small class="news-status-badge unverified">미확인</small>' : "";
-  const isAdministrativeNotice = item => /\b(?:net\s+asset\s+value(?:\(s\))?|nav\s+per\s+share|dealing\s+date|ucits\s+etf|regulatory\s+announcement)\b/i.test(`${item?.title || ""} ${item?.summary || ""}`);
+  const formatPublishedTime = value => {
+    const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T|\s)(\d{2}):(\d{2})/);
+    return match ? `${match[1]}.${match[2]}.${match[3]} ${match[4]}:${match[5]}` : `${formatDate(value)} · 시간 미제공`;
+  };
+  const statusBadge = item => item.title_match_status === "similar_article_verified" ? '<small class="news-status-badge similar">유사기사</small>' : item.article_body_status === "unavailable" ? '<small class="news-status-badge unverified">미확인</small>' : item.article_body_status === "verified_excerpt" ? '<small class="news-status-badge excerpt">본문 일부</small>' : "";
 
   let contentById = new Map();
+  const isAdministrativeNotice = item => /\b(?:net\s+asset\s+value(?:\(s\))?|nav\s+per\s+share|dealing\s+date|ucits\s+etf|regulatory\s+announcement)\b/i.test(`${item?.title || ""} ${item?.summary || ""}`);
   const isRateDecision = item => /(?:기준금리|정책금리|연준|한은|한국은행).{0,28}(?:인상|인하|동결|올렸|내렸)|금리.{0,18}(?:인상 결정|인하 결정|동결 결정|올렸다|내렸다)/i.test(item.title || "");
-  const hasVerifiedLegacySummary = item => {
-    const paragraphs = item?.article_summary || item?.narrative_paragraphs || [];
-    const totalLength = paragraphs.reduce((sum, row) => sum + String(row || "").trim().length, 0);
-    const hasSource = (item?.sources || []).some(source => /^https?:\/\//i.test(String(source?.url || "")));
-    const sixW = item?.six_w_one_h || {};
-    const hasSixW = ["who", "when", "what", "why", "how"].every(key => Array.isArray(sixW[key]) && sixW[key].length);
-    return paragraphs.length >= 3 && totalLength >= 250 && String(item?.core_summary || "").trim().length >= 80 && hasSource && hasSixW;
+  // Same publication rule as news.js and the server (is_publishable_detail →
+  // detail_visible).  Summary length is never a substitute for a verified body.
+  const PUBLISHABLE_BODY = ["full_text", "verified_excerpt", "verified_reconstruction"];
+  const canShowNewsDetail = item => {
+    if (typeof item?.detail_visible === "boolean") return item.detail_visible;
+    if (item?.quality_gate && item.quality_gate.passed === false) return false;
+    return item?.publication_status === "detail" && PUBLISHABLE_BODY.includes(item?.article_body_status);
   };
-  const hasSubstantiveSummary = item => {
-    const title = String(item?.title || "").replace(/\s+/g, " ").trim();
-    const paragraphs = item?.article_summary || item?.narrative_paragraphs || [];
-    const text = (paragraphs.length ? paragraphs.join(" ") : String(item?.summary || "")).replace(/\s+/g, " ").trim();
-    return text.length >= 240 && text !== title && !text.startsWith(`${title} ${item?.publisher || ""}`.trim()) && (paragraphs.length >= 2 || (text.match(/[.!?。]|(?:함|임|했음|됐음)\s/g) || []).length >= 2);
+  const OVERRIDE_LOCKED = new Set(["id", "article_body_status", "publication_status", "detail_visible", "quality_gate", "identity_check"]);
+  const applyNewsOverride = (item, override) => {
+    if (!override) return item;
+    const content = Object.fromEntries(Object.entries(override).filter(([key]) => !OVERRIDE_LOCKED.has(key)));
+    const manualVerified = override.manual_verified === true && (override.sources || []).some(source => /^https:\/\//i.test(String(source.url || "")));
+    return {...item, ...content, manual_override: true, ...(manualVerified ? {article_body_status: "verified_reconstruction", publication_status: "detail", detail_visible: true} : {})};
   };
-  const canShowNewsDetail = item => ["fetched", "full_text", "verified_reconstruction"].includes(item?.article_body_status) || hasVerifiedLegacySummary(item) || hasSubstantiveSummary(item);
 
   function cardHtml(item) {
     const tags = (item.tags || []).slice(0, 3).map(tag => `<span>${escapeHtml(tag)}</span>`).join("");
     return `<button type="button" class="editorial-card" data-editorial-id="${escapeHtml(item.id)}">
+      <time class="editorial-date" datetime="${escapeHtml(publishedTime(item))}">${escapeHtml(formatPublishedTime(publishedTime(item)))}</time>
       <span class="editorial-card-body">
-        <span class="editorial-card-meta"><span>${escapeHtml(item.eyebrow)} · 약 ${escapeHtml(item.read_minutes)}분</span><time class="editorial-date" datetime="${escapeHtml(publishedTime(item))}">${escapeHtml(formatPublishedTime(publishedTime(item)))}</time></span>
+        <span class="editorial-card-meta">${escapeHtml(item.eyebrow)} · 약 ${escapeHtml(item.read_minutes)}분</span>
         <strong>${item.important ? '<span class="important-prefix">[중요]</span> ' : ''}${escapeHtml(item.title)} ${statusBadge(item)}</strong>
         <span class="editorial-card-summary">${escapeHtml(item.summary)}</span>
         <span class="editorial-card-tags">${tags}</span>
@@ -72,45 +76,13 @@
 
   function sectionHtml(section) {
     const more = section.more_url ? `<a class="editorial-more" href="${safeUrl(section.more_url)}">더보기 →</a>` : "";
-    const search = section.id === "news" ? `<div class="editorial-news-search"><button id="integratedNewsSearchToggle" type="button" aria-label="경제 통합 뉴스 검색" aria-expanded="false" title="기사 검색">⌕</button><input id="integratedNewsSearch" type="search" inputmode="search" autocomplete="off" placeholder="기사 제목·발행사·요약 검색" hidden></div>` : "";
     return `<section class="editorial-section editorial-${escapeHtml(section.id)}">
       <div class="editorial-section-title">
-        <div><span aria-hidden="true">${escapeHtml(section.icon)}</span><h3>${escapeHtml(section.title)}</h3>${search}</div>
+        <div><span aria-hidden="true">${escapeHtml(section.icon)}</span><h3>${escapeHtml(section.title)}</h3></div>
         <span class="editorial-section-tools"><small>${escapeHtml(section.description)}</small>${more}</span>
       </div>
       <div class="editorial-list">${(section.items || []).map(cardHtml).join("")}</div>
     </section>`;
-  }
-
-  function bindIntegratedNewsSearch(section) {
-    const input = document.getElementById("integratedNewsSearch");
-    const toggle = document.getElementById("integratedNewsSearchToggle");
-    const list = hub.querySelector(".editorial-news .editorial-list");
-    if (!input || !toggle || !list) return;
-    const searchable = section.search_items || section.items || [];
-    const render = () => {
-      const query = input.value.trim().toLocaleLowerCase("ko-KR");
-      const matched = query ? searchable.filter(item => [item.title, item.publisher, item.summary, item.eyebrow, ...(item.tags || [])].join(" ").toLocaleLowerCase("ko-KR").includes(query)) : section.items || [];
-      const shown = matched.slice(0, query ? 30 : 10);
-      list.innerHTML = shown.length ? shown.map(cardHtml).join("") : '<p class="editorial-loading">검색 조건에 맞는 기사가 없습니다.</p>';
-      list.querySelectorAll("[data-editorial-id]").forEach(button => button.addEventListener("click", () => openArticle(button.dataset.editorialId)));
-    };
-    input.addEventListener("input", render);
-    toggle.addEventListener("click", () => {
-      const opening = input.hidden;
-      input.hidden = !opening;
-      toggle.setAttribute("aria-expanded", String(opening));
-      if (opening) input.focus();
-      else { input.value = ""; render(); }
-    });
-    input.addEventListener("keydown", event => {
-      if (event.key !== "Escape") return;
-      input.hidden = true;
-      input.value = "";
-      toggle.setAttribute("aria-expanded", "false");
-      render();
-      toggle.focus();
-    });
   }
 
   function metricsHtml(metrics) {
@@ -175,31 +147,28 @@
       if (!response.ok) throw new Error("브리핑 자료를 불러오지 못했습니다.");
       return response.json();
     }),
-    fetch("content/news/index.json?v=5", { cache: "no-store" }).then(response => response.ok ? response.json() : null).catch(() => null),
+    fetch("content/news/index.json?v=6", { cache: "no-store" }).then(response => response.ok ? response.json() : null).catch(() => null),
     fetch("content/analysis/index.json?v=1", { cache: "no-store" }).then(response => response.ok ? response.json() : null).catch(() => null),
     fetch("content/news/domestic-overrides.json?v=2", { cache: "no-store" }).then(response => response.ok ? response.json() : {items:[]}).catch(() => ({items:[]}))
   ])
     .then(([data, news, automatic, overrides]) => {
       const overrideById = new Map((overrides.items || []).map(item => [item.id,item]));
       if (news) {
-        const apply = item => ({...item,...(overrideById.get(item.id) || {})});
-        news.latest_items = (news.latest_items || []).map(apply).filter(item => !isAdministrativeNotice(item)).filter(canShowNewsDetail);
-        news.items = (news.items || []).map(apply).filter(item => !isAdministrativeNotice(item));
-        // 중요뉴스는 본문 수집 실패 여부와 별개로 선별 결과를 표시한다.
-        // 상세 화면은 확보된 원문/요약 범위를 명시해 제공한다.
-        news.important_items = (news.important_items || []).map(apply).filter(item => !isAdministrativeNotice(item));
+        const apply = item => applyNewsOverride(item, overrideById.get(item.id));
+        news.latest_items = (news.latest_items || []).map(apply).filter(canShowNewsDetail).filter(item=>!isAdministrativeNotice(item));
+        // 중요뉴스도 원문이 검증된 항목만 공개한다. 원문 미확인 항목은
+        // 통계에는 남기되 재시도 성공 전까지 카드/상세 화면에 노출하지 않는다.
+        news.important_items = (news.important_items || []).map(apply).filter(canShowNewsDetail).filter(item=>!isAdministrativeNotice(item));
       }
       const sections = Array.isArray(data.sections) ? data.sections : [];
-      const importantItems = news ? [...(news.latest_items || []).filter(isRateDecision), ...(news.important_items || [])].filter((item, index, rows) => rows.findIndex(row => row.id === item.id) === index).slice(0, 10).map(item => ({...item, important:true})) : [];
-      const importantIds = new Set(importantItems.map(item => item.id));
       const newsSection = sections.find(section => section.id === "news");
       if (newsSection && news && Array.isArray(news.latest_items)) {
         newsSection.title = "경제 통합 뉴스";
         newsSection.description = `${news.total_articles || 0}건 · 경제·금융·증시·산업·부동산`;
-        newsSection.search_items = (news.items || news.latest_items).filter(canShowNewsDetail).filter(item => !importantIds.has(item.id));
-        newsSection.items = newsSection.search_items.slice(0, 10);
+        newsSection.items = news.latest_items.slice(0, 6);
         newsSection.more_url = "news.html";
       }
+      const importantItems = news ? [...(news.latest_items || []).filter(isRateDecision), ...(news.important_items || [])].filter((item, index, rows) => rows.findIndex(row => row.id === item.id) === index).slice(0, 10).map(item => ({...item, important:true})) : [];
       importantHtml(importantItems);
       const mergeSection = (id, generated, label, moreUrl) => {
         const section = sections.find(row => row.id === id);
@@ -213,11 +182,10 @@
         mergeSection("company", automatic.company_items, "기업분석", "analysis.html?type=company");
         mergeSection("analysis", automatic.analysis_items, "심층분석", "analysis.html?type=analysis");
       }
-      contentById = new Map([...sections.flatMap(section => [...(section.items || []), ...(section.search_items || [])]), ...importantItems].map(item => [item.id, item]));
+      contentById = new Map([...sections.flatMap(section => section.items || []), ...importantItems].map(item => [item.id, item]));
       hub.innerHTML = sections.map(sectionHtml).join("");
       updated.textContent = `기준 ${formatDate(data.as_of)} · 원문 링크 포함`;
       hub.querySelectorAll("[data-editorial-id]").forEach(button => button.addEventListener("click", () => openArticle(button.dataset.editorialId)));
-      if (newsSection) bindIntegratedNewsSearch(newsSection);
       importantList?.querySelectorAll("[data-editorial-id]").forEach(button => button.addEventListener("click", () => openArticle(button.dataset.editorialId)));
     })
     .catch(error => {

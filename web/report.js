@@ -12,14 +12,6 @@
       return "#";
     }
   };
-  const isAggregatorUrl = value => {
-    try {
-      const host = new URL(String(value || ""), location.origin).hostname.toLowerCase();
-      return ["news.google.com", "google.com", "www.google.com", "bing.com", "www.bing.com"].includes(host);
-    } catch (_error) {
-      return true;
-    }
-  };
   const number = value => {
     const match = String(value ?? "").replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
     return match ? Math.abs(Number(match[0])) : 0;
@@ -71,15 +63,17 @@
     return `<div class="report-scenarios">${rows.slice(0, 3).map((row, index) => `<article class="scenario-${index}"><span>${esc(row.label || ["상방", "기본", "하방"][index])}</span><b>${esc(row.title || "확인 조건")}</b><p>${esc(row.body || row)}</p></article>`).join("")}</div>`;
   }
 
+  // Translation is decided by the text's language, never by the story's region.
+  const isForeignText = value => {
+    const text = String(value || "");
+    const latin = (text.match(/[A-Za-z]/g) || []).length, korean = (text.match(/[가-힣]/g) || []).length;
+    return latin >= 24 && latin > Math.max(12, korean * 1.25);
+  };
+
   function sourceLedgerHtml(sources) {
     if (!Array.isArray(sources) || !sources.length) return "";
     const labels={domestic:"국내",us:"미국",global:"글로벌"};
-    return `<section class="report-sources"><h3>공식 원자료·관련 보도</h3><p>주요 경제·시장 뉴스 원문과 공시·정부통계·거래소 자료를 구분해 제공합니다.</p><ol class="report-source-links">${sources.map((source, index) => {
-      const unresolved = source.link_status === "unresolved_aggregator" || isAggregatorUrl(source.url) || safe(source.url) === "#";
-      const label = `<span>${index === 0 ? "대표 근거 · " : ""}${esc(source.source_type||labels[source.region]||"언론")} · ${esc(source.publisher || "원문")} · ${esc(source.published_at || "-")}</span><b>${esc(source.title_ko || source.document || source.title || "원문")}</b>`;
-      const link = unresolved ? `<div class="source-link-unresolved">${label}<em>원문 주소 확인 중</em></div>` : `<a href="${safe(source.url)}" target="_blank" rel="noopener noreferrer">${label}<em>원문 보기 ↗</em></a>`;
-      return `<li>${link}${source.summary_ko?`<p class="source-translation"><b>한국어 번역 요약</b>${esc(source.summary_ko)}</p>`:source.region&&source.region!=="domestic"?'<p class="source-translation pending">번역 API가 연결되면 검증된 한국어 요약이 이 위치에 자동 표시됩니다.</p>':""}</li>`;
-    }).join("")}</ol></section>`;
+    return `<section class="report-sources"><h3>공식 원자료·관련 보도</h3><p>주요 경제·시장 뉴스 원문과 공시·정부통계·거래소 자료를 구분해 제공합니다.</p><ol class="report-source-links">${sources.map((source, index) => `<li><a href="${safe(source.url)}" target="_blank" rel="noopener noreferrer"><span>${index === 0 ? "대표 근거 · " : ""}${esc(source.source_type||labels[source.region]||"언론")} · ${esc(source.publisher || "원문")} · ${esc(source.published_at || "-")}</span><b>${esc(source.title_ko || source.document || source.title || "원문 보기")}</b><em>원문 보기 ↗</em></a>${source.summary_ko?`<p class="source-translation"><b>한국어 번역 요약</b>${esc(source.summary_ko)}</p>`:isForeignText(`${source.title || ""} ${source.summary_original || ""}`)?'<p class="source-translation pending">외국어 원문 · 검증된 한국어 번역이 아직 없습니다.</p>':""}</li>`).join("")}</ol></section>`;
   }
 
   const WIKI_SEARCH = "https://namu.wiki/Search?q=";
@@ -130,16 +124,98 @@
     }).join("");
   }
 
+  function sixWOneHHtml(item) {
+    const values = item.six_w_one_h || {};
+    const evidence = item.six_w_one_h_evidence || {};
+    const labels = [
+      ["who", "누가"], ["when", "언제"], ["where", "어디서"], ["what", "무엇을"],
+      ["why", "왜"], ["how", "어떻게"], ["result", "결과·영향"]
+    ];
+    const rows = labels.map(([key,label])=>{
+      const facts = Array.isArray(values[key]) ? values[key].filter(Boolean) : [];
+      return `<article class="${facts.length ? "verified" : "missing"}"><b>${label}</b><p>${facts.length ? facts.map(esc).join("<br>") : "원문에 명시되지 않음 · 추정하지 않음"}</p></article>`;
+    }).join("");
+    const meta = item.six_w_one_h_meta || {};
+    const published = item.date ? ` · 기사 발행일 ${esc(item.date)}` : "";
+    const evidenceRows = labels.flatMap(([key,label])=>(Array.isArray(evidence[key]) ? evidence[key] : []).slice(0,4).map(row=>`<li><b>${label} · ${esc(row.value || "")}${row.resolved ? ` → ${esc(row.resolved)}` : ""}</b>${row.basis ? `<small>${esc(row.basis)}</small>` : ""}<p>${esc(row.evidence || "")}</p></li>`)).join("");
+    const evidenceBlock = evidenceRows ? `<details class="news-sixw-evidence"><summary>근거 문장 보기</summary><ul>${evidenceRows}</ul></details>` : "";
+    return `<section class="news-sixw-grid"><div class="news-sixw-grid-head"><h3>6하 원칙 확인표</h3><span>원문 근거만 표시 · 빈 칸은 원문에서 확인하지 못한 항목${published}</span></div><div>${rows}</div>${evidenceBlock}</section>`;
+  }
+
+  const BODY_LABELS = {
+    full_text: "원문 본문 확보",
+    verified_excerpt: "본문 일부 또는 짧은 기사 확인",
+    verified_reconstruction: "수동 검수 요약",
+    fetched: "원문 본문 확보",
+    unavailable: "원문 본문 미확보"
+  };
+  const COMPLETENESS_LABELS = {
+    complete: "기사 경계 확인", complete_region: "본문 영역 확인", complete_short: "짧은 기사 전체",
+    boundary_unconfirmed: "전체 본문 여부 미확인"
+  };
+  const SOURCE_ROLE_LABELS = {
+    full_text: "발행사 페이지", portal_republication: "포털 재전재본(원발행사 원문 아님)",
+    publisher_blog_republication: "발행사 운영 블로그 게시본(원발행사 사이트 아님)"
+  };
+  const TRANSLATION_LABELS = {
+    not_needed: "번역 불필요(한국어 원문)", translated: "번역 완료·수치 대조 통과",
+    translation_unverified: "번역 검증 실패 · 원문 언어로 표시", translation_unavailable: "번역 미완료 · 원문 언어로 표시"
+  };
+
+  function coverageBadgeHtml(item) {
+    const status = item.article_body_status || "unavailable";
+    const rows = [
+      ["원문 확보", `${BODY_LABELS[status] || status}${item.body_completeness ? ` · ${COMPLETENESS_LABELS[item.body_completeness] || item.body_completeness}` : ""}`],
+      ["출처 유형", SOURCE_ROLE_LABELS[item.primary_source_role] || (item.primary_source_role ? item.primary_source_role : "기존 수집본")],
+      ["기사 발행", item.published_time || item.date || "-"]
+    ];
+    if (item.body_source_publisher) rows.push(["본문 출처", item.body_source_publisher]);
+    if (item.body_published_at) rows.push(["원문 발행", item.body_published_at]);
+    if (item.date_correction) rows.push(["발행일 정정", `${item.date_correction.previous_date || "-"} → ${item.date_correction.verified_date || item.date || "-"}`]);
+    if (item.manual_verified && item.editorial_verification) rows.push(["편집 검수", "원문 대조 후 직접 검수한 요약"]);
+    if (item.translation_status) rows.push(["번역", TRANSLATION_LABELS[item.translation_status] || item.translation_status]);
+    if (item.title_match_status === "similar_article_verified") rows.push(["제목 대체", `피드 제목과 다른 같은 사건 기사로 확인 · 피드 제목: ${item.feed_title || "-"}`]);
+    const diagnostics = item.extraction_diagnostics || {};
+    if (diagnostics.sentences) rows.push(["본문 분량", `${diagnostics.sentences}문장 · ${Number(diagnostics.characters || 0).toLocaleString()}자 (제목·부제·캡션·메타설명 제외)`]);
+    const link = item.article_source_url ? `<a href="${safe(item.article_source_url)}" target="_blank" rel="noopener noreferrer">확보한 원문 주소 ↗</a>` : "";
+    return `<section class="news-coverage"><h3>원문 확보 범위</h3><dl>${rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>${link}</section>`;
+  }
+
+  function keyFiguresHtml(item) {
+    const rows = (Array.isArray(item.key_figures) ? item.key_figures : []).filter(row=>row?.value && row.kind !== "기간·시점");
+    if (!rows.length) return "";
+    const missingCount = Math.max(0, Number(item.figure_coverage?.important_total || 0) - Number(item.figure_coverage?.important_in_summary || 0));
+    const missing = missingCount ? `<p class="news-figures-note">요약 문단에 포함되지 않은 수치 ${missingCount}개는 아래에서 문맥과 함께 확인할 수 있습니다.</p>` : "";
+    const list = values => `<ul>${values.map(row=>`<li><strong class="news-number">${esc(row.value)}</strong><span>${esc([row.label, row.qualifier, row.direction].filter(Boolean).join(" · ") || row.kind || "")}</span><p>${esc(row.meaning || row.context || "")}</p></li>`).join("")}</ul>`;
+    const more = rows.length > 14 ? `<details><summary>나머지 핵심 수치 ${rows.length - 14}개 펼치기</summary>${list(rows.slice(14))}</details>` : "";
+    return `<section class="news-figures"><h3>핵심 수치와 문맥</h3>${missing}${list(rows.slice(0,14))}${more}</section>`;
+  }
+
+  function factStatusHtml(item) {
+    const rows = Array.isArray(item.fact_status) ? item.fact_status.filter(row=>row?.statement).slice(0,12) : [];
+    if (!rows.length) return "";
+    return `<section class="news-fact-status"><h3>확정·발표·전망 구분</h3><ul>${rows.map(row=>`<li><span>${esc(row.status || "보도된 사실")}</span><p>${esc(row.statement)}</p></li>`).join("")}</ul></section>`;
+  }
+
+  function recoverySearchHtml(item) {
+    if (item.publication_status !== "statistics_only" && item.article_body_status !== "unavailable") return "";
+    const links = Array.isArray(item.recovery_search_links) ? item.recovery_search_links.filter(row=>row?.url) : [];
+    const retry = item.next_body_retry_at ? `<small>자동 재확인 예정: ${esc(String(item.next_body_retry_at).replace("T", " ").slice(0, 16))}</small>` : "";
+    return `<section class="news-recovery"><h3>원문 다시 찾기</h3><p>본문을 확인하지 못한 기사는 주요기사에서 제외합니다. 발행사 검색을 우선하고, 아래 제목 검색 경로와 당일 섹션 목록으로 재확인합니다.</p>${retry}${links.length ? `<div>${links.map(row=>`<a href="${safe(row.url)}" target="_blank" rel="noopener noreferrer">${esc(row.label || "제목 검색")} ↗</a>`).join("")}</div>` : ""}</section>`;
+  }
+
   function newsReportHtml(item) {
     const narrative = newsNarrative(item);
     const summaryHeading = narrative.title === "기사 요약" ? "기사 요약" : `${narrative.title} 요약`;
     const body = narrative.paragraphs.map(paragraph=>`<p>${emphasizedText(paragraph,narrative.keywords)}</p>`).join("");
-    const verifiedSourceUrl = narrative.sourceUrl || item.article_source_url;
-    const sources = verifiedSourceUrl ? (item.sources || []).map((source,index)=>index === 0 ? {...source,url:verifiedSourceUrl,link_status:"verified_direct"} : source) : item.sources;
+    const sources = narrative.sourceUrl ? (item.sources || []).map((source,index)=>index === 0 ? {...source,url:narrative.sourceUrl} : source) : item.sources;
     const charts = Array.isArray(item.news_charts) && item.news_charts.length ? `<section class="news-evidence-charts"><h3>관련 통계·비교</h3><div class="report-chart-grid">${item.news_charts.map(chartHtml).join("")}</div></section>` : "";
-    const uncertainties = Array.isArray(item.uncertainties) && item.uncertainties.length ? item.uncertainties : ["기사 원문에서 별도로 확인할 중대한 불확실성 없음"];
+    // Older archives stored "없음" when no uncertainty sentence was detected;
+    // an undetected uncertainty is not the same as no uncertainty.
+    const NO_UNCERTAINTY_FOUND = "원문에서 불확실성·조건을 명시한 문장을 찾지 못함(불확실성이 없다는 뜻은 아님)";
+    const uncertainties = (Array.isArray(item.uncertainties) && item.uncertainties.length ? item.uncertainties : [NO_UNCERTAINTY_FOUND]).map(value=>value === "기사 원문에서 별도로 확인할 중대한 불확실성 없음" ? NO_UNCERTAINTY_FOUND : value);
     const checks = `<section class="news-checks"><h3>확인이 필요한 사항</h3><ul>${uncertainties.map(value=>`<li>${esc(value)}</li>`).join("")}</ul></section>`;
-    return `<header class="report-head news-report-head"><span>${esc(item.eyebrow)} · ${esc(item.date)} · 약 ${esc(item.read_minutes || 3)}분</span><h2 id="editorialDialogTitle">${esc(item.title)}</h2></header><section class="news-sixw-summary"><h3>${esc(summaryHeading)}</h3>${body}</section><section class="news-core-summary"><h3>핵심 요약</h3><p>${emphasizedText(narrative.core,narrative.keywords)}</p></section>${checks}${videoTranscriptHtml(item.video_transcript)}${charts}${sourceLedgerHtml(sources)}<p class="report-disclaimer">${esc(item.disclaimer || "공개자료를 바탕으로 작성한 정보이며 투자 권유가 아닙니다.")}</p>`;
+    return `<header class="report-head news-report-head"><span>${esc(item.eyebrow)} · ${esc(item.date)} · 약 ${esc(item.read_minutes || 3)}분</span><h2 id="editorialDialogTitle">${esc(item.title)}</h2></header>${coverageBadgeHtml(item)}<section class="news-sixw-summary"><h3>${esc(summaryHeading)}</h3>${body}</section>${sixWOneHHtml(item)}<section class="news-core-summary"><h3>핵심 요약</h3><p>${emphasizedText(narrative.core,narrative.keywords)}</p></section>${keyFiguresHtml(item)}${factStatusHtml(item)}${checks}${recoverySearchHtml(item)}${videoTranscriptHtml(item.video_transcript)}${charts}${sourceLedgerHtml(sources)}<p class="report-disclaimer">${esc(item.disclaimer || "공개자료를 바탕으로 작성한 정보이며 투자 권유가 아닙니다.")}</p>`;
   }
 
   function videoTranscriptHtml(video) {

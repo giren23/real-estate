@@ -1,5 +1,6 @@
 from importlib.util import module_from_spec, spec_from_file_location
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -8,6 +9,11 @@ SPEC = spec_from_file_location("economic_news_structured", ROOT / "scripts" / "u
 MODULE = module_from_spec(SPEC)
 assert SPEC and SPEC.loader
 SPEC.loader.exec_module(MODULE)
+
+
+def fake_extraction(paragraphs: list[str], path: str = "container"):
+    """Network-free stand-in for fetch_article(): a recognised body region."""
+    return MODULE.NQ.Extraction(paragraphs=list(paragraphs), path=path, boundary_closed=True)
 
 
 def test_automatic_body_summary_has_stable_json_contract() -> None:
@@ -60,6 +66,38 @@ def test_failed_old_article_gets_one_new_schema_retry_then_cooldown() -> None:
     assert not MODULE.article_retry_due(updated)
 
 
+def test_recent_unavailable_article_retries_in_three_hours() -> None:
+    now = datetime(2026, 9, 15, 0, 0, tzinfo=timezone(timedelta(hours=9)))
+    retry_at = MODULE.next_body_retry_at({"date": "2026-09-14", "article_body_attempts": 0}, now)
+    assert retry_at == "2026-09-15T03:00:00+09:00"
+    item = {
+        "article_body_status": "unavailable",
+        "summary_schema_version": MODULE.SUMMARY_SCHEMA_VERSION,
+        "next_body_retry_at": retry_at,
+    }
+    assert not MODULE.article_retry_due(item, now + timedelta(hours=2, minutes=59))
+    assert MODULE.article_retry_due(item, now + timedelta(hours=3))
+
+
+def test_recent_legacy_seven_day_cooldown_is_shortened() -> None:
+    now = datetime(2026, 9, 15, 1, 0, tzinfo=timezone(timedelta(hours=9)))
+    item = {
+        "date": "2026-09-14",
+        "article_body_status": "unavailable",
+        "article_body_attempts": 1,
+        "article_body_checked_at": "2026-09-14T21:40:53+09:00",
+        "summary_schema_version": MODULE.SUMMARY_SCHEMA_VERSION,
+        "next_body_retry_at": "2026-09-21",
+    }
+    assert MODULE.article_retry_due(item, now)
+
+
+def test_old_repeated_failures_back_off_for_seven_days() -> None:
+    now = datetime(2026, 9, 15, 0, 0, tzinfo=timezone.utc)
+    retry_at = MODULE.next_body_retry_at({"date": "2026-08-01", "article_body_attempts": 7}, now)
+    assert retry_at == "2026-09-22T00:00:00+00:00"
+
+
 def test_feed_only_article_is_kept_for_statistics_not_detail_publication() -> None:
     result = MODULE.upgrade_existing_item({
         "title": "제목뿐인 기사",
@@ -107,13 +145,130 @@ def test_article_parser_excludes_reader_ui_from_body() -> None:
     assert all("음성" not in sentence and "자동요약" not in sentence for sentence in sentences)
 
 
-def test_portal_promotion_is_removed_from_article_and_summary() -> None:
-    promo = "가장 빠른 뉴스가 있고 다양한 정보, 쌍방향 소통이 숨쉬는 다음뉴스를 만나보세요."
-    page = f"<article><p>국제유가 급등으로 원화 약세 우려가 커지면서 금융시장 변동성이 확대되고 있다.</p><p>{promo}</p><p>미국 국채금리 상승도 환율 변동성을 키우는 주요 요인으로 지목됐다.</p></article>"
+def test_article_parser_reads_meta_and_article_content_container() -> None:
+    page = """<html><head><meta property="og:description" content="미국 물가와 국채금리 상승으로 주식시장의 경계감이 커졌다."></head>
+    <body><div class="article-content"><h1>시장 점검</h1>
+    <div>국제유가는 배럴당 100달러를 돌파했고 미국 10년물 국채금리도 상승했다.</div>
+    <div>투자자들은 다음 물가지표와 연방준비제도의 정책 경로를 함께 확인하고 있다.</div>
+    </div><footer>Copyright All rights reserved</footer></body></html>"""
     sentences = MODULE.article_sentences(page)
-    assert len(sentences) == 2
-    assert all("다음뉴스" not in sentence and "쌍방향" not in sentence for sentence in sentences)
-    assert "다음뉴스" not in MODULE.clean_summary_provenance(f"기사 요약. {promo}")
+    assert any("국제유가는" in sentence for sentence in sentences)
+    assert any("연방준비제도" in sentence for sentence in sentences)
+    assert all("Copyright" not in sentence for sentence in sentences)
+
+
+def test_non_article_quote_pages_and_unrelated_incidents_are_rejected() -> None:
+    assert not MODULE.is_news_article_candidate({"title": "ES00 | E-Mini S&P 500 Future Continuous Contract Overview"})
+    assert not MODULE.is_news_article_candidate({"title": "About GraniteShares 2x Long SK Hynix Daily ETF (SKUU.OQ)"})
+    assert not MODULE.is_news_article_candidate({"title": "부안 아파트 화재로 주민 40명 대피"})
+    assert MODULE.is_news_article_candidate({"title": "정유공장 화재로 국제유가와 공급망 불안 확대"})
+
+
+def test_entertainment_photo_and_fed_name_collision_are_rejected() -> None:
+    assert not MODULE.is_news_article_candidate({"title": "[사진]투모로우바이투게더 연준, 파리 다녀올게요"})
+    assert not MODULE.is_news_article_candidate({"title": "가수 연준, 공항 화보 같은 출국길"})
+    assert MODULE.is_news_article_candidate({"title": "美 연준, 물가 상승에 금리 0.25%P 인상 결정"})
+    assert not MODULE.is_news_article_candidate({"title": "곽상언 금품수수 팩트대로…한동훈 미국 아파트가 팩트"})
+    assert not MODULE.is_news_article_candidate({"title": "28세 그리 \"경기도에 자가 아파트 두 채\""})
+    assert not MODULE.is_news_article_candidate({
+        "title": "한강뷰 아파트 17억에 샀는데 시세차익 40억",
+        "article_source_url": "https://www.mt.co.kr/entertainment/2026/10/03/example",
+    })
+    assert not MODULE.is_news_article_candidate({
+        "title": "뉴저지 아파트값 받은 것 팩트",
+        "article_source_url": "https://biz.chosun.com/policy/politics/2026/10/03/example/",
+    })
+
+
+def test_verified_public_excerpt_remains_publishable_but_is_not_full_text() -> None:
+    item = {"publication_status": "detail", "article_body_status": "verified_excerpt"}
+    assert MODULE.is_publishable_detail(item)
+    details = MODULE.importance_details({
+        **item,
+        "title": "연준 금리 인상 전망",
+        "category": "금리·채권",
+        "sources": [{"publisher": "공식 발행사"}],
+    })
+    assert details["verified_body"] is True
+    assert details["verification_score"] < 12
+
+
+def test_article_txt_container_is_recognized_as_full_text() -> None:
+    page = """<html><div class="article_txt"><div>일본 기업들이 전력반도체 생산 통합 계획을 발표했다.</div>
+    <div>세 회사는 비용 절감과 경쟁력 확보를 위해 2027년부터 공동 생산을 추진한다.</div>
+    <div>시장은 통합 결과로 설비투자와 공급망 효율이 개선될 것으로 전망했다.</div></div></html>"""
+    sentences = MODULE.article_sentences(page)
+    assert len(sentences) == 3
+    assert any("공동 생산" in sentence for sentence in sentences)
+
+
+def test_sixw_actor_is_article_subject_not_publisher_and_status_is_precise() -> None:
+    fields = MODULE.structured_summary_fields(
+        "한국은행 기준금리 동결 발표",
+        "테스트뉴스",
+        "2026-10-03",
+        [
+            "한국은행은 2026년 10월 3일 서울에서 기준금리 동결을 발표했다.",
+            "물가 압력과 경기 둥화 우려를 함께 고려했기 때문이다.",
+            "금융통화위원회 의결을 통해 현재 수준을 유지했다.",
+        ],
+        "한국은행이 기준금리를 동결했다.",
+    )
+    assert "한국은행" in fields["six_w_one_h"]["who"]
+    assert "테스트뉴스" not in fields["six_w_one_h"]["who"]
+    assert any(row["status"] == "발표" for row in fields["fact_status"])
+    assert fields["six_w_one_h_meta"]["evidence_bound"] is True
+
+
+def test_sixw_removes_dateline_and_does_not_treat_metrics_as_people_or_forecasts() -> None:
+    fields = MODULE.structured_summary_fields(
+        "미국 9월 신규 고용 예상치 상회",
+        "CNBC",
+        "2026-10-03",
+        [
+            "[서울=CNBC] = 미국의 9월 신규 고용은 시장 예상치보다 늘었다.",
+            "미 노동통계국(BLS)은 신규 고용과 실업률을 발표했다.",
+            "미국 담당 수석 이코노미스트는 이번 결과가 금리 경로에 영향을 줄 수 있다고 전망했다.",
+        ],
+        "미국의 신규 고용이 예상치를 웃돌았다.",
+    )
+    who = " ".join(fields["six_w_one_h"]["who"])
+    assert "신규 고용" not in who
+    assert "실업률" not in who
+    assert "노동통계국" in who
+    assert "서울" not in fields["six_w_one_h"]["where"]
+    assert "미국" in fields["six_w_one_h"]["where"]
+    assert fields["article_summary"][0].startswith("미국의 9월")
+    assert fields["fact_status"][0]["status"] == "보도된 사실"
+    assert fields["fact_status"][1]["status"] == "발표"
+    assert fields["fact_status"][2]["status"] == "전망·예상"
+
+
+def test_unverified_item_cannot_receive_important_badge() -> None:
+    item = {
+        "title": "美 연준 금리 0.25%P 인상 결정",
+        "category": "금리·채권",
+        "region": "us",
+        "article_body_status": "unavailable",
+        "publication_status": "statistics_only",
+        "sources": [{"publisher": "로이터"}],
+    }
+    MODULE.mark_important([item])
+    assert item["important"] is False
+    assert item["importance"]["eligible_for_important"] is False
+
+
+def test_unverified_article_is_never_publishable_as_important_detail() -> None:
+    assert not MODULE.is_publishable_detail({
+        "important": True,
+        "publication_status": "statistics_only",
+        "article_body_status": "unavailable",
+    })
+    assert MODULE.is_publishable_detail({
+        "important": True,
+        "publication_status": "detail",
+        "article_body_status": "full_text",
+    })
 
 
 def test_mk_refid_body_excludes_ai_explainer_and_footer() -> None:
@@ -162,8 +317,10 @@ def test_verified_publisher_listing_replaces_feed_title(monkeypatch) -> None:
         "전문가들은 이번 생산자물가 수치가 소매가격에 반영되는 시점과 범위를 추가로 확인해야 한다고 설명했다. 중앙은행은 단일 지표보다 여러 달의 추세를 기준으로 정책을 판단한다.",
     ]
     monkeypatch.setattr(MODULE, "search_public_article_urls", lambda *_args: [])
+    monkeypatch.setattr(MODULE, "publisher_search_candidates", lambda *_args: [])
+    monkeypatch.setattr(MODULE, "search_bing_news_article_urls", lambda *_args: [])
     monkeypatch.setattr(MODULE, "publisher_daily_candidates", lambda *_args: [(discovered, "https://example.com/article", "publisher_archive_economy")])
-    monkeypatch.setattr(MODULE, "fetch_article_sentences", lambda _url: (sentences, "https://example.com/article"))
+    monkeypatch.setattr(MODULE, "fetch_article", lambda _url, _title="": (fake_extraction(sentences), "https://example.com/article"))
     item, fields = MODULE._article_enrichment({"title": original, "publisher": "Benzinga", "date": "2026-09-10", "sources": []})
     assert item["title"] == original
     assert fields["title"] == discovered
@@ -181,9 +338,61 @@ def test_publisher_search_precedes_public_indexes_and_section_listing(monkeypatc
     ]
     monkeypatch.setattr(MODULE, "publisher_search_candidates", lambda *_args: [(title, "https://www.mt.co.kr/article", "publisher_search_moneytoday")])
     monkeypatch.setattr(MODULE, "search_public_article_urls", lambda *_args: (_ for _ in ()).throw(AssertionError("publisher search must run first")))
-    monkeypatch.setattr(MODULE, "fetch_article_sentences", lambda _url: (sentences, "https://www.mt.co.kr/article"))
+    monkeypatch.setattr(MODULE, "fetch_article", lambda _url, _title="": (fake_extraction(sentences), "https://www.mt.co.kr/article"))
     result = MODULE.discover_article_body(title, "머니투데이", "2026-09-10")
     assert result and result[2] == "publisher_search_moneytoday"
+
+
+def test_recovery_links_prefer_supported_publisher_search_before_portals() -> None:
+    rows = MODULE.recovery_search_links("국제유가 급등", "글로벌이코노믹")
+    assert rows[0]["method"] == "publisher_search_global_economy"
+    assert rows[0]["url"].startswith("https://news.g-enews.com/search.php?sn=")
+    assert [row["method"] for row in rows[1:]] == ["naver_search", "daum_search", "bing_news_search"]
+
+
+def test_bloomingbit_uses_its_public_magnifier_search_api(monkeypatch) -> None:
+    title = '美 연준, 3년 만에 금리 인상 유력…경제학자 85% "이번 주 0.25%P 올린다"'
+    payload = {
+        "data": {"content": [
+            {"seq": 120309, "title": title},
+            {"seq": 999999, "title": "비트코인 가격 전망"},
+        ]}
+    }
+    captured = {}
+
+    def fake_request(url, **kwargs):
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return json.dumps(payload, ensure_ascii=False)
+
+    monkeypatch.setattr(MODULE, "_paced_public_request", fake_request)
+    rows = MODULE.publisher_search_candidates(title, "bloomingbit.io")
+    assert rows == [(title, "https://bloomingbit.io/feed/news/120309", "publisher_search_bloomingbit")]
+    assert captured["url"].startswith(MODULE.BLOOMINGBIT_SEARCH_API)
+    assert captured["kwargs"]["accept"] == "application/json"
+
+
+def test_bing_news_rss_unwraps_the_original_article_url(monkeypatch) -> None:
+    title = "유가 100달러에 막힌 원화 강세 환율 다시 1350원 눈앞"
+    original = "https://v.daum.net/v/QOK5D41yyj"
+    rss = f"""<rss><channel><item><title>{title}</title>
+    <link>https://www.bing.com/news/apiclick.aspx?ref=FexRss&amp;url={MODULE.quote(original, safe='')}</link>
+    </item></channel></rss>"""
+    monkeypatch.setattr(MODULE, "_paced_public_request", lambda *_args, **_kwargs: rss)
+    assert MODULE.search_bing_news_article_urls(title) == [("bing_news_search", original)]
+
+
+def test_crime_story_with_apartment_keyword_is_never_market_important() -> None:
+    items = MODULE.mark_important([{
+        "title": "파주 아파트서 탈북 여성 시신 발견…살인 용의자 해외 출국",
+        "category": "부동산",
+        "publisher": "KBS 뉴스",
+        "sources": [{"publisher": "KBS 뉴스"}],
+        "related_reports": 7,
+        "source_count": 7,
+    }])
+    assert not items[0]["importance"]["investment_relevant"]
+    assert not items[0]["important"]
 
 
 def test_search_and_navigation_urls_are_not_article_candidates() -> None:
@@ -208,6 +417,15 @@ def test_summary_provenance_cleaner_preserves_facts() -> None:
     assert item["sources"][0]["publisher"] == "연합뉴스"
 
 
+def test_summary_provenance_cleaner_keeps_wire_service_that_is_the_actor() -> None:
+    # Behaviour change (2026-11-28): a wire service that conducted the survey
+    # is the subject of the fact, not attribution, and must not be deleted.
+    assert MODULE.clean_summary_provenance("14일 로이터가 경제학자 101명을 대상으로 조사했다.") == "14일 로이터가 경제학자 101명을 대상으로 조사했다"
+    assert MODULE.clean_summary_provenance("14일 로이터통신에 따르면 경제학자 70%가 동결을 예상했다.") == "14일 경제학자 70%가 동결을 예상했다"
+    assert MODULE.clean_summary_provenance("[서울=연합뉴스] 한국은행이 기준금리를 동결했다.") == "한국은행이 기준금리를 동결했다"
+    assert MODULE.clean_summary_provenance("14일(현지시간) 가 지난 11일 조사했다.") == "14일(현지시간) 지난 11일 조사했다"
+
+
 def test_summary_provenance_cleaner_keeps_decimal_percentages() -> None:
     assert MODULE.clean_summary_provenance("WTI는 전장보다 4.3% 오른 100.13달러에 거래됐다.") == "WTI는 전장보다 4.3% 오른 100.13달러에 거래됐다"
 
@@ -223,3 +441,10 @@ def test_daum_repaired_article_has_clean_summary_prose() -> None:
         assert forbidden not in prose
     assert item["article_source_url"].startswith("https://v.daum.net/v/")
     assert item["article_body_status"] in {"full_text", "verified_reconstruction"}
+def test_portal_promotion_is_removed_from_article_and_summary() -> None:
+    promo = "가장 빠른 뉴스가 있고 다양한 정보, 쌍방향 소통이 숨쉬는 다음뉴스를 만나보세요."
+    page = f"<article><p>국제유가 급등으로 원화 약세 우려가 커지면서 금융시장 변동성이 확대되고 있다.</p><p>{promo}</p><p>미국 국채금리 상승도 환율 변동성을 키우는 주요 요인으로 지목됐다.</p></article>"
+    sentences = MODULE.article_sentences(page)
+    assert len(sentences) == 2
+    assert all("다음뉴스" not in sentence and "쌍방향" not in sentence for sentence in sentences)
+    assert "다음뉴스" not in MODULE.clean_summary_provenance(f"기사 요약. {promo}")

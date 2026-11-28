@@ -188,14 +188,16 @@ def download(url: str, *, headers: dict[str, str] | None = None) -> bytes:
     request_headers = {"User-Agent": USER_AGENT, "Accept": "*/*"}
     request_headers.update(headers or {})
     last_error: Exception | None = None
-    for attempt in range(3):
+    attempts = max(1, min(3, int(os.environ.get("ECON_REQUEST_ATTEMPTS", "3"))))
+    timeout = max(3, min(45, float(os.environ.get("ECON_REQUEST_TIMEOUT_SECONDS", "45"))))
+    for attempt in range(attempts):
         try:
             request = Request(url, headers=request_headers)
-            with urlopen(request, timeout=45) as response:
+            with urlopen(request, timeout=timeout) as response:
                 return response.read()
         except Exception as error:
             last_error = error
-            if attempt < 2:
+            if attempt < attempts - 1:
                 time.sleep(2**attempt)
     assert last_error is not None
     raise last_error
@@ -533,10 +535,12 @@ def main() -> None:
         }
     )
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(
+    temporary = OUTPUT.with_suffix(".json.tmp")
+    temporary.write_text(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
     )
+    temporary.replace(OUTPUT)
     print(
         "경제지표 JSON 생성 완료: "
         + ", ".join(

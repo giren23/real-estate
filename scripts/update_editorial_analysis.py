@@ -10,7 +10,7 @@ import zipfile
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
@@ -158,6 +158,9 @@ def source_contract(sources: list[dict[str, object]]) -> list[dict[str, str]]:
     seen: set[str] = set()
     for index, source in enumerate(sources):
         url = str(source.get("url") or "")
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            continue
         key = url or f"{source.get('publisher')}|{source.get('title')}"
         if key in seen:
             continue

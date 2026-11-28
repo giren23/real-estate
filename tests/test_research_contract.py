@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,7 +16,8 @@ def test_analysis_uses_source_traceable_research_contract() -> None:
         assert item["as_of"] and item["key_message"]
         assert len(item["sections"]) >= 5
         assert all({"id", "number", "title", "summary", "fact_or_analysis"} <= section.keys() for section in item["sections"])
-        assert all(source.get("source_id") and source.get("url", "").startswith("https://") and source.get("source_type") for source in item["sources"])
+        assert all(source.get("source_id") and urlparse(source.get("url", "")).scheme in {"http", "https"}
+                   and urlparse(source.get("url", "")).hostname and source.get("source_type") for source in item["sources"])
         assert item["verification_status"] in {"official_verified", "official_source_review_required"}
 
 

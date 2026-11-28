@@ -42,3 +42,13 @@ def test_collection_metrics_are_small_bottom_reference_information() -> None:
     assert "참고 수집정보" in script
     assert ".report-reference .report-metrics" in style
     assert ".report-source-links" in style
+
+
+def test_news_report_exposes_evidence_bound_sixw_and_fact_status() -> None:
+    script = (ROOT / "web" / "report.js").read_text(encoding="utf-8")
+    for label in ("누가", "언제", "어디서", "무엇을", "왜", "어떻게", "결과·영향"):
+        assert label in script
+    assert "원문에 명시되지 않음" in script
+    assert "확정·발표·전망 구분" in script
+    assert "원문 다시 찾기" in script
+    assert "item.recovery_search_links" in script

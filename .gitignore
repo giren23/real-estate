@@ -21,3 +21,4 @@ PUBLIC_URL.txt
 cloudflare-worker/node_modules/
 cloudflare-worker/.wrangler/
 .pnpm-store/
+web/content/news/.update-economic-news.lock*

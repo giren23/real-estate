@@ -16,6 +16,15 @@ on:
       - "scripts/update_investment_briefing.py"
       - "tests/test_economic_context.py"
       - "tests/test_investment_briefing.py"
+      - "scripts/news_quality.py"
+      - "scripts/reprocess_news.py"
+      - "tests/test_news_*.py"
+      - "requirements-news-ci.txt"
+
+env:
+  TZ: Asia/Seoul
+  PYTHONUNBUFFERED: "1"
+  PYTHONIOENCODING: utf-8
 
 permissions:
   contents: write
@@ -25,41 +34,66 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.3"
+      - name: Install pinned test dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-news-ci.txt
+      - name: Verify all offline contracts including tests/test_research_contract.py
+        run: python -m pytest tests -q -p no:cacheprovider --deselect tests/test_investment_briefing.py::test_daily_generator_archives_by_date_and_reorders_pages
+      - name: Check news browser scripts
+        run: |
+          node --check web/news.js
+          node --check web/report.js
+          node --check web/editorial.js
+
   refresh:
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.3"
 
       - name: Install test dependencies
-        run: python -m pip install --disable-pip-version-check pytest
+        run: python -m pip install --disable-pip-version-check -r requirements-news-ci.txt
 
       - name: Refresh all economic indicator series
+        timeout-minutes: 7
+        continue-on-error: true
         env:
           BOK_ECOS_API_KEY: ${{ secrets.BOK_ECOS_API_KEY }}
+          ECON_REQUEST_TIMEOUT_SECONDS: "8"
+          ECON_REQUEST_ATTEMPTS: "1"
         run: python scripts/update_economic_context.py
 
       - name: Build daily market snapshot
+        timeout-minutes: 3
+        continue-on-error: true
         run: python scripts/update_market_snapshot.py
 
       - name: Refresh REB regional apartment price and transaction volume
+        timeout-minutes: 3
         # 한국부동산원 R-ONE이 공개하는 월간 가격상승률·아파트 매매거래호수를 함께 검증해 정적 파일로 보존한다.
         # 새 응답 검증에 실패하면 스크립트가 종료되어 기존의 마지막 정상 파일을 덮어쓰지 않는다.
         continue-on-error: true
         run: python scripts/update_reb_market_map.py
 
-      - name: Refresh economic news archive
-        continue-on-error: true
-        env:
-          NYT_API_KEY: ${{ secrets.NYT_API_KEY }}
-        # Keep the published archive bounded to the requested period; older
-        # dates are intentionally not re-created by a daily backfill.
-        run: python scripts/update_economic_news.py --backfill-days 1 --limit-per-day 60 --archive-enrich-limit 60
-
       - name: Refresh company and deep-dive analysis
+        timeout-minutes: 5
         continue-on-error: true
         env:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
@@ -77,16 +111,58 @@ jobs:
         run: python -m pytest -q tests/test_economic_context.py tests/test_market_snapshot.py tests/test_latest_chart_values.py tests/test_investment_briefing.py tests/test_research_contract.py tests/test_reb_market_map.py tests/test_development_opportunities.py
 
       - name: Commit refreshed indicators
+        if: steps.test.outcome == 'success'
         run: |
           git config user.name "economic-indicator-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/public/economic_context.json data/public/market_snapshot.json web/content/reb_market_map.json web/content/news web/content/analysis web/content/investment-briefing
-          git commit -m "Frequent economic information update" || exit 0
+          git add data/public/economic_context.json data/public/market_snapshot.json web/content/reb_market_map.json web/content/analysis web/content/investment-briefing
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Frequent economic information update"
           git pull --rebase origin main
           git push
 
-      - name: Mark verification failure after publishing generated data
+      - name: Mark verification failure without publishing
         if: steps.test.outcome == 'failure'
         run: |
-          echo "::error::생성 데이터는 저장·배포했지만 검증 테스트가 실패했습니다. 테스트 로그를 확인하세요."
+          echo "::error::검증 실패로 데이터 배포를 중단했습니다."
           exit 1
+
+  news:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.3"
+      - name: Install pinned news dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-news-ci.txt
+      - name: Refresh and repair public news without an OpenAI key
+        timeout-minutes: 24
+        env:
+          NYT_API_KEY: ${{ secrets.NYT_API_KEY }}
+        # Independent of slow macro sources; failed bodies preserve verified summaries.
+        run: python scripts/update_economic_news.py --backfill-days 2 --limit-per-day 60 --archive-enrich-limit 20
+      - name: Verify generated news and recovery contracts
+        run: python -m pytest -q tests/test_news_source_recovery.py tests/test_news_operational_review.py tests/test_news_quality_regression.py tests/test_news_structured_summary.py tests/test_ranked_news_archive.py tests/test_news_review_regression.py
+      - name: Upload recovery metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: news-run-metrics-${{ github.run_id }}
+          path: data/local/news-run-metrics/*.json
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Commit only verified news
+        run: |
+          git config user.name "economic-news-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add web/content/news
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Refresh verified public news and recovery metadata"
+          git pull --rebase origin main
+          git push

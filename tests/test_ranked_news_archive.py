@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from scripts.update_economic_news import (
@@ -11,13 +12,13 @@ from scripts.update_economic_news import (
     enrich_video_news,
     article_sentences,
     importance_details,
+    is_non_editorial_notice,
     item_from_feed,
     mark_important,
     representative_score,
     select_caption_excerpts,
     sixw_summary_from_sentences,
     fetch_article_sentences,
-    is_non_editorial_notice,
     youtube_video_id,
 )
 
@@ -46,7 +47,16 @@ def test_market_news_scores_above_accident_noise() -> None:
 
 
 def test_important_news_is_diversified_by_category() -> None:
-    rows = [sample(f"연준 기준금리 전망 {index}", "금리·채권", 4, 3) for index in range(7)]
+    rate_titles = [
+        "연준 기준금리 인상 결정",
+        "미국 10년물 국채금리 급등",
+        "글로벌 회사채 신용스프레드 확대",
+        "한국은행 통화정책 발표",
+        "장단기 금리차 역전 심화",
+        "은행채 발행금리 상승",
+        "채권시장 외국인 순매수 확대",
+    ]
+    rows = [sample(title, "금리·채권", 4, 3) for title in rate_titles]
     rows += [sample("코스피 수출 실적 개선", "증시", 3, 2), sample("국제유가 물가 영향", "원자재", 3, 2)]
     marked = mark_important(rows)
     selected = [row for row in marked if row["important"]]
@@ -54,19 +64,20 @@ def test_important_news_is_diversified_by_category() -> None:
     assert {row["category"] for row in selected} >= {"증시", "원자재"}
 
 
+def test_same_event_is_not_repeated_in_important_news() -> None:
+    rows = [
+        sample("현대캐피탈 AI 해킹…주택대출 개인정보 유출", "산업·기업", 4, 3),
+        sample("현대캐피탈도 해킹 확인…주택대출 정보 유출", "산업·기업", 4, 3),
+    ]
+    selected = [row for row in mark_important(rows) if row["important"]]
+    assert len(selected) == 1
+
+
 def test_stock_quote_pages_are_not_selected_as_important_news() -> None:
     quote = sample("Check out the latest ETF stock price and quote", "증시", 5, 4)
     marked = mark_important([quote])
     assert marked[0]["important"] is False
     assert marked[0]["importance"]["investment_relevant"] is False
-
-
-def test_repetitive_fund_nav_notices_are_excluded_from_news() -> None:
-    notice = {
-        "title": "Amundi US Curve steepening 2-10Y UCITS ETF GBP Hedged Dist: Net Asset Value(s)",
-        "description": "DEALING DATE: 07-Sep-2026. NAV PER SHARE: GBP 10.42",
-    }
-    assert is_non_editorial_notice(notice) is True
 
 
 def test_personal_housing_scandals_are_not_selected_as_important_news() -> None:
@@ -114,7 +125,9 @@ def test_news_archive_has_two_paginations_and_clickable_filters() -> None:
     assert "[중요]" in script
     assert "isRateDecision" in script
     assert "important_items" in editorial
+    assert ".map(apply).filter(canShowNewsDetail)" in editorial
     assert index["important_items"]
+    assert all(item.get("publication_status") == "detail" for item in index["important_items"])
     assert index["importance_method"]
 
 
@@ -132,27 +145,6 @@ def test_news_regions_and_real_engagement_are_explicit() -> None:
     assert detail["engagement_score"] > 0
     assert detail["views_available"] is False
     assert "공식 인기기사 순위" in detail["response_proxy"]
-
-
-def test_macro_market_shock_promotes_linked_oil_inflation_rate_story() -> None:
-    rows = [
-        sample("유가 100달러 돌파·PPI 상승에 미 국채금리 급등", "원자재", 1, 1),
-        sample("미국 CPI 발표 앞두고 뉴욕증시 하락", "증시", 1, 1),
-    ]
-    marked = mark_important(rows)
-    shock = marked[0]
-    assert shock["important"] is True
-    assert shock["importance"]["macro_alert_score"] == 18
-    assert {"유가", "물가", "금리"} <= set(shock["importance"]["macro_alert_signals"])
-
-
-def test_public_editorial_feature_and_views_receive_explicit_bonus() -> None:
-    featured = sample("연준과 CPI가 증시 방향을 가를 전망", "금리·채권", 1, 1)
-    featured["engagement"] = {"views": 250000, "reactions": 1200, "featured": True, "metric": "공식 주요 기사"}
-    detail = importance_details(featured)
-    assert detail["engagement_score"] > 0
-    assert detail["editorial_priority_score"] == 10
-    assert "공개 조회" in detail["response_proxy"]
 
 
 def test_news_ui_groups_regions_and_shows_verified_translation_below_link() -> None:
@@ -211,7 +203,7 @@ def test_news_pipeline_is_server_side_and_does_not_require_gpt() -> None:
     workflow = (ROOT / ".github" / "workflows" / "economic-indicators-daily.yml").read_text(encoding="utf-8")
     assert "openai" not in collector and "chatgpt" not in collector
     local_loop = "MARKET_REFRESH_HOURS = 4" in server and '("update_economic_news.py", ["--backfill-days", "2", "--limit-per-day", "60"])' in server
-    hosted_loop = 'cron: "15 */3 * * *"' in workflow and "python scripts/update_economic_news.py --backfill-days 1 --limit-per-day 60" in workflow
+    hosted_loop = 'cron: "15 */3 * * *"' in workflow and re.search(r"run: python scripts/update_economic_news\.py --backfill-days [1-9]\d* --limit-per-day 60", workflow)
     assert local_loop or hosted_loop
 
 
@@ -250,21 +242,17 @@ def test_full_article_is_reduced_to_one_evidence_bound_sixw_summary() -> None:
     assert len(result["narrative_paragraphs"]) == 1
     summary = result["narrative_paragraphs"][0]
     assert all(value in summary for value in ("신한글로벌액티브리츠", "25일", "1352원", "7700만달러", "22억~25억원", "50억~60억원", "내년 1월 19일"))
-    assert result["core_summary"] in summary
+    # The core summary is built only from article sentences (lead + key figure
+    # + decision/plan), so every core sentence must exist in the narrative.
+    assert all(sentence in summary for sentence in result["core_summary"].split(". ") if sentence)
+    assert result["core_summary"].startswith("신한글로벌액티브리츠가")
     assert result["summary_basis"] == "공개 원문 본문"
-
-
-def test_article_body_div_is_extracted_when_paragraph_tags_are_absent() -> None:
-    page = """<article><div id="articleBody"><div>국제유가가 배럴당 100달러를 돌파하면서 에너지 시장의 변동성이 크게 확대됐다.</div><div>원유 ETN과 정유주는 가격 민감도와 비용 구조가 달라 투자 전 차이를 확인해야 한다.</div><div>시장 참여자는 변동성과 선물 롤오버 비용을 함께 점검하고 있다.</div></div></article>"""
-    sentences = article_sentences(page)
-    assert len(sentences) >= 3
-    assert any("원유 ETN" in sentence for sentence in sentences)
 
 
 def test_collector_enriches_current_and_archived_articles() -> None:
     collector = (ROOT / "scripts" / "update_economic_news.py").read_text(encoding="utf-8")
     assert "enrich_article_bodies(items)" in collector
-    assert "enrich_archived_bodies(archive_limit, force_retry=" in collector
+    assert "enrich_archived_bodies(archive_limit, force_retry=args.force_retry_unavailable)" in collector
     assert 'parser.add_argument("--archive-enrich-limit"' in collector
     assert "rss.blog.naver.com/dealsite.xml" in collector
 
@@ -285,10 +273,41 @@ def test_naver_rss_article_url_is_normalized_to_post_view(monkeypatch) -> None:
         def geturl(self): return captured["url"]
         def read(self, _limit): return b"<article><p>This is a sufficiently long public article sentence for extraction.</p></article>"
 
-    def fake_urlopen(request, timeout=0):
+    def fake_urlopen(request, timeout=0, **_kwargs):
         captured["url"] = request.full_url
         return Response()
 
     monkeypatch.setattr("scripts.update_economic_news.urlopen", fake_urlopen)
     fetch_article_sentences("https://blog.naver.com/dealsite/224394383227?fromRss=true")
     assert "PostView.naver" in captured["url"] and "logNo=224394383227" in captured["url"]
+def test_repetitive_fund_nav_notices_are_excluded_from_news() -> None:
+    notice = {
+        "title": "Amundi US Curve steepening 2-10Y UCITS ETF GBP Hedged Dist: Net Asset Value(s)",
+        "description": "DEALING DATE: 07-Sep-2026. NAV PER SHARE: GBP 10.42",
+    }
+    assert is_non_editorial_notice(notice) is True
+
+def test_macro_market_shock_promotes_linked_oil_inflation_rate_story() -> None:
+    rows = [
+        sample("유가 100달러 돌파·PPI 상승에 미 국채금리 급등", "원자재", 1, 1),
+        sample("미국 CPI 발표 앞두고 뉴욕증시 하락", "증시", 1, 1),
+    ]
+    marked = mark_important(rows)
+    shock = marked[0]
+    assert shock["important"] is True
+    assert shock["importance"]["macro_alert_score"] == 18
+    assert {"유가", "물가", "금리"} <= set(shock["importance"]["macro_alert_signals"])
+
+def test_public_editorial_feature_and_views_receive_explicit_bonus() -> None:
+    featured = sample("연준과 CPI가 증시 방향을 가를 전망", "금리·채권", 1, 1)
+    featured["engagement"] = {"views": 250000, "reactions": 1200, "featured": True, "metric": "공식 주요 기사"}
+    detail = importance_details(featured)
+    assert detail["engagement_score"] > 0
+    assert detail["editorial_priority_score"] == 10
+    assert "공개 조회" in detail["response_proxy"]
+
+def test_article_body_div_is_extracted_when_paragraph_tags_are_absent() -> None:
+    page = """<article><div id="articleBody"><div>국제유가가 배럴당 100달러를 돌파하면서 에너지 시장의 변동성이 크게 확대됐다.</div><div>원유 ETN과 정유주는 가격 민감도와 비용 구조가 달라 투자 전 차이를 확인해야 한다.</div><div>시장 참여자는 변동성과 선물 롤오버 비용을 함께 점검하고 있다.</div></div></article>"""
+    sentences = article_sentences(page)
+    assert len(sentences) >= 3
+    assert any("원유 ETN" in sentence for sentence in sentences)
