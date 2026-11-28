@@ -148,7 +148,7 @@ jobs:
         # Independent of slow macro sources; failed bodies preserve verified summaries.
         run: python scripts/update_economic_news.py --backfill-days 2 --limit-per-day 60 --archive-enrich-limit 20
       - name: Verify generated news and recovery contracts
-        run: python -m pytest -q tests/test_news_source_recovery.py tests/test_news_operational_review.py tests/test_news_quality_regression.py tests/test_news_structured_summary.py tests/test_ranked_news_archive.py tests/test_news_review_regression.py
+        run: python -m pytest -q tests/test_news_source_recovery.py tests/test_news_operational_review.py tests/test_news_quality_regression.py tests/test_news_structured_summary.py tests/test_ranked_news_archive.py tests/test_news_review_regression.py tests/test_cloud_news_workflow.py
       - name: Upload recovery metrics
         if: always()
         uses: actions/upload-artifact@v4

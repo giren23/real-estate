@@ -497,6 +497,8 @@ def is_article_candidate_url(url: str) -> bool:
 
 def is_news_article_candidate(item: dict[str, object]) -> bool:
     """Keep real investment news; reject quote/product pages and unrelated incidents."""
+    if is_non_editorial_notice(item):
+        return False
     title = clean_text(str(item.get("title") or ""))
     source_urls = " ".join(
         str(value or "")
@@ -2796,6 +2798,8 @@ def rebuild_index() -> None:
     archives: list[dict[str, object]] = []
     all_items: list[dict[str, object]] = []
     latest_archive_items: list[dict[str, object]] = []
+    latest_verified_archive = None
+    important_archive_date = None
     for path in sorted(NEWS_DIR.glob("20??-??-??.json"), reverse=True):
         payload = json.loads(path.read_text(encoding="utf-8"))
         items = []
@@ -2816,9 +2820,13 @@ def rebuild_index() -> None:
         payload["items"] = items
         payload["count"] = len(items)
         atomic_write_json(path, payload, only_if_changed=True)
-        archives.append({"date": payload.get("date"), "count": len(items), "file": path.name})
-        if not latest_archive_items:
+        detailed_count = sum(is_publishable_detail(item) for item in items)
+        archives.append({"date": payload.get("date"), "count": len(items), "detailed_count": detailed_count, "file": path.name})
+        if latest_verified_archive is None and detailed_count:
+            latest_verified_archive = path.name
+        if not latest_archive_items and any(item.get("important") and is_publishable_detail(item) for item in items):
             latest_archive_items = items
+            important_archive_date = payload.get("date")
         all_items.extend(items)
     publishable_items = [item for item in all_items if is_publishable_detail(item)]
     important_items = sorted(
@@ -2848,6 +2856,8 @@ def rebuild_index() -> None:
         "total_articles": len(all_items),
         "latest_items": publishable_items[:12],
         "important_items": important_items,
+        "latest_verified_archive": latest_verified_archive,
+        "important_archive_date": important_archive_date,
         "importance_method": "원문 본문 확인을 필수로 하고, 시장 영향도·금리 결정·확정 발표·유사 보도 확산·매체 다양성·출처 신뢰도·공개 조회·반응을 종합해 산정. 연예·포토·비시장성 사건은 제외",
         # Keep the first load light on mobile. Older days load on demand.
         "items": all_items[:600],
