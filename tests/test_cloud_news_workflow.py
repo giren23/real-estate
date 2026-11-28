@@ -34,3 +34,8 @@ def test_cloud_download_budget_does_not_retry_a_slow_source(monkeypatch):
 
 def test_runtime_news_locks_are_never_published():
     assert 'web/content/news/.update-economic-news.lock*' in (ROOT/'.gitignore').read_text(encoding='utf-8')
+
+
+def test_daily_briefing_completion_also_triggers_pages_deployment():
+    workflow = (ROOT/'.github/workflows/pages.yml').read_text(encoding='utf-8')
+    assert 'workflow_run:' in workflow and '"Daily 7AM investment briefing"' in workflow

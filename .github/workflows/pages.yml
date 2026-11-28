@@ -11,6 +11,7 @@ on:
     workflows:
       - "Frequent economic indicators"
       - "Daily real-estate update"
+      - "Daily 7AM investment briefing"
     types: [completed]
   workflow_dispatch:
 
